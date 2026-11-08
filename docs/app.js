@@ -60,6 +60,8 @@
   }
   window.addEventListener('resize', untenPruefen);
   window.addEventListener('orientationchange', untenPruefen);
+  // Nach dem Schließen der Tastatur (Fokus weg) neu prüfen, falls in der Zwischenzeit gedreht wurde
+  document.addEventListener('focusout', () => setTimeout(untenPruefen, 400));
 
   function meldung(text) {
     el('fehler').textContent = text || '';
@@ -84,7 +86,9 @@
     if (Z.daten) {
       const alt = Date.now() - Date.parse(Z.daten.stand) > STAND_ALT_MS;
       const rel = H.relativZeit(Z.daten.stand) || H.zeitFormat(Z.daten.stand);
+      const offline = navigator.onLine === false || Z.offline;
       if (!Z.frisch) t = 'Gespeicherter Stand · ' + rel;
+      else if (offline) t = 'Offline · Stand ' + rel;
       else if (alt) t = 'Aktualisiert ' + rel;
       el('stand').title = 'Stand: ' + H.zeitFormat(Z.daten.stand);
     }
