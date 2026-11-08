@@ -584,8 +584,7 @@ form .fehler { margin: 16px 0; }
   touch-action: pan-x pan-y; /* touch-action gilt nur bis zum nächsten Scroll-Container, deshalb hier nochmal */
 }
 .ansichten::-webkit-scrollbar { display: none; width: 0; height: 0; }
-/* Auch der senkrechte Scrollbalken jeder Ansicht bleibt unsichtbar (Mark 2026-11-08) */
-.ansicht { scrollbar-width: none; }
+/* Auch der senkrechte Scrollbalken jeder Ansicht bleibt unsichtbar (Mark 2026-11-08, scrollbar-width im Block unten) */
 .ansicht::-webkit-scrollbar { display: none; width: 0; height: 0; -webkit-appearance: none; background: transparent; }
 .ansicht {
   position: relative; /* Bezugsrahmen für absolut gesetzte Kinder, sonst ragen sie aus der Ansicht */
@@ -596,6 +595,7 @@ form .fehler { margin: 16px 0; }
   overflow-x: hidden;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
   overscroll-behavior-y: contain;
   touch-action: pan-x pan-y; /* senkrecht selbst, waagerecht an die Leiste weiter; kein Zoomen */
   scroll-snap-align: start;
