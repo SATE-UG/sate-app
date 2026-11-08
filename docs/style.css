@@ -106,20 +106,20 @@ button, .leiste, .segment, .art-kachel, .banner, .ziehen {
 /* Kopf: Logo (Männchen + SATE) links, rechts „Neu laden“ rund. Vor der Anmeldung zeigt die Anmeldeseite ihr großes Logo. */
 .kopf {
   flex: none;
-  min-height: 44px;
-  margin: 0 0 6px;
-  padding: calc(10px + env(safe-area-inset-top)) var(--rand-r) 0 var(--rand-l);
+  min-height: 36px;
+  margin: 0 0 4px;
+  padding: calc(2px + env(safe-area-inset-top)) var(--rand-r) 0 var(--rand-l);
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
 }
 body:not(.mit-leiste) .kopf { display: none; }
-.logo { display: block; height: 28px; width: auto; }
+.logo { display: block; height: 22px; width: auto; }
 
 .rund {
-  width: 44px;
-  height: 44px;
+  width: 36px;
+  height: 36px;
   display: grid;
   place-items: center;
   border: 0;
@@ -131,7 +131,10 @@ body:not(.mit-leiste) .kopf { display: none; }
   appearance: none;
   -webkit-tap-highlight-color: transparent;
 }
-.rund .icon { width: 20px; height: 20px; }
+.rund .icon { width: 18px; height: 18px; }
+/* 36 px sichtbar, Tippfläche trotzdem 44 px (Apple-Mindestgröße) */
+.rund { position: relative; }
+.rund::after { content: ""; position: absolute; inset: -4px; }
 .rund { transition: transform 0.1s ease, background-color 0.1s ease; }
 .rund:active { background: var(--feld-aktiv); transform: scale(0.92); }
 .rund:disabled { cursor: default; }
@@ -613,6 +616,13 @@ form .fehler { margin: 16px 0; }
 }
 .herz { height: 18px; width: auto; margin-top: -3px; }
 
+/* Angemeldet: Was unter dem sichtbaren Bereich liegt (iOS-26.0-Lücke unten), bekommt die Farbe der Tab-Bar, damit die
+   Leiste bis zum Bildschirmrand reicht. Der Inhalt selbst hat den schwarzen body-Hintergrund. */
+html.mit-leiste { background: #141415; }
+/* Lücke erkannt (app.js untenPruefen): die Home-Leiste liegt schon in der Lücke, kein zweiter Abstand in der Tab-Bar */
+html.luecke-unten .leiste { padding-bottom: 6px; }
+.safe-probe { position: fixed; top: 0; left: 0; width: 0; height: 0; padding-top: env(safe-area-inset-top); visibility: hidden; pointer-events: none; }
+
 /* Untere Leiste (iOS-Tab-Bar): Symbol + Text, leicht durchscheinend, Platz für die Home-Leiste */
 .leiste {
   position: fixed;
@@ -623,7 +633,7 @@ form .fehler { margin: 16px 0; }
   display: grid;
   grid-template-columns: repeat(4, 1fr);
   padding: 4px env(safe-area-inset-right) max(env(safe-area-inset-bottom), 6px) env(safe-area-inset-left);
-  background: rgba(22, 22, 23, 0.82);
+  background: rgba(20, 20, 21, 0.94); /* fast deckend, gleiche Farbe wie die Lücke darunter (html.mit-leiste) */
   -webkit-backdrop-filter: saturate(180%) blur(20px);
   backdrop-filter: saturate(180%) blur(20px);
   border-top: 0.5px solid rgba(255, 255, 255, 0.14);

@@ -178,7 +178,7 @@
         kachel('Bestand', H.zahlFormat(k.gesamtbestand, 0), 'Flaschen', k.gesamtQuelle === 'inventur' ? 'aus Inventur' : 'rechnerisch', 'flasche'),
         (() => {
           const t = H.kistenTeilen(k.gesamtbestand, proKiste);
-          return kachel('Kisten', t ? H.zahlFormat(t.kisten, 0) : '–', t && t.rest ? '+ ' + H.zahlFormat(t.rest, 0) + ' Flaschen' : '',
+          return kachel('Kisten', t ? H.zahlFormat(t.kisten, 0) : '–', t && t.rest ? '+ ' + H.zahlFormat(t.rest, 0) + (t.rest === 1 ? ' Flasche' : ' Flaschen') : '',
             proKiste ? 'volle Kisten à ' + H.zahlFormat(proKiste, 0) : null);
         })(),
         kachel('Reichweite', H.zahlFormat(b.reichweite, 1), 'Monate',

@@ -31,8 +31,35 @@
     el('leiste').hidden = !ja;
     el('neu-laden').hidden = !ja;
     document.body.classList.toggle('mit-leiste', ja);
+    document.documentElement.classList.toggle('mit-leiste', ja);
+    untenPruefen();
     if (!ja) eingabe.focus();
   }
+
+  /**
+   * iOS 26.0 lässt bei Home-Bildschirm-Apps den sichtbaren Bereich teils oberhalb des unteren Bildschirmrands enden
+   * (in Safari 26.1 von Apple behoben). Dann liegt die Home-Leiste schon in der Lücke darunter, und die Tab-Bar braucht
+   * keinen eigenen Abstand dafür. Erkennen: Web-App vom Home-Bildschirm, hochkant, Inhalt reicht unter die Statusleiste
+   * (Abstand oben > 0, also beginnt der Bereich oben am Bildschirmrand) und ist trotzdem mind. 20 px kürzer als der
+   * Bildschirm. Die Lücke selbst hat die Farbe der Tab-Bar (CSS: html.mit-leiste).
+   */
+  function untenPruefen() {
+    // Offene Tastatur verkleinert innerHeight: dann nicht neu bewerten (sonst Fehlalarm), Klasse bleibt wie sie war.
+    const a = document.activeElement;
+    if (a && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName)) return;
+    let luecke = false;
+    try {
+      const webApp = window.navigator.standalone === true ||
+        (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches);
+      const hochkant = window.innerHeight > window.innerWidth;
+      const probe = el('safe-probe');
+      const oben = probe ? parseFloat(getComputedStyle(probe).paddingTop) || 0 : 0;
+      luecke = webApp && hochkant && oben > 0 && window.screen.height - window.innerHeight >= 20;
+    } catch (e) { luecke = false; }
+    document.documentElement.classList.toggle('luecke-unten', luecke);
+  }
+  window.addEventListener('resize', untenPruefen);
+  window.addEventListener('orientationchange', untenPruefen);
 
   function meldung(text) {
     el('fehler').textContent = text || '';
@@ -48,14 +75,20 @@
    * Stand-Zeile oben: „Aktualisiert vor 5 Min.“ (läuft jede Minute mit, siehe unten). Bewusst keine Live-Region, sonst
    * würde VoiceOver jede Minute vorlesen; das Ergebnis eines Neuladens sagt S.aktualisieren an.
    */
+  const STAND_ALT_MS = 60 * 60 * 1000;
   function standZeigen() {
+    // Nur zeigen, wenn es etwas zu sagen gibt (Mark 2026-11-08: „Aktualisiert gerade eben“ braucht man nicht):
+    // gespeicherter Stand (offline/noch nicht neu geladen) oder Daten älter als eine Stunde. Laden zeigt der Kreisel
+    // im Neu-laden-Knopf.
     let t = '';
     if (Z.daten) {
+      const alt = Date.now() - Date.parse(Z.daten.stand) > STAND_ALT_MS;
       const rel = H.relativZeit(Z.daten.stand) || H.zeitFormat(Z.daten.stand);
-      t = Z.frisch ? 'Aktualisiert ' + rel : 'Gespeicherter Stand · ' + rel;
+      if (!Z.frisch) t = 'Gespeicherter Stand · ' + rel;
+      else if (alt) t = 'Aktualisiert ' + rel;
       el('stand').title = 'Stand: ' + H.zeitFormat(Z.daten.stand);
     }
-    if (Z.laedt) t += (t ? ' – ' : '') + 'lädt neu …';
+    el('stand').hidden = !t;
     el('stand').textContent = t;
     el('stand').classList.toggle('laedt', Z.laedt); // kleiner Kreisel vor dem Text (CSS)
     el('neu-laden').disabled = Z.laedt;
