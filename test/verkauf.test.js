@@ -172,3 +172,15 @@ test('uebersichtBauen: Hinweise werden gekappt, Abweichung zu B9 wird gemeldet',
   assert.strictEqual(u.hinweise.length, 20);
   assert.match(u.hinweise[19], /weitere Hinweise/);
 });
+
+test('Vergleichsmonate: die 12 Monate vor dem Diagramm-Zeitraum', () => {
+  const v = [{ monat: '2024-11', kanal: 'Karlsruhe', kunde: 'A', flaschen: 7, umsatz: 7 },
+    { monat: '2025-10', kanal: 'Karlsruhe', kunde: 'A', flaschen: 9, umsatz: 9 }];
+  const a = roh(k.verkaeufeAuswerten(v, '2026-11-08'));
+  assert.strictEqual(a.vergleichsmonate.length, 12);
+  assert.strictEqual(a.vergleichsmonate[0].monat, '2024-11');
+  assert.strictEqual(a.vergleichsmonate[11].monat, '2025-10');
+  assert.strictEqual(a.vergleichsmonate[0].flaschen, 7);
+  assert.strictEqual(a.vergleichsmonate[11].flaschen, 9);
+  assert.strictEqual(a.monate[0].monat, '2025-11', 'Diagramm bleibt bei 13 Monaten');
+});

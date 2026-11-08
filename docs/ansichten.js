@@ -124,11 +124,17 @@
       h('div', { class: 'reichweite-skala', 'aria-hidden': 'true' }, h('span', { text: 'heute' }), h('span', { text: '12 Monate' })));
   }
 
+  /** Monate vor dem Diagramm-Zeitraum (für den Vorjahresmonat), fehlt bei älteren Server-Versionen. */
+  function vergleichsmonate() {
+    const v = Z.daten && Z.daten.verkaeufe ? Z.daten.verkaeufe.vergleichsmonate : null;
+    return Array.isArray(v) ? v : null;
+  }
+
   /** Karte „Letzter voller Monat: N Flaschen, ±x % …“; antippen öffnet Verkäufe mit diesem Monat. */
   function letzterMonatKarte(monate) {
     if (monate.length < 2) return null;
     const i = monate.length - 2;
-    const t = H.monatsTrend(monate, i, 'flaschen');
+    const t = H.monatsTrend(monate, i, 'flaschen', vergleichsmonate());
     if (!t) return null;
     const vergleich = t.vorjahr || t.vormonat;
     return h('button', {
@@ -219,7 +225,7 @@
       h('p', { class: 'kachel-label' }, H.monatFormat(m.monat, true), laufend ? h('span', { class: 'badge klein-badge', text: 'bisher' }) : null),
       h('p', { class: 'info-wert' }, gross[0], h('span', { class: 'einheit', text: ' ' + gross[1] })),
       h('p', { class: 'kachel-zusatz', text: klein.join(' ') }),
-      trendZeile(H.monatsTrend(monate, i, wert)));
+      trendZeile(H.monatsTrend(monate, i, wert, vergleichsmonate())));
   }
 
   /** Balkendiagramm als SVG (13 Monate). Antippen eines Monats zeigt seine Zahlen oben in der Karte. */

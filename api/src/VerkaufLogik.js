@@ -99,8 +99,16 @@ function verkaeufeAuswerten(verkaeufe, heute) {
     const z = zeitraumAuswerten_(verkaeufe, m, m);
     monate.push({ monat: m, flaschen: z.flaschen, umsatz: z.umsatz });
   }
+  // Die 12 Monate davor, nur für den Vergleich mit dem Vorjahresmonat (das Diagramm zeigt weiter 13 Monate).
+  const vergleichsmonate = [];
+  for (let i = 24; i >= 13; i--) {
+    const m = monatPlus(jetzt, -i);
+    const z = zeitraumAuswerten_(verkaeufe, m, m);
+    vergleichsmonate.push({ monat: m, flaschen: z.flaschen, umsatz: z.umsatz });
+  }
   return {
     monate: monate,
+    vergleichsmonate: vergleichsmonate,
     letzte12: zeitraumAuswerten_(verkaeufe, monatPlus(jetzt, -12), monatPlus(jetzt, -1)),
     jahr: zeitraumAuswerten_(verkaeufe, jetzt.slice(0, 4) + '-01', jetzt),
     vorjahr: zeitraumAuswerten_(verkaeufe, (Number(jetzt.slice(0, 4)) - 1) + '-01', (Number(jetzt.slice(0, 4)) - 1) + '-12'),

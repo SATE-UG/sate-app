@@ -355,14 +355,15 @@
    * { monat, wert, prozent } oder null (Vergleichsmonat fehlt in den Daten oder ist ≤ 0). Der laufende Monat wird nicht
    * verglichen (er ist erst „bis heute“ gezählt, der Vergleich wäre unfair), dort sind beide null. Ungültig → null.
    */
-  function monatsTrend(monate, i, groesse) {
+  function monatsTrend(monate, i, groesse, frueher) {
     if (!Array.isArray(monate) || !(i >= 0 && i < monate.length) || !monate[i]) return null;
     const g = groesse === 'umsatz' ? 'umsatz' : 'flaschen';
     const m = monate[i];
     const laufend = i === monate.length - 1;
     const vergleich = (monat) => {
       if (laufend || !monat) return null;
-      const v = monate.find((x) => x && x.monat === monat);
+      const pool = Array.isArray(frueher) ? frueher.concat(monate) : monate;
+      const v = pool.find((x) => x && x.monat === monat);
       const p = v ? veraenderung(m[g], v[g]) : null;
       return p === null ? null : { monat: monat, wert: v[g], prozent: p };
     };

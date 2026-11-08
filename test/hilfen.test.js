@@ -301,3 +301,15 @@ test('Gesten: Wischen erkennen, Nachbar-Reiter, Gummiband', () => {
   assert.ok(H.gummiband(5000) < 200, 'nie über das Maximum');
   assert.ok(H.gummiband(300) - H.gummiband(200) < H.gummiband(100) - H.gummiband(0), 'wird zäher');
 });
+
+test('Trend: Vorjahresmonat aus den Vergleichsmonaten davor', () => {
+  const monate = [];
+  for (let i = 0; i < 13; i++) monate.push({ monat: H.monatPlus('2025-11', i), flaschen: 100 + i, umsatz: 0 });
+  const frueher = [{ monat: '2025-10', flaschen: 200, umsatz: 0 }];
+  // Okt 2026 (Index 11) mit 111 Flaschen gegen Okt 2025 mit 200
+  const t = H.monatsTrend(monate, 11, 'flaschen', frueher);
+  assert.strictEqual(t.vorjahr.monat, '2025-10');
+  assert.strictEqual(t.vorjahr.wert, 200);
+  assert.strictEqual(H.monatsTrend(monate, 11, 'flaschen').vorjahr, null, 'ohne Vergleichsmonate kein Vorjahr');
+  assert.strictEqual(H.monatsTrend(monate, 11, 'flaschen', null).vorjahr, null);
+});
