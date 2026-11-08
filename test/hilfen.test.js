@@ -203,3 +203,12 @@ test('Übersicht erkennen und Stände vergleichen', () => {
   assert.ok(H.neuer('2026-11-08T09:00:00Z', undefined));
   assert.ok(!H.neuer('quatsch', '2026-11-08T10:00:00Z'));
 });
+
+test('Kisten teilen: volle Kisten und Rest', () => {
+  assert.deepStrictEqual(H.kistenTeilen(3400, 24), { kisten: 141, rest: 16 });
+  assert.deepStrictEqual(H.kistenTeilen(48, 24), { kisten: 2, rest: 0 });
+  assert.deepStrictEqual(H.kistenTeilen(5, 24), { kisten: 0, rest: 5 });
+  assert.strictEqual(H.kistenTeilen(-3, 24), null);
+  assert.strictEqual(H.kistenTeilen(100, null), null);
+  assert.strictEqual(H.kistenTeilen(100, 0), null);
+});

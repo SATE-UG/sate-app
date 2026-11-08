@@ -125,8 +125,11 @@
           H.kistenFormat(b.pufferWochen) + ' Wochen Puffer.' })),
       h('div', { class: 'kacheln' },
         kachel('Bestand', H.zahlFormat(k.gesamtbestand, 0), 'Flaschen', k.gesamtQuelle === 'inventur' ? 'aus Inventur' : 'rechnerisch', 'flasche'),
-        kachel('Kisten', typeof k.kisten === 'number' ? '≈ ' + H.kistenFormat(k.kisten) : '–', '',
-          proKiste ? 'à ' + H.zahlFormat(proKiste, 0) + ' Flaschen' : null),
+        (() => {
+          const t = H.kistenTeilen(k.gesamtbestand, proKiste);
+          return kachel('Kisten', t ? H.zahlFormat(t.kisten, 0) : '–', t && t.rest ? '+ ' + H.zahlFormat(t.rest, 0) + ' Flaschen' : '',
+            proKiste ? 'volle Kisten à ' + H.zahlFormat(proKiste, 0) : null);
+        })(),
         kachel('Reichweite', H.zahlFormat(b.reichweite, 1), 'Monate',
           typeof k.mindestbestand === 'number' && k.mindestbestand > 0 ? 'bis zum Mindestbestand' : 'ab heute'),
         kachel('Ø pro Monat', H.zahlFormat(k.abverkaufProMonat, 0), 'Flaschen',
@@ -288,7 +291,11 @@
         h('div', {},
           h('p', { class: 'kachel-label', text: 'Bestand' }),
           h('p', { class: 'kachel-wert', text: H.zahlFormat(l.bestand, 0) }),
-          h('p', { class: 'kachel-zusatz', text: 'Flaschen' + (typeof l.kisten === 'number' ? ' · ≈ ' + H.kistenFormat(l.kisten) + ' Kisten' : '') })),
+          h('p', { class: 'kachel-zusatz', text: 'Flaschen' + (() => {
+            const pk = Z.daten && Z.daten.kennzahlen ? Z.daten.kennzahlen.flaschenProKiste : null;
+            const t = H.kistenTeilen(l.bestand, pk);
+            return t ? ' · ' + H.zahlFormat(t.kisten, 0) + (t.kisten === 1 ? ' Kiste' : ' Kisten') + (t.rest ? ' + ' + H.zahlFormat(t.rest, 0) + ' Fl.' : '') : '';
+          })() })),
         h('div', {},
           h('p', { class: 'kachel-label', text: 'Letzte Inventur' }),
           h('p', { class: 'lager-datum', text: H.datumText(l.letzteInventur) }),

@@ -54,6 +54,13 @@
     return istZahl(z) ? zahlFormat(z, 0) + ' €' : '–';
   }
 
+  /** Volle Kisten und Rest-Flaschen: (3400, 24) → { kisten: 141, rest: 16 }. Ungültig → null. */
+  function kistenTeilen(flaschen, proKiste) {
+    if (!istZahl(flaschen) || !istZahl(proKiste) || proKiste <= 0 || flaschen < 0) return null;
+    const ganz = Math.round(flaschen);
+    return { kisten: Math.floor(ganz / proKiste), rest: ganz % proKiste };
+  }
+
   /** Kisten mit höchstens einer Nachkommastelle (12 bzw. 12,5). */
   function kistenFormat(z) {
     if (!istZahl(z)) return '–';
@@ -297,7 +304,7 @@
     CODE_LAENGE, ARTEN, MAX_KOMMENTAR, codeBereinigen, codePruefen, apiUrlGueltig, zahlFormat, euroFormat, kistenFormat,
     zeitFormat, datumGueltig, datumFormat, datumText, monatFormat, zeitraumFormat, heuteBerlin, tagePlus, tageZwischen, bestellStufe,
     reichweiteBalken,
-    ganzeZahlEingabe, flaschenAusEingabe, kistenText, buchungPruefen, buchungText, anfrageIdAus, achse, diagrammMasse,
+    ganzeZahlEingabe, flaschenAusEingabe, kistenText, kistenTeilen, buchungPruefen, buchungText, anfrageIdAus, achse, diagrammMasse,
     achsenText, antwortDeuten, uebersichtGueltig, neuer,
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = hilfen;
