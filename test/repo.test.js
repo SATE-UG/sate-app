@@ -16,7 +16,7 @@ test('Apps-Script-Manifest: Berlin, V8, Web-App, nur Sheet lesen', () => {
   assert.strictEqual(m.timeZone, 'Europe/Berlin');
   assert.strictEqual(m.runtimeVersion, 'V8');
   assert.deepStrictEqual(m.webapp, { executeAs: 'USER_DEPLOYING', access: 'ANYONE_ANONYMOUS' });
-  assert.deepStrictEqual(m.oauthScopes, ['https://www.googleapis.com/auth/spreadsheets.readonly']);
+  assert.deepStrictEqual(m.oauthScopes, ['https://www.googleapis.com/auth/spreadsheets']);
 });
 
 test('clasp: rootDir api/src, Lokal.js wird gepusht, aber nie committet', () => {

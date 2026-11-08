@@ -4,13 +4,13 @@ App fürs SATE-Team (5 Leute, alle iPhone). Stand 2026-11-08: Mini-Version für 
 
 Entschieden (Mark, 2026-11-08):
 - **Oberfläche als PWA** in `docs/`, später über GitHub Pages aus `/docs`. Das Repo wird dafür **öffentlich**, deshalb steht nichts Geheimes im Git.
-- **Daten über eine Apps-Script-Web-App** in `api/` im Konto mark.reimer@trinksate.de. Sie liest das Sheet nur (Scope `spreadsheets.readonly`) und ändert nichts.
+- **Daten über eine Apps-Script-Web-App** in `api/` im Konto mark.reimer@trinksate.de. Scope `spreadsheets` (`SpreadsheetApp.openById` verlangt den vollen Scope, auch nur zum Lesen; später schreibt die App ins Lager-Log). Die Probe-Version liest nur.
 - **Anmeldung per persönlichem Zugangscode** statt Google-Login.
 
 ## Aufbau
 | Pfad | Inhalt |
 |---|---|
-| `api/src/appsscript.json` | Manifest: Europe/Berlin, V8, Web-App (`executeAs: USER_DEPLOYING`, `access: ANYONE_ANONYMOUS`), nur Scope `spreadsheets.readonly` |
+| `api/src/appsscript.json` | Manifest: Europe/Berlin, V8, Web-App (`executeAs: USER_DEPLOYING`, `access: ANYONE_ANONYMOUS`), nur Scope `spreadsheets` |
 | `api/src/Konfig.js` | Feste Werte: Tab, Zellen, Code-Alphabet und -Länge, Namen der Skripteigenschaften, Fehlertexte |
 | `api/src/Logik.js` | Reine Logik ohne Google: Code erzeugen/normalisieren, Hash, Anfrage prüfen, Zahlen lesen, Antwort bauen |
 | `api/src/Api.js` | `doGet`, `doPost`, `einrichten`, `codeAnlegen`, `codeSperren`, `codesAnzeigen` und die Google-Anbindung |
