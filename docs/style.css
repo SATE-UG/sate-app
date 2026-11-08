@@ -1,42 +1,24 @@
-/* SATE-App: schlicht, hell/dunkel nach Systemeinstellung, Abstände für Notch und Home-Leiste (Safe Area). */
+/* SATE-App im Look der Event-Slides: immer Schwarz/Weiß, Courier New, Logo oben links, „Trink SATE!“ unten.
+   Abstände für Notch und Home-Leiste (Safe Area, Statusleiste ist durchsichtig: black-translucent). */
 :root {
-  --hintergrund: #f4f4f1;
-  --karte: #ffffff;
-  --text: #1c1c1e;
-  --text-leise: #5f5f63;
-  --rand: #dcdcd6;
-  --haupt: #1c1c1e;
-  --haupt-text: #ffffff;
-  --fehler: #b3261e;
-  --fehler-grund: #fdecea;
-  color-scheme: light dark;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --hintergrund: #1c1c1e;
-    --karte: #2c2c2e;
-    --text: #f2f2f2;
-    --text-leise: #a1a1a6;
-    --rand: #3a3a3c;
-    --haupt: #f2f2f2;
-    --haupt-text: #1c1c1e;
-    --fehler: #ff8a80;
-    --fehler-grund: #3b1f1d;
-  }
+  --schwarz: #000000;
+  --weiss: #ffffff;
+  --leise: #b8b8b8; /* Grau nur für Nebensachen, Kontrast auf Schwarz > 10:1 */
+  color-scheme: dark;
 }
 
 * { box-sizing: border-box; }
 
-html { -webkit-text-size-adjust: 100%; }
+html { -webkit-text-size-adjust: 100%; background: var(--schwarz); }
 
 body {
   margin: 0;
   min-height: 100vh;
   min-height: 100dvh;
-  background: var(--hintergrund);
-  color: var(--text);
-  font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif;
+  display: flex;
+  background: var(--schwarz);
+  color: var(--weiss);
+  font-family: "Courier New", Courier, monospace;
   font-size: 17px;
   line-height: 1.4;
   padding: calc(16px + env(safe-area-inset-top)) calc(16px + env(safe-area-inset-right))
@@ -45,69 +27,121 @@ body {
 
 [hidden] { display: none !important; }
 
-.seite { max-width: 480px; margin: 0 auto; }
-
-.kopf h1 { font-size: 28px; letter-spacing: 0.08em; margin: 8px 0 20px; }
-
-.karte {
-  background: var(--karte);
-  border: 1px solid var(--rand);
-  border-radius: 16px;
-  padding: 20px;
+.seite {
+  flex: 1;
+  width: 100%;
+  max-width: 480px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
 }
 
-label { display: block; font-weight: 600; margin-bottom: 8px; }
+/* Kopf: Logo (Männchen + SATE) oben links wie auf den Slides */
+.kopf { margin: 4px 0 32px; }
+.logo { display: block; height: 40px; width: auto; }
+
+/* Überschrift wie „**Freitag** Events“: erstes Wort fett, Rest normal */
+.titel {
+  font-size: 30px;
+  font-weight: 400;
+  line-height: 1.15;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.titel strong { font-weight: 700; }
+.untertitel { margin: 6px 0 28px; font-size: 16px; }
+
+label { display: block; font-weight: 700; margin-bottom: 10px; }
 
 input {
   width: 100%;
   font: inherit;
   font-size: 20px; /* ≥ 16px, sonst zoomt iOS beim Tippen */
-  letter-spacing: 0.08em;
+  letter-spacing: 0.06em;
   padding: 12px 14px;
-  border: 1px solid var(--rand);
-  border-radius: 12px;
-  background: var(--hintergrund);
-  color: var(--text);
+  border: 2px solid var(--weiss);
+  border-radius: 0;
+  background: var(--schwarz);
+  color: var(--weiss);
+  -webkit-appearance: none;
+  appearance: none;
 }
+input::placeholder { color: #8a8a8a; opacity: 1; }
+input:focus { outline: 2px solid var(--weiss); outline-offset: 3px; }
 
-input:focus { outline: 2px solid var(--haupt); outline-offset: 1px; }
+.hinweis { color: var(--leise); font-size: 15px; margin: 12px 0 20px; }
 
-.hinweis, .stand { color: var(--text-leise); font-size: 15px; }
+/* Kennzahlen mit der SATE-Flasche als Aufzählungszeichen */
+.zahlen { margin: 0; display: grid; gap: 24px; }
+.zahl {
+  display: grid;
+  grid-template-columns: 32px 1fr;
+  column-gap: 16px;
+  align-items: start;
+}
+.zahl::before {
+  content: '';
+  grid-row: 1 / span 2;
+  width: 32px;
+  height: 36px;
+  margin-top: 4px;
+  background: url('bilder/flasche.png') center / contain no-repeat;
+}
+dt { font-weight: 700; font-size: 17px; }
+dd {
+  margin: 2px 0 0;
+  font-size: 44px;
+  font-weight: 700;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+  word-spacing: -0.35em; /* Leerzeichen vor der Einheit nicht so breit wie eine Ziffer */
+}
+.einheit { font-size: 18px; font-weight: 400; }
 
-h2 { font-size: 22px; margin: 0 0 16px; }
+.knoepfe { display: grid; gap: 12px; margin-top: 36px; }
 
-.zahlen { margin: 0; display: grid; gap: 12px; }
-.zahl { border-top: 1px solid var(--rand); padding-top: 12px; }
-.zahl:first-child { border-top: 0; padding-top: 0; }
-dt { color: var(--text-leise); font-size: 15px; }
-dd { margin: 2px 0 0; font-size: 34px; font-weight: 700; font-variant-numeric: tabular-nums; }
-.einheit { font-size: 17px; font-weight: 400; color: var(--text-leise); }
-
-.knoepfe { display: grid; gap: 10px; margin-top: 16px; }
-
+/* Knöpfe: weiß umrandet auf Schwarz */
 .knopf {
   width: 100%;
-  min-height: 48px;
+  min-height: 52px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
   font: inherit;
-  font-weight: 600;
-  border-radius: 12px;
-  border: 1px solid var(--rand);
-  background: transparent;
-  color: var(--text);
+  font-size: 18px;
+  border: 2px solid var(--weiss);
+  border-radius: 0;
+  background: var(--schwarz);
+  color: var(--weiss);
   cursor: pointer;
+  -webkit-appearance: none;
+  appearance: none;
   -webkit-tap-highlight-color: transparent;
 }
-
-.knopf.haupt { background: var(--haupt); color: var(--haupt-text); border-color: var(--haupt); }
+.knopf.haupt { font-weight: 700; }
+.knopf:active { background: var(--weiss); color: var(--schwarz); }
+.knopf:focus-visible { outline: 2px solid var(--weiss); outline-offset: 3px; }
 .knopf:disabled { opacity: 0.5; }
-form .knopf { margin-top: 8px; }
+.pfeil { height: 20px; width: auto; }
+.knopf:active .pfeil { filter: invert(1); }
 
-.status { text-align: center; color: var(--text-leise); }
+.status { text-align: center; margin-top: 24px; }
 
 .fehler {
-  margin-top: 16px;
+  margin: 24px 0 0;
   padding: 12px 14px;
-  border-radius: 12px;
-  background: var(--fehler-grund);
-  color: var(--fehler);
+  border: 2px dashed var(--weiss);
+  font-weight: 700;
 }
+
+/* Fußzeile unten links wie auf den Slides */
+.fuss {
+  margin-top: auto;
+  padding-top: 40px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 24px;
+}
+.herz { height: 24px; width: auto; margin-top: -4px; }

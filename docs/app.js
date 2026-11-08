@@ -49,7 +49,7 @@
     knoepfe.forEach((k) => { k.disabled = ja; });
   }
   function daten(d) {
-    el('gruss').textContent = 'Hallo ' + d.name;
+    el('name').textContent = d.name; // „Hallo“ steht fett davor in index.html
     el('bestand').textContent = H.zahlFormat(d.bestand, 0);
     el('reichweite').textContent = H.zahlFormat(d.reichweite, 1);
     el('zeit').textContent = H.zeitFormat(d.zeit);

@@ -7,14 +7,15 @@
   <meta name="referrer" content="no-referrer">
   <title>SATE</title>
   <meta name="description" content="SATE-Team-App">
-  <meta name="theme-color" content="#f4f4f1" media="(prefers-color-scheme: light)">
-  <meta name="theme-color" content="#1c1c1e" media="(prefers-color-scheme: dark)">
-  <meta name="color-scheme" content="light dark">
+  <!-- Immer dunkel wie die SATE-Slides: schwarz, weiß, Courier New -->
+  <meta name="theme-color" content="#000000">
+  <meta name="color-scheme" content="dark">
   <!-- iOS: als App vom Home-Bildschirm starten -->
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-title" content="SATE">
-  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <!-- Statusleiste durchsichtig über Schwarz; die Abstände dafür macht style.css (safe-area-inset) -->
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <link rel="apple-touch-icon" sizes="180x180" href="icons/apple-touch-icon.png">
   <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
   <link rel="manifest" href="manifest.webmanifest">
@@ -23,23 +24,27 @@
 <body>
   <main class="seite">
     <header class="kopf">
-      <h1>SATE</h1>
+      <img class="logo" src="bilder/logo.png" alt="SATE" width="174" height="40">
     </header>
 
     <!-- Anmeldung -->
-    <section id="anmelden" class="karte" hidden>
+    <section id="anmelden" hidden>
+      <h1 class="titel"><strong>SATE</strong> Team</h1>
+      <p class="untertitel">Anmelden</p>
       <form id="code-form" novalidate>
         <label for="code">Dein Zugangscode</label>
         <input id="code" name="code" type="text" inputmode="text" autocapitalize="characters" autocomplete="off"
                autocorrect="off" spellcheck="false" maxlength="24" placeholder="ABCD-EFGH-JKMN" enterkeyhint="go">
         <p class="hinweis">Den Code bekommst du von Mark. Er bleibt auf diesem Gerät gespeichert.</p>
-        <button id="code-senden" type="submit" class="knopf haupt">Anmelden</button>
+        <button id="code-senden" type="submit" class="knopf haupt">Anmelden <img class="pfeil" src="bilder/pfeil.png" alt="" width="17" height="20"></button>
       </form>
     </section>
 
     <!-- Übersicht -->
-    <section id="uebersicht" class="karte" hidden>
-      <h2 id="gruss">Hallo</h2>
+    <section id="uebersicht" hidden>
+      <h1 class="titel"><strong>Hallo</strong> <span id="name"></span></h1>
+      <p class="untertitel">Stand: <span id="zeit">–</span></p>
+      <!-- Flasche als Aufzählungszeichen kommt aus style.css (.zahl::before) -->
       <dl class="zahlen">
         <div class="zahl">
           <dt>Bestand</dt>
@@ -50,7 +55,6 @@
           <dd><span id="reichweite">–</span> <span class="einheit">Monate</span></dd>
         </div>
       </dl>
-      <p class="stand">Stand: <span id="zeit">–</span></p>
       <div class="knoepfe">
         <button id="neu-laden" type="button" class="knopf haupt">Neu laden</button>
         <button id="abmelden" type="button" class="knopf">Abmelden</button>
@@ -59,6 +63,8 @@
 
     <p id="laden" class="status" role="status" aria-live="polite" hidden>Lädt …</p>
     <p id="fehler" class="fehler" role="alert" hidden></p>
+
+    <footer class="fuss">Trink SATE!<img class="herz" src="bilder/herz.png" alt="" width="24" height="24"></footer>
   </main>
 
   <script src="config.js"></script>

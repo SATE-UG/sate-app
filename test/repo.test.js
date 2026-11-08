@@ -53,6 +53,37 @@ function pngGroesse(datei) {
   return [b.readUInt32BE(16), b.readUInt32BE(20)];
 }
 
+/** 8-Bit-RGBA-PNG (wie von werkzeuge/bilder.js) in Pixel entpacken: IDAT zusammensetzen, entpacken, Zeilenfilter rückgängig. */
+function pngLesen(datei) {
+  const b = fs.readFileSync(path.join(WURZEL, datei));
+  const [breite, hoehe] = [b.readUInt32BE(16), b.readUInt32BE(20)];
+  assert.deepStrictEqual([b[24], b[25], b[28]], [8, 6, 0], datei + ': erwartet 8 Bit RGBA ohne Interlace');
+  const teile = [];
+  for (let o = 8; o < b.length;) {
+    const laenge = b.readUInt32BE(o);
+    if (b.toString('latin1', o + 4, o + 8) === 'IDAT') teile.push(b.subarray(o + 8, o + 8 + laenge));
+    o += 12 + laenge;
+  }
+  const roh = require('node:zlib').inflateSync(Buffer.concat(teile));
+  const z = breite * 4;
+  const pixel = Buffer.alloc(z * hoehe);
+  for (let y = 0; y < hoehe; y++) {
+    const filter = roh[y * (z + 1)];
+    for (let x = 0; x < z; x++) {
+      const w = roh[y * (z + 1) + 1 + x];
+      const a = x >= 4 ? pixel[y * z + x - 4] : 0;
+      const o = y > 0 ? pixel[(y - 1) * z + x] : 0;
+      const c = x >= 4 && y > 0 ? pixel[(y - 1) * z + x - 4] : 0;
+      const p = a + o - c;
+      const paeth = Math.abs(p - a) <= Math.abs(p - o) && Math.abs(p - a) <= Math.abs(p - c) ? a : (Math.abs(p - o) <= Math.abs(p - c) ? o : c);
+      const vor = [0, a, o, (a + o) >> 1, paeth][filter];
+      assert.ok(vor !== undefined, datei + ': unbekannter Filter ' + filter);
+      pixel[y * z + x] = (w + vor) & 255;
+    }
+  }
+  return { breite, hoehe, pixel };
+}
+
 test('PWA: Manifest und Icons', () => {
   const m = JSON.parse(lies('docs/manifest.webmanifest'));
   assert.strictEqual(m.name, 'SATE');
@@ -78,7 +109,37 @@ test('PWA: iOS-Kopfzeilen in index.html', () => {
   assert.match(h, /<link rel="apple-touch-icon" sizes="180x180" href="icons\/apple-touch-icon.png">/);
   assert.match(h, /<link rel="manifest" href="manifest.webmanifest">/);
   assert.match(lies('docs/style.css'), /env\(safe-area-inset-bottom\)/);
-  assert.match(lies('docs/style.css'), /prefers-color-scheme: dark/);
+  assert.match(lies('docs/style.css'), /env\(safe-area-inset-top\)/, 'black-translucent braucht Abstand oben');
+});
+
+test('PWA: SATE-Look (immer schwarz, Courier New, Icons deckend)', () => {
+  const h = lies('docs/index.html');
+  const css = lies('docs/style.css');
+  const m = JSON.parse(lies('docs/manifest.webmanifest'));
+  assert.strictEqual(m.theme_color, '#000000');
+  assert.strictEqual(m.background_color, '#000000');
+  assert.match(h, /<meta name="theme-color" content="#000000">/);
+  assert.match(h, /<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">/);
+  assert.match(css, /font-family: "Courier New", Courier, monospace;/);
+  assert.match(css, /color-scheme: dark;/);
+  assert.doesNotMatch(css, /prefers-color-scheme/, 'kein Hell-Modus mehr');
+  // Eingaben ≥ 16 px, sonst zoomt iOS
+  const input = /\ninput \{([^}]*)\}/.exec(css)[1];
+  assert.ok(Number(/font-size: (\d+)px/.exec(input)[1]) >= 16);
+  // Icons ohne Transparenz (iOS füllt durchsichtige Flächen sonst unschön auf), Ecken schwarz
+  for (const d of ['docs/icons/apple-touch-icon.png', 'docs/icons/icon-192.png', 'docs/icons/icon-512.png']) {
+    const { breite, pixel } = pngLesen(d);
+    for (let i = 3; i < pixel.length; i += 4) assert.strictEqual(pixel[i], 255, d + ': durchsichtiges Pixel');
+    assert.deepStrictEqual([...pixel.subarray(0, 3)], [0, 0, 0], d + ': Ecke nicht schwarz');
+    assert.ok(pixel.some((w, i) => i % 4 !== 3 && w > 200), d + ': kein weißes Motiv');
+    assert.ok(breite > 0);
+  }
+  for (const d of ['logo', 'flasche', 'herz', 'pfeil']) {
+    const datei = 'docs/bilder/' + d + '.png';
+    const [b, hoehe] = pngGroesse(datei);
+    assert.ok(b <= 600 && hoehe <= 200, datei + ' zu groß: ' + b + 'x' + hoehe);
+    assert.ok(fs.statSync(path.join(WURZEL, datei)).size < 50000, datei + ' Datei zu groß');
+  }
 });
 
 test('PWA: Service Worker cacht alle Hüllen-Dateien, Version im Cache-Namen', () => {
@@ -89,6 +150,8 @@ test('PWA: Service Worker cacht alle Hüllen-Dateien, Version im Cache-Namen', (
   for (const d of liste) if (d !== './') assert.ok(fs.existsSync(path.join(WURZEL, 'docs', d)), 'fehlt: ' + d);
   const verweise = (lies('docs/index.html').match(/(?:src|href)="([^"]+)"/g) || []).map((s) => s.replace(/^(src|href)="|"$/g, ''));
   for (const v of verweise) assert.ok(liste.includes(v), 'nicht im Cache: ' + v);
+  const cssBilder = (lies('docs/style.css').match(/url\('([^']+)'\)/g) || []).map((s) => s.replace(/^url\('|'\)$/g, ''));
+  for (const v of cssBilder) assert.ok(liste.includes(v), 'CSS-Bild nicht im Cache: ' + v);
   assert.match(sw, /req\.method !== 'GET'/);
 });
 

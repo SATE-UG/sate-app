@@ -17,8 +17,8 @@ Entschieden (Mark, 2026-11-08):
 | `api/src/Lokal.js` | **Nicht im Git** (`.gitignore`), wird aber mit `clasp push` hochgeladen: Sheet-ID |
 | `api/Lokal.example.js` | Vorlage für `Lokal.js` |
 | `.clasp.json` | Skriptprojekt „SATE-App“, `rootDir: api/src` |
-| `docs/` | PWA: `index.html`, `app.js`, `hilfen.js` (reine Hilfen, getestet), `style.css`, `config.js` (Web-App-URL), `manifest.webmanifest`, `sw.js`, `icons/` |
-| `werkzeuge/icons.js` | Erzeugt die vorläufigen Icons („SATE“ weiß auf dunkel) mit macOS-Bordmitteln |
+| `docs/` | PWA: `index.html`, `app.js`, `hilfen.js` (reine Hilfen, getestet), `style.css`, `config.js` (Web-App-URL), `manifest.webmanifest`, `sw.js`, `icons/`, `bilder/` (Logo, Flasche, Herz, Doppelpfeil) |
+| `werkzeuge/bilder.js` | Erzeugt App-Icons und `docs/bilder/` aus den SATE-Originalen mit macOS-Bordmitteln |
 | `test/` | Node-Tests (`npm test`), Google-Attrappen in `test/google.js` |
 
 ## Schnittstelle
@@ -67,8 +67,16 @@ So legt Mark einen Code an (Apps-Script-Editor, `clasp open-script` oder script.
 - Bei Netzfehlern bleibt der Code gespeichert, bei „Code ungültig“ wird er gelöscht.
 - `sw.js` cacht die App-Hülle (Cache `sate-huelle-<VERSION>`); Anfragen an die Schnittstelle (POST, fremder Host) gehen immer übers Netz. **Nach jeder Änderung in `docs/` die `VERSION` in `sw.js` hochzählen**, sonst zeigen installierte iPhones die alte Fassung.
 - Keine fremden Bibliotheken, kein CDN. Content-Security-Policy erlaubt nur eigene Dateien und Verbindungen zu `script.google.com`/`script.googleusercontent.com`.
-- Hell/dunkel nach Systemeinstellung, Abstände für Notch und Home-Leiste (`viewport-fit=cover`, `env(safe-area-inset-*)`).
-- Icons sind vorläufig (`osascript -l JavaScript werkzeuge/icons.js "$PWD/docs/icons"`). Kommt das Logo: PNGs gleicher Größe ersetzen (180, 192, 512) und `VERSION` hochzählen.
+- Abstände für Notch und Home-Leiste (`viewport-fit=cover`, `env(safe-area-inset-*)`, Statusleiste `black-translucent`).
+
+## Branding (seit 2026-11-08)
+Look wie die Event-Slides des Crawlers (`sate-eventcrawler-muc/examples/`): immer schwarz, weiße Schrift, keine Farben, Schrift Courier New (Systemschrift, auch auf dem iPhone). Oben links Logo (Männchen + „SATE“), Überschrift „**Hallo** Name“ (fett + normal wie „**Freitag** Events“), SATE-Flasche als Aufzählungszeichen, unten „Trink SATE!“ mit Herz, Knöpfe weiß umrandet, Doppelpfeil im Anmelde-Knopf. `theme_color`/`background_color` schwarz.
+
+Bilder neu erzeugen (Originale im Crawler-Repo `assets/`, werden nur gelesen):
+```
+osascript -l JavaScript werkzeuge/bilder.js ~/GitHub/sate-eventcrawler-muc/assets "$PWD/docs"
+```
+Das schneidet die Originale auf den sichtbaren Bereich zu (wie `_load_asset` im Crawler) und schreibt Größen für 3×-Retina: `bilder/logo.png` (120 px hoch), `flasche.png` (108), `herz.png` (72), `pfeil.png` (60), Icons 180/192/512 (Strichmännchen weiß auf Schwarz, 70 % breit, deckend). Danach `VERSION` in `docs/sw.js` hochzählen.
 
 ## Sicherheitsregeln
 - **Nichts Geheimes ins Repo** (wird öffentlich): keine Sheet-ID, keine Codes, keine Schlüssel. Die Sheet-ID steht nur in `api/src/Lokal.js`. Vor jedem Commit: `npm test` (prüft, dass die ID aus `Lokal.js` in keiner Git-Datei steht) bzw. `git grep <Sheet-ID>`.
