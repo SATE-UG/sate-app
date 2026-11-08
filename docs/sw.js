@@ -1,7 +1,7 @@
 // Service Worker: hält die App-Hülle im Cache, damit die App schnell (und ohne Netz) startet.
 // Die Schnittstelle (script.google.com, POST) läuft immer übers Netz, nie aus dem Cache.
 // Nach JEDER Änderung an Dateien in docs/ VERSION hochzählen, sonst bleibt auf den iPhones die alte Fassung.
-const VERSION = 'v3';
+const VERSION = 'v4';
 const CACHE = 'sate-huelle-' + VERSION;
 const HUELLE = [
   './',
@@ -9,6 +9,9 @@ const HUELLE = [
   'style.css',
   'config.js',
   'hilfen.js',
+  'kern.js',
+  'ansichten.js',
+  'eintragen.js',
   'app.js',
   'manifest.webmanifest',
   'icons/apple-touch-icon.png',

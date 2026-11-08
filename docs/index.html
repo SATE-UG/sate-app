@@ -25,6 +25,7 @@
   <main class="seite">
     <header class="kopf">
       <img class="logo" src="bilder/logo.png" alt="SATE" width="174" height="40">
+      <button id="neu-laden" type="button" class="knopf klein" hidden>Neu laden</button>
     </header>
 
     <!-- Anmeldung -->
@@ -37,38 +38,115 @@
                autocorrect="off" spellcheck="false" maxlength="24" placeholder="ABCD-EFGH-JKMN" enterkeyhint="go">
         <p class="hinweis">Den Code bekommst du von Mark. Er bleibt auf diesem Gerät gespeichert.</p>
         <button id="code-senden" type="submit" class="knopf haupt">Anmelden <img class="pfeil" src="bilder/pfeil.png" alt="" width="17" height="20"></button>
+        <p id="anmelden-laden" class="status" role="status" aria-live="polite" hidden>Prüft den Code …</p>
+        <p id="anmelden-fehler" class="fehler" role="alert" hidden></p>
       </form>
     </section>
 
-    <!-- Übersicht -->
-    <section id="uebersicht" hidden>
-      <h1 class="titel"><strong>Hallo</strong> <span id="name"></span></h1>
-      <p class="untertitel">Stand: <span id="zeit">–</span></p>
-      <!-- Flasche als Aufzählungszeichen kommt aus style.css (.zahl::before) -->
-      <dl class="zahlen">
-        <div class="zahl">
-          <dt>Bestand</dt>
-          <dd><span id="bestand">–</span> <span class="einheit">Flaschen</span></dd>
-        </div>
-        <div class="zahl">
-          <dt>Reichweite</dt>
-          <dd><span id="reichweite">–</span> <span class="einheit">Monate</span></dd>
-        </div>
-      </dl>
-      <div class="knoepfe">
-        <button id="neu-laden" type="button" class="knopf haupt">Neu laden</button>
-        <button id="abmelden" type="button" class="knopf">Abmelden</button>
-      </div>
-    </section>
+    <!-- App nach der Anmeldung: Stand-Zeile, Fehler, vier Ansichten (Reiter unten) -->
+    <div id="app" hidden>
+      <p id="stand" class="stand" role="status" aria-live="polite"></p>
+      <p id="fehler" class="fehler" role="alert" hidden></p>
 
-    <p id="laden" class="status" role="status" aria-live="polite" hidden>Lädt …</p>
-    <p id="fehler" class="fehler" role="alert" hidden></p>
+      <section id="ansicht-uebersicht" class="ansicht" role="tabpanel" aria-labelledby="reiter-uebersicht" hidden>
+        <h1 class="titel"><strong>Hallo</strong> <span id="name"></span></h1>
+        <div id="uebersicht-inhalt"></div>
+        <div class="knoepfe">
+          <button id="abmelden" type="button" class="knopf">Abmelden</button>
+        </div>
+      </section>
+
+      <section id="ansicht-verkaeufe" class="ansicht" role="tabpanel" aria-labelledby="reiter-verkaeufe" hidden>
+        <h1 class="titel"><strong>Verkäufe</strong> pro Monat</h1>
+        <div id="verkaeufe-inhalt"></div>
+      </section>
+
+      <section id="ansicht-lager" class="ansicht" role="tabpanel" aria-labelledby="reiter-lager" hidden>
+        <h1 class="titel"><strong>Lager</strong> &amp; Verlauf</h1>
+        <div id="lager-inhalt"></div>
+        <h2>Verlauf</h2>
+        <div id="verlauf-inhalt"></div>
+        <h2>Verkäufe zuordnen</h2>
+        <p class="hinweis">Rechnungen der letzten 60 Tage. Kamen die Flaschen aus einem anderen Lager, hier den Standort ändern.</p>
+        <div id="zuordnen-inhalt"></div>
+      </section>
+
+      <section id="ansicht-eintragen" class="ansicht" role="tabpanel" aria-labelledby="reiter-eintragen" hidden>
+        <h1 class="titel"><strong>Neu</strong> eintragen</h1>
+        <form id="buchen-form" novalidate>
+          <fieldset class="feld">
+            <legend>Was ist passiert?</legend>
+            <div id="arten" class="arten"></div>
+            <p id="art-text" class="hinweis" aria-live="polite">Bitte oben auswählen.</p>
+          </fieldset>
+
+          <div class="feld">
+            <label for="b-standort" id="b-standort-label">Standort</label>
+            <select id="b-standort"></select>
+          </div>
+          <div class="feld" id="b-nach-feld" hidden>
+            <label for="b-nach">Nach</label>
+            <select id="b-nach"></select>
+          </div>
+
+          <fieldset class="feld">
+            <legend id="b-flaschen-legende">Flaschen</legend>
+            <div class="zwei">
+              <div id="b-kisten-feld">
+                <label for="b-kisten" class="klein" id="b-kisten-label">Kisten</label>
+                <input id="b-kisten" type="text" inputmode="numeric" autocomplete="off" placeholder="0">
+              </div>
+              <div>
+                <label for="b-flaschen" class="klein">einzelne Flaschen</label>
+                <input id="b-flaschen" type="text" inputmode="numeric" autocomplete="off" placeholder="0">
+              </div>
+            </div>
+            <p id="b-summe" class="summe" aria-live="polite"></p>
+          </fieldset>
+
+          <div class="feld">
+            <label for="b-datum">Datum</label>
+            <input id="b-datum" type="date">
+          </div>
+          <div class="feld">
+            <label for="b-kommentar">Kommentar <span class="leise">(optional)</span></label>
+            <textarea id="b-kommentar" rows="2" autocomplete="off" placeholder="z. B. Sommerfest im Park"></textarea>
+          </div>
+
+          <p id="buchen-fehler" class="fehler" role="alert" hidden></p>
+          <button id="buchen-senden" type="submit" class="knopf haupt">Speichern</button>
+        </form>
+      </section>
+    </div>
 
     <footer class="fuss">Trink SATE!<img class="herz" src="bilder/herz.png" alt="" width="24" height="24"></footer>
   </main>
 
+  <!-- Untere Leiste mit den vier Ansichten -->
+  <nav id="leiste" class="leiste" role="tablist" aria-label="Ansichten" hidden>
+    <button id="reiter-uebersicht" type="button" role="tab" data-ansicht="uebersicht" aria-controls="ansicht-uebersicht">Übersicht</button>
+    <button id="reiter-verkaeufe" type="button" role="tab" data-ansicht="verkaeufe" aria-controls="ansicht-verkaeufe">Verkäufe</button>
+    <button id="reiter-lager" type="button" role="tab" data-ansicht="lager" aria-controls="ansicht-lager">Lager</button>
+    <button id="reiter-eintragen" type="button" role="tab" data-ansicht="eintragen" aria-controls="ansicht-eintragen">Eintragen</button>
+  </nav>
+
+  <!-- Kurze Rückmeldung nach dem Speichern (über der Leiste), antippen schließt -->
+  <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+
+  <!-- Rückfrage (Storno, „trotzdem speichern?“, Abmelden) -->
+  <dialog id="dialog" class="dialog" aria-labelledby="dialog-text">
+    <p id="dialog-text"></p>
+    <div class="knoepfe">
+      <button id="dialog-ja" type="button" class="knopf haupt">Ja</button>
+      <button id="dialog-nein" type="button" class="knopf">Abbrechen</button>
+    </div>
+  </dialog>
+
   <script src="config.js"></script>
   <script src="hilfen.js"></script>
+  <script src="kern.js"></script>
+  <script src="ansichten.js"></script>
+  <script src="eintragen.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

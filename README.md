@@ -1,6 +1,6 @@
 # SATE-App
 
-App fürs SATE-Team (5 Leute, alle iPhone). Stand 2026-11-08: Mini-Version für den ersten iPhone-Test. Nach dem Zugangscode zeigt sie „Hallo <Name>“, den rechnerischen Bestand in Flaschen und die Reichweite in Monaten aus dem Google Sheet „SATE Verkäufe“ (Tab `Übersicht`, Zellen B10 und B13). Seit Task 4 (2026-11-08) rechnet die Schnittstelle zusätzlich Bestand pro Standort, Bestellstatus und Verkäufe-Auswertung (Aktion `uebersicht`, siehe unten); die PWA zeigt das erst ab Task 6. Seit Task 5 (2026-11-08) kann die Schnittstelle auch eintragen (`buchen`, `stornieren`, `verkaufStandort`, dazu `verlauf`), die Knöpfe in der PWA kommen mit Task 6.
+App fürs SATE-Team (5 Leute, alle iPhone). Stand 2026-11-08: Mini-Version für den ersten iPhone-Test. Nach dem Zugangscode zeigt sie „Hallo <Name>“, den rechnerischen Bestand in Flaschen und die Reichweite in Monaten aus dem Google Sheet „SATE Verkäufe“ (Tab `Übersicht`, Zellen B10 und B13). Seit Task 4 (2026-11-08) rechnet die Schnittstelle zusätzlich Bestand pro Standort, Bestellstatus und Verkäufe-Auswertung (Aktion `uebersicht`, siehe unten). Seit Task 5 (2026-11-08) kann die Schnittstelle auch eintragen (`buchen`, `stornieren`, `verkaufStandort`, dazu `verlauf`). Seit Task 6 (2026-11-08) zeigt die PWA das alles in vier Reitern (siehe „PWA-Details“).
 
 Entschieden (Mark, 2026-11-08):
 - **Oberfläche als PWA** in `docs/`, später über GitHub Pages aus `/docs`. Das Repo wird dafür **öffentlich**, deshalb steht nichts Geheimes im Git.
@@ -21,7 +21,7 @@ Entschieden (Mark, 2026-11-08):
 | `api/src/Lokal.js` | **Nicht im Git** (`.gitignore`), wird aber mit `clasp push` hochgeladen: Sheet-ID |
 | `api/Lokal.example.js` | Vorlage für `Lokal.js` |
 | `.clasp.json` | Skriptprojekt „SATE-App“, `rootDir: api/src` |
-| `docs/` | PWA: `index.html`, `app.js`, `hilfen.js` (reine Hilfen, getestet), `style.css`, `config.js` (Web-App-URL), `manifest.webmanifest`, `sw.js`, `icons/`, `bilder/` (Logo, Flasche, Herz, Doppelpfeil) |
+| `docs/` | PWA: `index.html`, `kern.js` (Zustand, Speicher, Schnittstelle, Rückfrage), `ansichten.js` (Übersicht, Verkäufe, Lager), `eintragen.js` (Formular), `app.js` (Anmeldung, Reiter, Laden), `hilfen.js` (reine Hilfen, getestet), `style.css`, `config.js` (Web-App-URL), `manifest.webmanifest`, `sw.js`, `icons/`, `bilder/` (Logo, Flasche, Herz, Doppelpfeil) |
 | `werkzeuge/bilder.js` | Erzeugt App-Icons und `docs/bilder/` aus den SATE-Originalen mit macOS-Bordmitteln |
 | `test/` | Node-Tests (`npm test`), Google-Attrappen in `test/google.js`, erfundene Testdaten in `test/daten.js` (**nie echte Verkaufsdaten**, das Repo ist öffentlich) |
 
@@ -109,8 +109,14 @@ Stand 2026-11-08: Web-App bereitgestellt (URL in `docs/config.js`), Repo `SATE-U
 `python3 -m http.server 8000 --directory docs` und http://localhost:8000 öffnen. Ohne eingetragene Web-App-URL meldet die App „noch nicht fertig eingerichtet“.
 
 ## PWA-Details
-- Ablauf: erster Start → „Dein Zugangscode“ → `ping` → Code in `localStorage` (nur bei Erfolg; geht `localStorage` nicht, z. B. im privaten Modus, gilt der Code nur bis zum Schließen). Danach „Hallo <Name>“, Bestand (z. B. 8.041 Flaschen), Reichweite (z. B. 7,3 Monate), Stand. Knöpfe „Neu laden“ und „Abmelden“ (löscht den gespeicherten Code).
-- Bei Netzfehlern bleibt der Code gespeichert, bei „Code ungültig“ wird er gelöscht.
+- Ablauf: erster Start → „Dein Zugangscode“ → Aktion `uebersicht` → Code in `localStorage` (nur bei Erfolg; geht `localStorage` nicht, z. B. im privaten Modus, gilt der Code nur bis zum Schließen). Oben „Neu laden“, unten vier Reiter (gewählter invertiert, Ansicht wird gemerkt):
+  - **Übersicht:** Bestellstatus als Kasten (ok = umrandet, bald = doppelt umrandet, jetzt bestellen = invertiert) mit „spätestens bestellen bis“, Gesamtbestand (Kisten, „aus Inventur“/„rechnerisch“), Reichweite mit Ø-Abverkauf, „leer etwa am“, Bestand pro Standort, Hinweise der Schnittstelle, „Abmelden“ (mit Rückfrage).
+  - **Verkäufe:** Balkendiagramm der 13 Monate als eigenes SVG (Flaschen/Umsatz umschaltbar, Monat antippen zeigt die Zahlen, laufender Monat gestrichelt), darunter Kanäle und Top 10 Kunden für „letzte 12 Monate“ oder „dieses Jahr“.
+  - **Lager:** Karte pro Standort (Bestand, Kisten, letzte Inventur, Schwund bzw. „noch keine Inventur“), Verlauf (Aktion `verlauf`, „Storno“ mit Rückfrage), „Verkäufe zuordnen“ (Rechnungen der letzten 60 Tage, Standort per Auswahl, Aktion `verkaufStandort`).
+  - **Eintragen:** Art als große Knöpfe mit kurzer Erklärung, Standort (bei Umlagerung „von“/„nach“), Kisten × Flaschen pro Kiste + einzelne Flaschen (Summe darunter), Datum (Standard heute), Kommentar. Prüft vor dem Senden wie die Schnittstelle.
+- Schreiben: `anfrageId` pro Formular-Entwurf (bleibt bei erneutem Tippen nach Zeitüberschreitung gleich, damit nichts doppelt landet). Will der Server ein „trotzdem“ (`brauchtBestaetigung`), kommt seine Warnung als Rückfrage, bei Ja dieselbe Anfrage mit `bestaetigt: true`. Die frische Übersicht aus der Antwort wird übernommen, Rückmeldung als kurzer Hinweis über der Leiste.
+- Die letzte Übersicht liegt in `localStorage` (`sate.uebersicht`) und erscheint beim Start sofort („Gespeicherter Stand von …, lädt neu …“). Abmelden löscht Code, gespeicherte Übersicht und gemerkte Ansicht. Antworten, die nach dem Abmelden oder während einer Schreib-Aktion ankommen, werden verworfen (Wettläufe).
+- Bei Netzfehlern bleiben Code und Daten gespeichert, bei „Code ungültig“ wird beides gelöscht.
 - `sw.js` cacht die App-Hülle (Cache `sate-huelle-<VERSION>`); Anfragen an die Schnittstelle (POST, fremder Host) gehen immer übers Netz. **Nach jeder Änderung in `docs/` die `VERSION` in `sw.js` hochzählen**, sonst zeigen installierte iPhones die alte Fassung.
 - Keine fremden Bibliotheken, kein CDN. Content-Security-Policy erlaubt nur eigene Dateien und Verbindungen zu `script.google.com`/`script.googleusercontent.com`.
 - Abstände für Notch und Home-Leiste (`viewport-fit=cover`, `env(safe-area-inset-*)`, Statusleiste `black-translucent`).
@@ -129,4 +135,4 @@ Das schneidet die Originale auf den sichtbaren Bereich zu (wie `_load_asset` im 
 - Die Web-App läuft als Mark. Sie schreibt nur nach gültigem Code und nur wie unter „Eintragen“ beschrieben (Lager-Log und Abfüllungen anhängen, Verkäufe Spalte L, `Lager!B2:F5`), nie die Spalten A–K im Tab Verkäufe. Die Google-Attrappen in `test/google.js` werfen bei jedem anderen Schreibversuch.
 - Codes nur persönlich weitergeben. Verloren oder Person nicht mehr im Team: `codeSperren`.
 - Bekannte Grenze (Codex-Review 2026-11-08): Fehlversuche werden nicht gedrosselt. Erraten ist bei ≈ 59 Bit praktisch ausgeschlossen, aber massenhafte Anfragen an die öffentliche URL könnten die Apps-Script-Kontingente aufbrauchen. Eine Drosselung im Skript hilft dagegen kaum (die Anfrage läuft trotzdem); bei Bedarf neue Bereitstellung = neue URL.
-- Nicht automatisch getestet: `app.js` und `sw.js` im Browser, der echte POST/Redirect zu Apps Script und das Verhalten auf dem iPhone. Das kommt mit dem iPhone-Test nach dem Bereitstellen.
+- Nicht automatisch getestet: `kern.js`, `ansichten.js`, `eintragen.js`, `app.js` und `sw.js` im Browser (Task 6 wurde von Hand mit einer lokalen Attrappe der Schnittstelle geprüft, nicht im Repo), der echte POST/Redirect zu Apps Script und das Verhalten auf dem iPhone.

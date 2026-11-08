@@ -1,9 +1,12 @@
 /* SATE-App im Look der Event-Slides: immer Schwarz/Weiß, Courier New, Logo oben links, „Trink SATE!“ unten.
-   Abstände für Notch und Home-Leiste (Safe Area, Statusleiste ist durchsichtig: black-translucent). */
+   Abstände für Notch und Home-Leiste (Safe Area, Statusleiste ist durchsichtig: black-translucent).
+   Auffälliges (z. B. „Jetzt bestellen!“) ist invertiert: schwarz auf weiß, keine Farben. */
 :root {
   --schwarz: #000000;
   --weiss: #ffffff;
   --leise: #b8b8b8; /* Grau nur für Nebensachen, Kontrast auf Schwarz > 10:1 */
+  --linie: #5c5c5c; /* Gitterlinien, Trennstriche */
+  --leiste: 64px;   /* Höhe der unteren Leiste ohne Safe Area */
   color-scheme: dark;
 }
 
@@ -24,6 +27,8 @@ body {
   padding: calc(16px + env(safe-area-inset-top)) calc(16px + env(safe-area-inset-right))
            calc(16px + env(safe-area-inset-bottom)) calc(16px + env(safe-area-inset-left));
 }
+/* Mit Leiste: unten Platz lassen, damit nichts dahinter verschwindet */
+body.mit-leiste { padding-bottom: calc(24px + var(--leiste) + env(safe-area-inset-bottom)); }
 
 [hidden] { display: none !important; }
 
@@ -36,8 +41,8 @@ body {
   flex-direction: column;
 }
 
-/* Kopf: Logo (Männchen + SATE) oben links wie auf den Slides */
-.kopf { margin: 4px 0 32px; }
+/* Kopf: Logo (Männchen + SATE) oben links wie auf den Slides, rechts „Neu laden“ */
+.kopf { margin: 4px 0 24px; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .logo { display: block; height: 40px; width: auto; }
 
 /* Überschrift wie „**Freitag** Events“: erstes Wort fett, Rest normal */
@@ -45,19 +50,26 @@ body {
   font-size: 30px;
   font-weight: 400;
   line-height: 1.15;
-  margin: 0;
+  margin: 0 0 20px;
   overflow-wrap: anywhere;
 }
 .titel strong { font-weight: 700; }
-.untertitel { margin: 6px 0 28px; font-size: 16px; }
+.untertitel { margin: -14px 0 28px; font-size: 16px; }
 
-label { display: block; font-weight: 700; margin-bottom: 10px; }
+h2 { font-size: 22px; margin: 36px 0 12px; }
+h3 { font-size: 18px; margin: 24px 0 8px; }
 
-input {
+.stand { margin: 0 0 16px; font-size: 14px; color: var(--leise); min-height: 1.4em; }
+.leise { color: var(--leise); font-weight: 400; }
+.klein { font-size: 15px; }
+
+label { display: block; font-weight: 700; margin-bottom: 8px; }
+label.klein { font-weight: 400; }
+
+input, select, textarea {
   width: 100%;
   font: inherit;
   font-size: 20px; /* ≥ 16px, sonst zoomt iOS beim Tippen */
-  letter-spacing: 0.06em;
   padding: 12px 14px;
   border: 2px solid var(--weiss);
   border-radius: 0;
@@ -66,8 +78,21 @@ input {
   -webkit-appearance: none;
   appearance: none;
 }
-input::placeholder { color: #8a8a8a; opacity: 1; }
-input:focus { outline: 2px solid var(--weiss); outline-offset: 3px; }
+#code { letter-spacing: 0.06em; }
+input::placeholder, textarea::placeholder { color: #8a8a8a; opacity: 1; }
+input:focus, select:focus, textarea:focus { outline: 2px solid var(--weiss); outline-offset: 3px; }
+input[type="date"] { min-height: 52px; }
+textarea { resize: vertical; min-height: 80px; }
+/* Auswahl mit Pfeil (ohne Bild: zwei Linien als Verlauf) */
+select {
+  min-height: 52px;
+  padding-right: 40px;
+  background-image: linear-gradient(45deg, transparent 50%, var(--weiss) 50%), linear-gradient(135deg, var(--weiss) 50%, transparent 50%);
+  background-position: calc(100% - 22px) 50%, calc(100% - 16px) 50%;
+  background-size: 6px 6px, 6px 6px;
+  background-repeat: no-repeat;
+}
+select:disabled, input:disabled { opacity: 0.5; }
 
 .hinweis { color: var(--leise); font-size: 15px; margin: 12px 0 20px; }
 
@@ -81,7 +106,7 @@ input:focus { outline: 2px solid var(--weiss); outline-offset: 3px; }
 }
 .zahl::before {
   content: '';
-  grid-row: 1 / span 2;
+  grid-row: 1 / span 3;
   width: 32px;
   height: 36px;
   margin-top: 4px;
@@ -90,13 +115,154 @@ input:focus { outline: 2px solid var(--weiss); outline-offset: 3px; }
 dt { font-weight: 700; font-size: 17px; }
 dd {
   margin: 2px 0 0;
-  font-size: 44px;
+  font-size: 40px;
   font-weight: 700;
   line-height: 1.1;
   font-variant-numeric: tabular-nums;
   word-spacing: -0.35em; /* Leerzeichen vor der Einheit nicht so breit wie eine Ziffer */
+  overflow-wrap: anywhere;
 }
+dd.zusatz { font-size: 15px; font-weight: 400; color: var(--leise); word-spacing: normal; margin-top: 4px; line-height: 1.35; }
 .einheit { font-size: 18px; font-weight: 400; }
+
+/* Bestellstatus: ok = umrandet, bald = doppelt umrandet, jetzt = invertiert (weiß mit schwarzer Schrift) */
+.bestellung { border: 2px solid var(--weiss); padding: 14px 16px; margin: 0 0 28px; }
+.bestellung p { margin: 0; }
+.bestellung p + p { margin-top: 6px; }
+.bestellung .status-text { font-size: 22px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; }
+.bestellung .klein { color: var(--leise); }
+.bestellung.stufe-bald { border-width: 6px; border-style: double; }
+.bestellung.stufe-jetzt { background: var(--weiss); color: var(--schwarz); }
+.bestellung.stufe-jetzt .klein { color: #333333; }
+.bestellung.stufe-leer { border-style: dashed; }
+
+/* Listen mit der Flasche als Aufzählungszeichen */
+.liste { list-style: none; margin: 0; padding: 0; }
+.liste > li {
+  position: relative;
+  padding: 10px 0 10px 30px;
+  border-bottom: 1px solid var(--linie);
+}
+.liste > li::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 12px;
+  width: 18px;
+  height: 22px;
+  background: url('bilder/flasche.png') center / contain no-repeat;
+}
+.liste > li:last-child { border-bottom: 0; }
+.zeile { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
+.zeile > :last-child { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.nebenzeile { font-size: 15px; color: var(--leise); margin-top: 2px; overflow-wrap: anywhere; }
+.hinweise > li { font-size: 15px; }
+
+.leer { color: var(--leise); margin: 8px 0; }
+
+/* Umschalter (zwei Knöpfe nebeneinander), gewählter invertiert */
+.umschalter { display: grid; grid-template-columns: 1fr 1fr; margin: 0 0 16px; }
+.umschalter button {
+  min-height: 48px;
+  font: inherit;
+  font-size: 16px;
+  border: 2px solid var(--weiss);
+  border-radius: 0;
+  background: var(--schwarz);
+  color: var(--weiss);
+  -webkit-appearance: none;
+  appearance: none;
+  -webkit-tap-highlight-color: transparent;
+  cursor: pointer;
+}
+.umschalter button + button { border-left: 0; }
+.umschalter button[aria-pressed="true"] { background: var(--weiss); color: var(--schwarz); font-weight: 700; }
+.umschalter button:focus-visible { outline: 2px solid var(--weiss); outline-offset: 3px; }
+
+/* Balkendiagramm (SVG aus ansichten.js) */
+.balken-info { margin: 0 0 8px; min-height: 1.4em; }
+.diagramm { display: block; width: 100%; height: auto; overflow: visible; touch-action: manipulation; }
+.diagramm text { fill: var(--weiss); font-family: "Courier New", Courier, monospace; font-size: 10px; }
+.diagramm .achsen-text { fill: var(--leise); font-size: 9px; }
+.diagramm .jahr { fill: var(--leise); font-size: 9px; }
+.diagramm .gitter { stroke: var(--linie); stroke-width: 0.5; }
+.diagramm .achse { stroke: var(--weiss); stroke-width: 1; }
+.diagramm .balken-flaeche { fill: var(--weiss); }
+.diagramm .laufend .balken-flaeche { fill: var(--schwarz); stroke: var(--weiss); stroke-width: 1.5; stroke-dasharray: 3 2; }
+.diagramm .marke { fill: var(--weiss); }
+.diagramm .gewaehlt .monat { fill: var(--schwarz); font-weight: 700; }
+.diagramm .treffer { fill: transparent; cursor: pointer; outline: none; }
+.diagramm .treffer:focus-visible { stroke: var(--weiss); stroke-width: 1; stroke-dasharray: 2 2; }
+.legende { font-size: 14px; color: var(--leise); margin: 6px 0 0; }
+
+.summen { margin: 0 0 8px; }
+
+/* Tabelle für Kanäle und Kunden: Name | Flaschen | Umsatz */
+.tabelle { display: grid; grid-template-columns: 1fr auto auto; font-size: 15px; }
+.tabelle > div { padding: 8px 0; border-bottom: 1px solid var(--linie); font-variant-numeric: tabular-nums; }
+.tabelle .kopfzeile { color: var(--leise); font-size: 13px; padding-top: 0; }
+.tabelle .zahl-zelle { text-align: right; white-space: nowrap; padding-left: 14px; }
+.tabelle .name-zelle { overflow-wrap: anywhere; }
+.anteil { height: 4px; background: var(--weiss); margin-top: 5px; min-width: 2px; }
+
+/* Lager-Karten */
+.karte { border: 2px solid var(--weiss); padding: 14px 16px; margin: 0 0 14px; }
+.karte h3 { margin: 0 0 10px; overflow-wrap: anywhere; }
+.karte .zahlen { gap: 14px; }
+.karte .zahl { grid-template-columns: 1fr; }
+.karte .zahl::before { display: none; }
+.karte dd { font-size: 28px; }
+.karte dd.zusatz { font-size: 15px; }
+.karte dt { font-size: 15px; }
+.karte.ohne-inventur { border-style: dashed; }
+.karte p { margin: 0; }
+
+/* Verlauf */
+.verlauf .storniert .eintrag-text { text-decoration: line-through; color: var(--leise); }
+.marke-text {
+  display: inline-block;
+  font-size: 12px;
+  padding: 1px 6px;
+  border: 1px solid var(--weiss);
+  margin-left: 6px;
+  vertical-align: 2px;
+  text-transform: uppercase;
+  text-decoration: none;
+}
+.eintrag-fuss { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-top: 8px; }
+.knopf.klein { width: auto; min-height: 44px; padding: 0 16px; font-size: 16px; flex: none; }
+
+/* Nur für Vorleseprogramme */
+.nur-vorlesen { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; margin: -1px; }
+
+/* Verkäufe zuordnen */
+.zuordnen select { margin-top: 8px; font-size: 17px; min-height: 48px; padding: 8px 40px 8px 12px; }
+
+/* Eintragen */
+fieldset { border: 0; margin: 0; padding: 0; min-width: 0; }
+legend { font-weight: 700; margin-bottom: 8px; padding: 0; }
+.feld { margin: 0 0 22px; }
+.arten { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.art { position: relative; margin: 0; font-weight: 400; }
+.art input { position: absolute; opacity: 0; width: 1px; height: 1px; pointer-events: none; }
+.art span {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 56px;
+  padding: 6px 8px;
+  border: 2px solid var(--weiss);
+  font-size: 16px;
+  text-align: center;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  overflow-wrap: anywhere;
+}
+.art input:checked + span { background: var(--weiss); color: var(--schwarz); font-weight: 700; }
+.art input:focus-visible + span { outline: 2px solid var(--weiss); outline-offset: 3px; }
+.art input:disabled + span { opacity: 0.5; }
+.zwei { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.summe { margin: 10px 0 0; font-weight: 700; min-height: 1.4em; }
 
 .knoepfe { display: grid; gap: 12px; margin-top: 36px; }
 
@@ -129,11 +295,12 @@ dd {
 .status { text-align: center; margin-top: 24px; }
 
 .fehler {
-  margin: 24px 0 0;
+  margin: 0 0 20px;
   padding: 12px 14px;
   border: 2px dashed var(--weiss);
   font-weight: 700;
 }
+form .fehler { margin: 20px 0; }
 
 /* Fußzeile unten links wie auf den Slides */
 .fuss {
@@ -145,3 +312,70 @@ dd {
   font-size: 24px;
 }
 .herz { height: 24px; width: auto; margin-top: -4px; }
+
+/* Untere Leiste: vier Reiter, gewählter invertiert, Platz für die Home-Leiste */
+.leiste {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 10;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  background: var(--schwarz);
+  border-top: 2px solid var(--weiss);
+  padding: 0 env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+}
+.leiste button {
+  min-height: var(--leiste);
+  font: inherit;
+  font-size: 15px;
+  border: 0;
+  border-radius: 0;
+  background: var(--schwarz);
+  color: var(--weiss);
+  padding: 0 2px;
+  cursor: pointer;
+  -webkit-appearance: none;
+  appearance: none;
+  -webkit-tap-highlight-color: transparent;
+}
+.leiste button + button { border-left: 1px solid var(--linie); }
+.leiste button[aria-selected="true"] { background: var(--weiss); color: var(--schwarz); font-weight: 700; }
+.leiste button:focus-visible { outline: 2px solid var(--weiss); outline-offset: -6px; }
+.leiste button[aria-selected="true"]:focus-visible { outline-color: var(--schwarz); }
+
+/* Rückmeldung über der Leiste */
+.toast {
+  position: fixed;
+  left: calc(12px + env(safe-area-inset-left));
+  right: calc(12px + env(safe-area-inset-right));
+  bottom: calc(var(--leiste) + 14px + env(safe-area-inset-bottom));
+  z-index: 20;
+  max-width: 456px;
+  margin: 0 auto;
+  padding: 14px 16px;
+  background: var(--weiss);
+  color: var(--schwarz);
+  border: 2px solid var(--weiss);
+  font-weight: 700;
+  font-size: 16px;
+  box-shadow: 0 0 0 4px var(--schwarz);
+}
+.toast.fehler-toast { background: var(--schwarz); color: var(--weiss); border-style: dashed; }
+.toast .nebenzeile { color: inherit; font-weight: 400; }
+
+/* Rückfrage */
+.dialog {
+  width: calc(100% - 32px);
+  max-width: 440px;
+  padding: 20px;
+  border: 2px solid var(--weiss);
+  border-radius: 0;
+  background: var(--schwarz);
+  color: var(--weiss);
+  font: inherit;
+}
+.dialog::backdrop { background: rgba(0, 0, 0, 0.8); }
+.dialog p { margin: 0; white-space: pre-line; font-size: 17px; }
+.dialog .knoepfe { margin-top: 24px; }

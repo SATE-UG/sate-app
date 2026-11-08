@@ -125,7 +125,7 @@ test('PWA: SATE-Look (immer schwarz, Courier New, Icons deckend)', () => {
   assert.match(css, /color-scheme: dark;/);
   assert.doesNotMatch(css, /prefers-color-scheme/, 'kein Hell-Modus mehr');
   // Eingaben ≥ 16 px, sonst zoomt iOS
-  const input = /\ninput \{([^}]*)\}/.exec(css)[1];
+  const input = /\ninput, select, textarea \{([^}]*)\}/.exec(css)[1];
   assert.ok(Number(/font-size: (\d+)px/.exec(input)[1]) >= 16);
   // Icons ohne Transparenz (iOS füllt durchsichtige Flächen sonst unschön auf), Ecken schwarz
   for (const d of ['docs/icons/apple-touch-icon.png', 'docs/icons/icon-192.png', 'docs/icons/icon-512.png']) {
@@ -157,16 +157,24 @@ test('PWA: Service Worker cacht alle Hüllen-Dateien, Version im Cache-Namen', (
 });
 
 test('PWA: keine fremden Skripte, Code nie in URLs', () => {
-  for (const d of ['docs/index.html', 'docs/app.js', 'docs/hilfen.js', 'docs/sw.js', 'docs/config.js']) {
+  const skripte = ['docs/app.js', 'docs/kern.js', 'docs/ansichten.js', 'docs/eintragen.js', 'docs/hilfen.js', 'docs/sw.js', 'docs/config.js'];
+  for (const d of ['docs/index.html'].concat(skripte)) {
     const t = lies(d);
     const urls = t.match(/https?:\/\/[^\s"'`)\\]+/g) || [];
-    for (const u of urls) assert.match(u, /^https:\/\/script\.google(usercontent)?\.com/, d + ': ' + u);
+    // Einzige Ausnahme: der SVG-Namensraum (nur ein Name, wird nie geladen)
+    for (const u of urls) if (u !== 'http://www.w3.org/2000/svg') assert.match(u, /^https:\/\/script\.google(usercontent)?\.com/, d + ': ' + u);
   }
-  const app = lies('docs/app.js');
-  assert.doesNotMatch(app, /[?&]code=/);
-  assert.doesNotMatch(app, /innerHTML/);
-  assert.match(app, /method: 'POST'/);
-  assert.match(app, /'Content-Type': 'text\/plain;charset=utf-8'/);
+  // Alle Skripte aus index.html stehen in der Liste oben
+  const eingebunden = (lies('docs/index.html').match(/<script src="([^"]+)"/g) || []).map((s) => 'docs/' + /"([^"]+)"/.exec(s)[1]);
+  for (const d of eingebunden) assert.ok(skripte.includes(d), 'Skript nicht geprüft: ' + d);
+  for (const d of skripte) {
+    assert.doesNotMatch(lies(d), /[?&]code=/, d);
+    assert.doesNotMatch(lies(d), /innerHTML|outerHTML|insertAdjacentHTML|document\.write|eval\(/, d);
+  }
+  const kern = lies('docs/kern.js');
+  assert.match(kern, /method: 'POST'/);
+  assert.match(kern, /'Content-Type': 'text\/plain;charset=utf-8'/);
+  assert.match(kern, /credentials: 'omit'/);
   // Platzhalter oder echte Web-App-URL (die ist nicht geheim, geschützt wird über den Zugangscode)
   assert.match(lies('docs/config.js'),
     /apiUrl: '(HIER_WEB_APP_URL_EINTRAGEN|https:\/\/script\.google\.com\/(macros|a\/macros\/[\w.-]+)\/s\/[\w-]+\/exec)'/);

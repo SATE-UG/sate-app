@@ -1,0 +1,182 @@
+// Kern der SATE-App: gemeinsamer Zustand, DOM-Bausteine, Gerätespeicher, Schnittstelle, Rückfrage und Rückmeldung.
+// Alles liegt unter window.SATE; ansichten.js, eintragen.js und app.js bauen darauf auf.
+// Der Zugangscode liegt nur in localStorage dieses Geräts und geht nur im POST-Body an die Web-App (nie in die URL).
+(function () {
+  'use strict';
+
+  const H = window.SATE_HILFEN;
+  const API_URL = (window.SATE_CONFIG || {}).apiUrl;
+  const ZEITLIMIT_LESEN_MS = 30000;
+  const ZEITLIMIT_SCHREIBEN_MS = 60000; // Schreiben wartet auf die Sperre und schreibt danach Tab Lager
+  const SVG_NS = 'http://www.w3.org/2000/svg';
+
+  const S = window.SATE = {
+    H: H,
+    SCHLUESSEL: { code: 'sate.zugangscode', daten: 'sate.uebersicht', ansicht: 'sate.ansicht' },
+    zustand: {
+      code: '',          // Zugangscode dieser Sitzung
+      name: '',          // Name aus der letzten Antwort
+      daten: null,       // letzte Antwort der Aktion `uebersicht` (ohne ok/name)
+      frisch: false,     // false = Daten aus dem Gerätespeicher, noch nicht neu geladen
+      laedt: false,      // uebersicht wird gerade geladen
+      fehlgeschlagen: false,
+      schreibt: false,   // eine Schreib-Aktion läuft (nie zwei gleichzeitig)
+      schreibNr: 0,      // zählt bei Beginn und Ende jeder Schreib-Aktion hoch
+      sitzung: 0,        // zählt bei Abmelden hoch; ältere Antworten werden verworfen
+      ansicht: 'uebersicht',
+      verlauf: null,     // { eintraege, zeit } aus der Aktion `verlauf`
+      verlaufLaedt: false,
+      verlaufFehler: '',
+      verlaufVeraltet: true,
+      diagramm: 'flaschen',
+      zeitraum: 'letzte12',
+      balken: null,
+    },
+    ansichten: {},
+  };
+
+  S.el = (id) => document.getElementById(id);
+
+  /** Element bauen: attrs { class, text, onclick, … }, Kinder als Knoten, Texte oder Listen (null wird übersprungen). */
+  function knoten(ns, tag, attrs, kinder) {
+    const e = ns ? document.createElementNS(ns, tag) : document.createElement(tag);
+    Object.keys(attrs || {}).forEach((k) => {
+      const v = attrs[k];
+      if (v === null || v === undefined || v === false) return;
+      if (k === 'text') e.textContent = String(v);
+      else if (k.slice(0, 2) === 'on' && typeof v === 'function') e.addEventListener(k.slice(2), v);
+      else e.setAttribute(k, v === true ? '' : String(v));
+    });
+    const anhaengen = (k) => {
+      if (k === null || k === undefined || k === false) return;
+      if (Array.isArray(k)) k.forEach(anhaengen);
+      else e.append(typeof k === 'string' ? document.createTextNode(k) : k);
+    };
+    anhaengen(kinder);
+    return e;
+  }
+  S.h = (tag, attrs, ...kinder) => knoten(null, tag, attrs, kinder);
+  S.s = (tag, attrs, ...kinder) => knoten(SVG_NS, tag, attrs, kinder);
+
+  // Gerätespeicher (localStorage kann im privaten Modus fehlen oder werfen) ---------------------------------------
+  S.speicher = {
+    lesen(k) { try { return window.localStorage.getItem(k) || ''; } catch (e) { return ''; } },
+    schreiben(k, v) { try { window.localStorage.setItem(k, v); return true; } catch (e) { return false; } },
+    /** true, wenn danach wirklich nichts mehr unter k steht. */
+    loeschen(k) {
+      try { window.localStorage.removeItem(k); } catch (e) { /* unten prüfen */ }
+      if (!this.lesen(k)) return true;
+      try { window.localStorage.setItem(k, ''); } catch (e) { /* unten prüfen */ }
+      return !this.lesen(k);
+    },
+  };
+
+  // Schnittstelle -----------------------------------------------------------------------------------------------
+
+  /** Eine Aktion an die Web-App. `extra` = weitere Felder, `code` nur bei der Anmeldung. Rückgabe wie antwortDeuten. */
+  S.anfrage = async function (aktion, extra, code, zeitlimit) {
+    if (!H.apiUrlGueltig(API_URL)) {
+      return { art: 'fehler', meldung: 'Die App ist noch nicht fertig eingerichtet (Web-App-URL fehlt in config.js).' };
+    }
+    if (navigator.onLine === false) return { art: 'fehler', meldung: 'Kein Internet. Bitte Verbindung prüfen und neu laden.', netz: true };
+    const abbruch = new AbortController();
+    const uhr = setTimeout(() => abbruch.abort(), zeitlimit || ZEITLIMIT_LESEN_MS);
+    try {
+      // text/plain = „einfache“ Anfrage ohne CORS-Preflight (Apps Script beantwortet kein OPTIONS).
+      const antwort = await fetch(API_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify(Object.assign({}, extra || {}, { code: code || S.zustand.code, aktion: aktion })),
+        redirect: 'follow',
+        cache: 'no-store',
+        credentials: 'omit',
+        referrerPolicy: 'no-referrer',
+        signal: abbruch.signal,
+      });
+      return H.antwortDeuten(antwort.status, await antwort.text());
+    } catch (e) {
+      if (e && e.name === 'AbortError') return { art: 'fehler', meldung: 'Die Schnittstelle antwortet nicht. Bitte später nochmal versuchen.', netz: true };
+      return { art: 'fehler', meldung: 'Keine Verbindung zur Schnittstelle. Bitte Internet prüfen und neu laden.', netz: true };
+    } finally {
+      clearTimeout(uhr);
+    }
+  };
+
+  /** Neue Anfrage-ID für den Doppelklick-Schutz (32 Hex-Zeichen). */
+  S.neueAnfrageId = function () {
+    const bytes = new Uint8Array(16);
+    window.crypto.getRandomValues(bytes);
+    return H.anfrageIdAus(bytes);
+  };
+
+  /**
+   * Schreib-Aktion (buchen, stornieren, verkaufStandort) mit anfrageId. Will der Server ein „trotzdem“, kommt die
+   * Rückfrage mit seiner Warnung; bei Ja dieselbe Anfrage mit bestaetigt: true. Die frische Übersicht aus der Antwort
+   * wird übernommen. Rückgabe wie antwortDeuten, dazu { art: 'abgebrochen' } (Rückfrage mit Nein beantwortet).
+   */
+  S.schreiben = async function (aktion, daten) {
+    const Z = S.zustand;
+    if (Z.schreibt) return { art: 'fehler', meldung: 'Moment, es wird gerade noch gespeichert.' };
+    const sitzung = Z.sitzung;
+    const gleicheSitzung = () => sitzung === Z.sitzung; // nach Abmelden keine Antwort mehr übernehmen
+    Z.schreibt = true;
+    Z.schreibNr++; // laufende Lese-Anfragen gelten ab jetzt als veraltet (siehe S.laden, S.verlaufLaden)
+    try {
+      const nutz = Object.assign({}, daten, { anfrageId: daten.anfrageId || S.neueAnfrageId() });
+      let e = await S.anfrage(aktion, nutz, '', ZEITLIMIT_SCHREIBEN_MS);
+      if (!gleicheSitzung()) return { art: 'abgebrochen' };
+      if (e.art === 'bestaetigen') {
+        if (!(await S.frage(e.warnung, 'Trotzdem speichern', 'Abbrechen')) || !gleicheSitzung()) return { art: 'abgebrochen' };
+        e = await S.anfrage(aktion, Object.assign(nutz, { bestaetigt: true }), '', ZEITLIMIT_SCHREIBEN_MS);
+        if (!gleicheSitzung()) return { art: 'abgebrochen' };
+        if (e.art === 'bestaetigen') e = { art: 'fehler', meldung: e.warnung };
+      }
+      if (e.art === 'ok') {
+        Z.verlaufVeraltet = true;
+        if (!S.datenSetzen(e.daten.uebersicht, e.daten.name)) S.laden(); // Übersicht fehlte: neu holen
+      } else if (e.art === 'code') {
+        S.codeUngueltig(e.meldung);
+      }
+      return e;
+    } finally {
+      Z.schreibt = false;
+      Z.schreibNr++;
+      // Während des Schreibens gesperrte Bedienelemente (z. B. Verkäufe zuordnen) wieder freigeben
+      if (gleicheSitzung() && Z.code) S.ansichten.lager();
+    }
+  };
+
+  // Rückfrage und Rückmeldung -------------------------------------------------------------------------------------
+
+  /** Rückfrage mit zwei Knöpfen. Promise → true bei „ja“. Ohne <dialog>-Unterstützung: window.confirm. */
+  S.frage = function (text, ja, nein) {
+    const d = S.el('dialog');
+    if (!d || typeof d.showModal !== 'function') return Promise.resolve(window.confirm(text));
+    S.el('dialog-text').textContent = text;
+    S.el('dialog-ja').textContent = ja || 'Ja';
+    S.el('dialog-nein').textContent = nein || 'Abbrechen';
+    if (d.open) d.close('');
+    return new Promise((fertig) => {
+      const zu = () => { d.removeEventListener('close', zu); fertig(d.returnValue === 'ja'); };
+      d.returnValue = '';
+      d.addEventListener('close', zu);
+      d.showModal();
+      S.el('dialog-nein').focus();
+    });
+  };
+  S.el('dialog-ja').addEventListener('click', () => S.el('dialog').close('ja'));
+  S.el('dialog-nein').addEventListener('click', () => S.el('dialog').close('nein'));
+
+  /** Kurze Rückmeldung über der Leiste. `zusatz` = weitere Zeilen (z. B. Hinweise der Antwort). Antippen schließt. */
+  let toastUhr = null;
+  S.melden = function (text, fehler, zusatz) {
+    const t = S.el('toast');
+    clearTimeout(toastUhr);
+    t.replaceChildren(S.h('div', { text: text }), ...(zusatz || []).filter(Boolean).map((z) => S.h('div', { class: 'nebenzeile', text: z })));
+    t.classList.toggle('fehler-toast', !!fehler);
+    t.setAttribute('role', fehler ? 'alert' : 'status');
+    t.hidden = false;
+    toastUhr = setTimeout(() => { t.hidden = true; }, fehler || (zusatz && zusatz.length) ? 9000 : 4500);
+  };
+  S.el('toast').addEventListener('click', () => { clearTimeout(toastUhr); S.el('toast').hidden = true; });
+})();
