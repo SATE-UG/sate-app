@@ -86,7 +86,7 @@ p { margin: 0; }
 }
 
 /* Bedienelemente: keine Textauswahl und kein Lupen-Menü beim langen Drücken, kurze Rückmeldung beim Tippen */
-button, .leiste, .segment, .art-kachel, .banner, .ziehen {
+button, .leiste, .segment, .art-kachel, .banner, .ziehen, .ort-wahl {
   touch-action: manipulation; /* kein Doppeltipp-Zoom, schnelles Tippen */
   -webkit-user-select: none;
   user-select: none;
@@ -250,6 +250,7 @@ h2 {
 .zeile > :first-child { min-width: 0; overflow-wrap: anywhere; }
 .zeile > :last-child { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .zeile-wert { font-weight: 600; }
+.zeile-leise { font-size: 14px; color: var(--leise); }
 .nebenzeile { font-size: 13px; color: var(--leise); margin-top: 3px; overflow-wrap: anywhere; }
 .nebenzeile.warnung { color: var(--akzent); }
 
@@ -272,13 +273,16 @@ h2 {
 .klein-badge { margin-left: 8px; padding: 1px 7px; font-size: 11px; }
 .badge-storno { margin-left: 8px; background: var(--rot-weich); color: var(--rot); }
 
-/* Hinweise der Schnittstelle */
-.info-karte { display: grid; grid-template-columns: 22px 1fr; gap: 12px; margin-top: 12px; }
-.info-icon { width: 22px; height: 22px; color: var(--leise); }
-.info-titel { font-size: 15px; font-weight: 600; margin: 1px 0 6px; }
+/* Hinweise: der freundliche Satz zum Bestand direkt unter den Kacheln, die übrigen aus dem Sheet klein und dezent */
+.notiz { display: flex; align-items: flex-start; gap: 8px; margin: -2px 4px 16px; font-size: 13px; line-height: 1.4; color: var(--leise); }
+.notiz-icon { width: 16px; height: 16px; margin-top: 1px; }
+.info-karte { display: grid; grid-template-columns: 16px 1fr; gap: 10px; margin-top: 24px; padding: 12px 14px; background: transparent;
+  box-shadow: inset 0 0 0 1px var(--linie); }
+.info-icon { width: 16px; height: 16px; margin-top: 1px; color: var(--leise); }
+.info-titel { font-size: 12px; font-weight: 600; color: var(--leise); text-transform: uppercase; letter-spacing: 0.06em; margin: 1px 0 4px; }
 .hinweise { list-style: none; margin: 0; padding: 0; }
-.hinweise li { font-size: 14px; color: var(--leise); line-height: 1.4; }
-.hinweise li + li { margin-top: 6px; }
+.hinweise li { font-size: 13px; color: var(--leise); line-height: 1.4; }
+.hinweise li + li { margin-top: 4px; }
 
 /* Leere Zustände und Laden */
 .leer-karte { text-align: center; padding: 28px 20px; }
@@ -404,33 +408,82 @@ h2 {
 .lager-werte { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
 .lager-werte > div { min-width: 0; }
 .lager-datum { margin: 6px 0 4px; font-size: 22px; font-weight: 600; line-height: 1.2; font-variant-numeric: tabular-nums; }
-.ohne-inventur .karte-kopf { margin-bottom: 8px; }
+/* Noch nicht gezählte Lager: eine Zeile pro Standort mit „Inventur eintragen“ */
+.offen-text { margin: 4px 4px 8px; }
+.liste > li.offen-zeile { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 0; }
+.offen-zeile .zeile-name { min-width: 0; overflow-wrap: anywhere; }
 
-/* Verlauf */
-.liste > li.verlauf-zeile { display: grid; grid-template-columns: 36px 1fr; gap: 12px; }
+/* Verlauf: Symbol | Art, Menge, „Datum · von … · Kommentar“ | Storno */
+.liste > li.verlauf-zeile { display: grid; grid-template-columns: 32px 1fr auto; align-items: center; gap: 12px; padding: 12px 0; }
 .verlauf-icon {
-  width: 36px;
-  height: 36px;
+  width: 32px;
+  height: 32px;
   display: grid;
   place-items: center;
-  border-radius: 10px;
+  align-self: start;
+  border-radius: 9px;
   background: var(--feld);
   color: var(--text);
 }
-.verlauf-icon .icon { width: 20px; height: 20px; }
-.storno-zeile .verlauf-icon { background: var(--rot-weich); color: var(--rot); }
+.verlauf-icon .icon { width: 18px; height: 18px; }
 .verlauf-mitte { min-width: 0; }
+.verlauf-kopf { display: flex; align-items: center; gap: 8px; font-size: 15px; line-height: 1.3; }
 .verlauf-art { font-weight: 600; }
-.verlauf-datum { font-size: 13px; color: var(--leise); }
-.eintrag-text { font-size: 15px; margin-top: 2px; overflow-wrap: anywhere; }
+.eintrag-text { font-size: 15px; line-height: 1.3; margin-top: 1px; overflow-wrap: anywhere; }
+.verlauf-mitte .nebenzeile { margin-top: 2px; }
 .storniert .verlauf-icon { opacity: 0.5; }
 .storniert .verlauf-art { color: var(--leise); }
 .storniert .eintrag-text { text-decoration: line-through; color: var(--leise); }
-.eintrag-fuss { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-top: 4px; }
-.eintrag-fuss .nebenzeile { margin-top: 0; }
+.liste-fuss { margin: -4px 4px 0; font-size: 13px; }
 
-/* Verkäufe zuordnen */
-.zuordnen select { margin-top: 10px; min-height: 44px; font-size: 16px; padding: 10px 40px 10px 12px; border-radius: 10px; }
+/* Einklappbarer Abschnitt („Verkäufe zuordnen“): Karte als Knopf, Pfeil dreht sich beim Aufklappen */
+.klapp-h2 { margin: 32px 0 12px; font: inherit; }
+.klapp-kopf {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 0;
+  border: 0;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  -webkit-appearance: none;
+  appearance: none;
+  transition: transform 0.1s ease, background-color 0.1s ease;
+}
+button.klapp-kopf:active { transform: scale(0.98); background: #242426; }
+.klapp-kopf:focus-visible { outline: 2px solid var(--akzent); outline-offset: 2px; }
+.klapp-text { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.klapp-titel { font-size: 17px; font-weight: 600; }
+.klapp-zusatz { font-size: 13px; font-weight: 400; color: var(--leise); margin-top: 2px; }
+.klapp-pfeil { transition: transform 0.2s ease; }
+.klapp-kopf[aria-expanded="true"] .klapp-pfeil { transform: rotate(90deg); }
+.klapp-inhalt { animation: rein 0.22s ease-out; }
+
+/* Verkäufe zuordnen: Kunde | Flaschen, darunter Rechnung · Datum | Standort als kleine Pille (natives select) */
+.liste > li.zuordnen-zeile { padding: 12px 0; }
+.zuordnen-kunde { font-weight: 600; font-size: 15px; }
+.zuordnen-unten { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 4px; }
+.zuordnen-unten .nebenzeile { margin-top: 0; min-width: 0; }
+.ort-wahl {
+  width: auto;
+  max-width: 62%;
+  flex: none;
+  min-height: 36px;
+  padding: 6px 30px 6px 12px;
+  border-radius: 999px;
+  font-size: 16px; /* ≥ 16px, sonst zoomt iOS */
+  font-weight: 500;
+  color: var(--leise);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  overflow: hidden;
+  background-position: calc(100% - 17px) 52%, calc(100% - 12px) 52%;
+  background-size: 5px 5px, 5px 5px;
+}
+.ort-wahl.gesetzt { color: var(--text); }
 
 /* Eingaben: graue Fläche statt Rahmen */
 fieldset { border: 0; margin: 0; padding: 0; min-width: 0; }
@@ -438,7 +491,6 @@ legend { padding: 0; }
 .feld { margin: 0 0 18px; }
 .feld.letztes { margin-bottom: 0; }
 .feld-label { display: block; font-size: 13px; font-weight: 600; color: var(--leise); margin: 0 0 8px; }
-label.klein { display: block; font-size: 13px; color: var(--leise); margin: 0 0 6px; }
 
 input, select, textarea {
   width: 100%;
@@ -468,10 +520,38 @@ select {
 }
 select:disabled, input:disabled, textarea:disabled { opacity: 0.5; }
 
+.formular { animation: rein 0.22s ease-out; }
 .formular-karte { padding: 16px; margin: 0 0 16px; }
-.zwei { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-.summe { margin: 10px 0 0; font-size: 15px; font-weight: 600; min-height: 1.4em; font-variant-numeric: tabular-nums; }
-.summe:empty { min-height: 0; margin: 0; }
+/* Mengen: Beschriftung links, Stepper rechts (−/+ je 44 px) */
+.menge { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.menge + .menge { margin-top: 10px; }
+.menge-label { min-width: 0; font-size: 15px; }
+.stepper { flex: none; display: flex; align-items: center; gap: 6px; }
+.stepper input { width: 84px; min-height: 44px; padding: 8px 6px; text-align: center; font-weight: 600; font-variant-numeric: tabular-nums; }
+.schritt {
+  width: 44px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: var(--feld);
+  color: var(--text);
+  cursor: pointer;
+  -webkit-appearance: none;
+  appearance: none;
+  -webkit-tap-highlight-color: transparent;
+  transition: background-color 0.1s ease, transform 0.1s ease;
+}
+.schritt .icon { width: 20px; height: 20px; stroke-width: 2.2; }
+.schritt:active { background: var(--feld-aktiv); transform: scale(0.92); }
+.schritt:focus-visible { outline: 2px solid var(--akzent); outline-offset: 2px; }
+.schritt:disabled { opacity: 0.45; }
+.summe { margin: 14px 0 0; padding-top: 12px; border-top: 1px solid var(--linie); font-size: 22px; font-weight: 700; letter-spacing: -0.01em;
+  text-align: right; font-variant-numeric: tabular-nums; }
+.summe.summe-fehler { font-size: 15px; font-weight: 500; color: var(--rot); text-align: left; letter-spacing: 0; }
+.buchen-offen { margin: 10px 4px 0; text-align: center; font-size: 13px; }
 
 /* Art als Kacheln mit Symbol */
 .arten { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
@@ -500,10 +580,9 @@ select:disabled, input:disabled, textarea:disabled { opacity: 0.5; }
 .art input:checked + .art-kachel .icon { color: var(--akzent); }
 .art input:focus-visible + .art-kachel { outline: 2px solid var(--text); outline-offset: 2px; }
 .art input:disabled + .art-kachel { opacity: 0.5; }
-.art-text { margin: 12px 4px 0; min-height: 2.8em; }
+.art-text { margin: 12px 4px 16px; }
 
 /* Knöpfe: Primär weiß gefüllt, sonst grau */
-.knoepfe { display: grid; gap: 12px; margin-top: 28px; }
 .knopf {
   width: 100%;
   min-height: 50px;
@@ -532,7 +611,27 @@ select:disabled, input:disabled, textarea:disabled { opacity: 0.5; }
 .knopf:focus-visible { outline: 2px solid var(--akzent); outline-offset: 2px; }
 .knopf:disabled { opacity: 0.45; cursor: default; }
 .knopf.klein { width: auto; min-height: 36px; padding: 0 14px; font-size: 15px; border-radius: 10px; flex: none; }
-.storno-knopf { margin-right: -8px; padding: 0 8px; background: transparent; color: var(--rot); font-weight: 500; }
+.knopf.storno-knopf { margin-right: -8px; padding: 0 8px; background: transparent; color: var(--rot); font-weight: 500; }
+.knopf.leise-knopf { min-height: 32px; padding: 0 12px; font-size: 14px; font-weight: 500; position: relative; }
+.knopf.leise-knopf::after { content: ""; position: absolute; inset: -6px 0; } /* Tippfläche 44 px hoch */
+/* Abmelden: kleiner, gedimmter Textlink ganz unten in der Übersicht */
+.abmelden-zeile { text-align: center; margin: 12px 0 0; }
+.text-link {
+  min-height: 44px;
+  padding: 0 16px;
+  border: 0;
+  background: transparent;
+  color: var(--leise);
+  font: inherit;
+  font-size: 14px;
+  cursor: pointer;
+  -webkit-appearance: none;
+  appearance: none;
+  -webkit-tap-highlight-color: transparent;
+  transition: opacity 0.1s ease;
+}
+.text-link:active { opacity: 0.6; }
+.text-link:focus-visible { outline: 2px solid var(--akzent); outline-offset: 2px; border-radius: 8px; }
 .storno-knopf:active { background: var(--rot-weich); }
 .pfeil { height: 16px; width: auto; }
 .knopf.haupt .pfeil { filter: invert(1); }

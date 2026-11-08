@@ -229,6 +229,8 @@
   // Fußzeile „Trink SATE!“ ans Ende jeder Ansicht (die der Seite ist angemeldet ausgeblendet)
   const fuss = document.querySelector('.seite > .fuss');
   ANSICHTEN.forEach((n) => el('ansicht-' + n).append(fuss.cloneNode(true)));
+  // „Abmelden“ als kleiner Textlink ganz unten in der Übersicht, unter der Fußzeile
+  el('ansicht-uebersicht').append(el('abmelden-zeile'));
 
   // Daten -------------------------------------------------------------------------------------------------------
 
@@ -341,11 +343,12 @@
     const geloescht = S.speicher.loeschen(K.code);
     S.speicher.loeschen(K.daten);
     S.speicher.loeschen(K.ansicht);
+    S.speicher.loeschen(K.standort);
     codeImSpeicher = '';
     abgemeldet = true;
     verlaufNr++;
     Object.assign(Z, { code: '', name: '', daten: null, frisch: false, laedt: false, verlauf: null, verlaufLaedt: false,
-      verlaufFehler: '', verlaufVeraltet: true, balken: null, offline: false, ladenNachholen: false, sitzung: Z.sitzung + 1 });
+      verlaufFehler: '', verlaufVeraltet: true, balken: null, zuordnenOffen: false, offline: false, ladenNachholen: false, sitzung: Z.sitzung + 1 });
     meldung('');
     S.frageSchliessen();
     S.meldenSchliessen();

@@ -314,3 +314,63 @@ test('Trend: Vorjahresmonat aus den Vergleichsmonaten davor', () => {
   assert.strictEqual(H.monatsTrend(monate, 11, 'flaschen').vorjahr, null, 'ohne Vergleichsmonate kein Vorjahr');
   assert.strictEqual(H.monatsTrend(monate, 11, 'flaschen', null).vorjahr, null);
 });
+
+test('Feinschliff: Zeitraum kurz, laufender Monat, Kisten klein, Anteile, kurzes Datum', () => {
+  assert.strictEqual(H.monateAnzahl('2026-05', '2026-10'), 6);
+  assert.strictEqual(H.monateAnzahl('2025-11', '2026-02'), 4, 'über den Jahreswechsel');
+  assert.strictEqual(H.monateAnzahl('2026-10', '2026-05'), null);
+  assert.strictEqual(H.zeitraumKurz('2026-05', '2026-10'), 'letzte 6 Monate');
+  assert.strictEqual(H.zeitraumKurz('2026-10', '2026-10'), 'letzter voller Monat');
+  assert.strictEqual(H.zeitraumKurz(null, '2026-10'), '');
+
+  const monate = [{ monat: '2026-10', flaschen: 900 }, { monat: '2026-11', flaschen: 120 }];
+  assert.deepStrictEqual(H.monatBisher(monate, '2026-11-08'), { monat: '2026-11', flaschen: 120 });
+  assert.strictEqual(H.monatBisher(monate, '2026-12-01'), null, 'laufender Monat fehlt');
+  assert.strictEqual(H.monatBisher(null, '2026-11-08'), null);
+
+  assert.strictEqual(H.kistenKurz(8041, 24, false), '335 Kisten + 1 Fl.');
+  assert.strictEqual(H.kistenKurz(8040, 24, false), '335 Kisten');
+  assert.strictEqual(H.kistenKurz(8041, 24, true), '≈ 335 Kisten');
+  assert.strictEqual(H.kistenKurz(30, 24, false), '1 Kiste + 6 Fl.');
+  assert.strictEqual(H.kistenKurz(10, 24, false), '', 'unter einer Kiste');
+  assert.strictEqual(H.kistenKurz(5, 24, true), '');
+  assert.strictEqual(H.kistenKurz(-5, 24, true), '');
+  assert.strictEqual(H.kistenKurz(100, null, true), '');
+
+  assert.strictEqual(H.anteileSinnvoll([{ bestand: 300 }, { bestand: null }, { bestand: null }]), false, 'nur einer gezählt: kein 100-%-Balken');
+  assert.strictEqual(H.anteileSinnvoll([{ bestand: 300 }, { bestand: 0 }]), false);
+  assert.strictEqual(H.anteileSinnvoll([{ bestand: 300 }, { bestand: 20 }]), true);
+
+  assert.strictEqual(H.datumKurz('2026-11-03'), '3. Nov');
+  assert.strictEqual(H.datumKurz('quatsch'), '–');
+});
+
+test('Feinschliff: Hinweis „Noch keine Inventur“ freundlich, andere unverändert (Texte wie in UebersichtLogik.js)', () => {
+  const quelle = require('node:fs').readFileSync(require('node:path').join(__dirname, '..', 'api', 'src', 'UebersichtLogik.js'), 'utf8');
+  assert.ok(quelle.includes("'Noch keine Inventur bei ' + gesamt.fehlen.join(', ') + ': Gesamtbestand ist der rechnerische aus der Übersicht.'"),
+    'Server-Text hat sich geändert: hinweiseOrdnen anpassen');
+  assert.ok(quelle.includes("'Noch keine Inventur: Gesamtbestand ist der rechnerische aus der Übersicht (ohne Promo, Eigenverbrauch, Bruch).'"));
+
+  const teil = H.hinweiseOrdnen(['Noch keine Inventur bei Lager Nord, Lager Ost: Gesamtbestand ist der rechnerische aus der Übersicht.',
+    'Lager-Log Zeile 7: Art „X“ unbekannt, zählt nicht.']);
+  assert.strictEqual(teil.bestand, 'Noch nicht alle Lager gezählt – der Bestand ist geschätzt (aus Abfüllungen minus Verkäufe). ' +
+    'Nach der Inventur zeigt die App den echten Bestand.');
+  assert.deepStrictEqual(teil.andere, ['Lager-Log Zeile 7: Art „X“ unbekannt, zählt nicht.']);
+  const keine = H.hinweiseOrdnen(['Noch keine Inventur: Gesamtbestand ist der rechnerische aus der Übersicht (ohne Promo, Eigenverbrauch, Bruch).']);
+  assert.match(keine.bestand, /^Noch kein Lager gezählt – der Bestand ist geschätzt/);
+  assert.deepStrictEqual(keine.andere, []);
+  assert.deepStrictEqual(H.hinweiseOrdnen(undefined), { bestand: '', andere: [] });
+});
+
+test('Feinschliff: Verlauf ohne Storno-Gegenzeilen, Stepper-Werte', () => {
+  const v = [{ art: 'Storno', stornoVon: 'L1' }, { art: 'Promo', id: 'L1', storniert: true }, { art: 'Inventur', id: 'L0' }];
+  assert.deepStrictEqual(H.verlaufOhneStorno(v).map((e) => e.art), ['Promo', 'Inventur']);
+  assert.deepStrictEqual(H.verlaufOhneStorno(null), []);
+
+  assert.strictEqual(H.schrittWert('', 1, 100), '1');
+  assert.strictEqual(H.schrittWert('', -1, 100), '0', 'nie unter 0');
+  assert.strictEqual(H.schrittWert('1.200', 1, 50000), '1201');
+  assert.strictEqual(H.schrittWert('abc', 1, 100), '1', 'unlesbar zählt als 0');
+  assert.strictEqual(H.schrittWert('100', 1, 100), '100', 'nicht über den Höchstwert');
+  assert.strictEqual(H.schrittWert('5', 1), '6', 'ohne Höchstwert: 50.000');
+});

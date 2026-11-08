@@ -12,7 +12,7 @@
 
   const S = window.SATE = {
     H: H,
-    SCHLUESSEL: { code: 'sate.zugangscode', daten: 'sate.uebersicht', ansicht: 'sate.ansicht' },
+    SCHLUESSEL: { code: 'sate.zugangscode', daten: 'sate.uebersicht', ansicht: 'sate.ansicht', standort: 'sate.standort' },
     zustand: {
       code: '',          // Zugangscode dieser Sitzung
       name: '',          // Name aus der letzten Antwort
@@ -32,6 +32,7 @@
       diagramm: 'flaschen',
       zeitraum: 'jahr',
       balken: null,
+      zuordnenOffen: false, // Lager: „Verkäufe zuordnen“ aufgeklappt?
     },
     ansichten: {},
   };
@@ -159,6 +160,7 @@
     let frisch = false; // hat die Antwort eine neue Übersicht gebracht?
     Z.schreibt = true;
     Z.schreibNr++; // laufende Lese-Anfragen gelten ab jetzt als veraltet (siehe S.laden, S.verlaufLaden)
+    if (typeof S.eintragenPruefen === 'function') S.eintragenPruefen(); // „Speichern“ sperren, solange geschrieben wird
     try {
       const nutz = Object.assign({}, daten, { anfrageId: daten.anfrageId || S.neueAnfrageId() });
       let e = await S.anfrage(aktion, nutz, '', ZEITLIMIT_SCHREIBEN_MS);
@@ -187,6 +189,7 @@
       }
       // Während des Schreibens gesperrte Bedienelemente (z. B. Verkäufe zuordnen) wieder freigeben
       if (gleicheSitzung() && Z.code) S.ansichten.lager();
+      if (typeof S.eintragenPruefen === 'function') S.eintragenPruefen();
     }
   };
 

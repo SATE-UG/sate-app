@@ -93,6 +93,11 @@
     return datumGueltig(t) ? Number(t.slice(8, 10)) + '. ' + MONATE_KURZ[Number(t.slice(5, 7)) - 1] + ' ' + t.slice(0, 4) : '–';
   }
 
+  /** `JJJJ-MM-TT` → „26. Jan“ (kurz, ohne Jahr, für Listen). Ungültig → „–“. */
+  function datumKurz(t) {
+    return datumGueltig(t) ? Number(t.slice(8, 10)) + '. ' + MONATE_KURZ[Number(t.slice(5, 7)) - 1] : '–';
+  }
+
   /** `JJJJ-MM` → „Nov“ bzw. mit `lang` „November 2026“. Ungültig → „–“. */
   function monatFormat(m, lang) {
     if (typeof m !== 'string' || !/^\d{4}-(0[1-9]|1[0-2])$/.test(m)) return '–';
@@ -396,6 +401,75 @@
     return Math.round((m * weg / (weg + m)) * 10) / 10;
   }
 
+  // Feinschliff (Task 16): kurze Texte für Kacheln, Hinweise, Verlauf, Stepper -----------------------------------
+
+  /** Anzahl Monate von `von` bis `bis` (beide `JJJJ-MM`, einschließlich). Ungültig oder bis < von → null. */
+  function monateAnzahl(von, bis) {
+    if (monatFormat(von) === '–' || monatFormat(bis) === '–') return null;
+    const n = (Number(bis.slice(0, 4)) - Number(von.slice(0, 4))) * 12 + Number(bis.slice(5, 7)) - Number(von.slice(5, 7)) + 1;
+    return n >= 1 ? n : null;
+  }
+
+  /** Kurzer Zeitraum für die Kachel „Ø pro Monat“: „letzte 6 Monate“ bzw. „letzter voller Monat“. Ungültig → ''. */
+  function zeitraumKurz(von, bis) {
+    const n = monateAnzahl(von, bis);
+    if (!n) return '';
+    return n === 1 ? 'letzter voller Monat' : 'letzte ' + n + ' Monate';
+  }
+
+  /** Flaschen des laufenden Monats (`heute` = `JJJJ-MM-TT`) aus `monate` ([{monat, flaschen}]). Fehlt er → null. */
+  function monatBisher(monate, heute) {
+    if (!Array.isArray(monate) || typeof heute !== 'string') return null;
+    const m = monate.find((x) => x && x.monat === heute.slice(0, 7));
+    return m && istZahl(m.flaschen) ? { monat: m.monat, flaschen: m.flaschen } : null;
+  }
+
+  /**
+   * Kisten klein unter dem Bestand: geschätzt „≈ 335 Kisten“ (gerundet), gezählt genau „335 Kisten + 1 Fl.“.
+   * Unter einer Kiste, ungültig oder Kistengröße unbekannt → ''.
+   */
+  function kistenKurz(flaschen, proKiste, geschaetzt) {
+    const t = kistenTeilen(flaschen, proKiste);
+    if (!t) return '';
+    const k = (n) => zahlFormat(n, 0) + (n === 1 ? ' Kiste' : ' Kisten');
+    if (geschaetzt) { const r = Math.round(flaschen / proKiste); return r ? '≈ ' + k(r) : ''; }
+    return t.kisten ? k(t.kisten) + (t.rest ? ' + ' + zahlFormat(t.rest, 0) + ' Fl.' : '') : '';
+  }
+
+  /** Anteils-Balken bei den Standorten nur, wenn mindestens zwei einen Bestand > 0 haben (sonst zeigt einer 100 %). */
+  function anteileSinnvoll(lager) {
+    return Array.isArray(lager) && lager.filter((l) => l && istZahl(l.bestand) && l.bestand > 0).length >= 2;
+  }
+
+  const INVENTUR_FEHLT = /^Noch keine Inventur( bei [^:]+)?: Gesamtbestand ist der rechnerische/;
+
+  /**
+   * Hinweise der Schnittstelle ordnen: „Noch keine Inventur …“ wird zu einem freundlichen Satz (`bestand`), alle übrigen
+   * bleiben unverändert in `andere`. Rückgabe { bestand: Text oder '', andere: [Texte] }.
+   */
+  function hinweiseOrdnen(liste) {
+    const aus = { bestand: '', andere: [] };
+    (Array.isArray(liste) ? liste : []).forEach((t) => {
+      const m = INVENTUR_FEHLT.exec(String(t));
+      if (!m) return aus.andere.push(String(t));
+      aus.bestand = (m[1] ? 'Noch nicht alle Lager gezählt' : 'Noch kein Lager gezählt') +
+        ' – der Bestand ist geschätzt (aus Abfüllungen minus Verkäufe). Nach der Inventur zeigt die App den echten Bestand.';
+    });
+    return aus;
+  }
+
+  /** Verlauf ohne Storno-Gegenzeilen (das Original trägt schon „storniert“). */
+  function verlaufOhneStorno(eintraege) {
+    return (Array.isArray(eintraege) ? eintraege : []).filter((e) => e && e.art !== 'Storno');
+  }
+
+  /** Stepper −/+: Feldtext um `schritt` ändern, auf 0 bis `max` begrenzt (unlesbar zählt als 0). Rückgabe: neuer Text. */
+  function schrittWert(text, schritt, max) {
+    const z = ganzeZahlEingabe(text);
+    const grenze = max > 0 ? max : MAX_FLASCHEN;
+    return String(Math.max(0, Math.min(grenze, (z === null ? 0 : z) + schritt)));
+  }
+
   const hilfen = {
     CODE_LAENGE, ARTEN, MAX_KOMMENTAR, codeBereinigen, codePruefen, apiUrlGueltig, zahlFormat, euroFormat, kistenFormat,
     zeitFormat, datumGueltig, datumFormat, datumText, monatFormat, zeitraumFormat, heuteBerlin, tagePlus, tageZwischen, bestellStufe,
@@ -403,6 +477,7 @@
     ganzeZahlEingabe, flaschenAusEingabe, kistenText, kistenTeilen, buchungPruefen, buchungText, anfrageIdAus, achse, diagrammMasse,
     achsenText, antwortDeuten, uebersichtGueltig, neuer,
     relativZeit, monatPlus, veraenderung, prozentText, richtung, monatsTrend, reiterPosition, ziehRichtung, gummiband,
+    MAX_FLASCHEN, datumKurz, monateAnzahl, zeitraumKurz, monatBisher, kistenKurz, anteileSinnvoll, hinweiseOrdnen, verlaufOhneStorno, schrittWert,
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = hilfen;
   else wurzel.SATE_HILFEN = hilfen;

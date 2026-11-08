@@ -55,13 +55,17 @@
       'Jetzt laden', () => S.laden()));
   }
 
-  /** Kennzahl-Kachel: kleines Label, große Zahl, darunter Einheit und Zusatz in einer Zeile („Flaschen · rechnerisch“). */
-  function kachel(label, wert, einheit, zusatz, icon) {
+  /**
+   * Kennzahl-Kachel: kleines Label, große Zahl, darunter Einheit und Zusatz in einer Zeile („Flaschen · geschätzt“),
+   * optional eine zweite kleine Zeile (`extra`, z. B. „≈ 335 Kisten“).
+   */
+  function kachel(label, wert, einheit, zusatz, icon, extra) {
     const unten = [einheit, zusatz].filter(Boolean).join(' · ');
     return h('div', { class: 'kachel' },
       h('p', { class: 'kachel-label' }, icon ? S.icon(icon, 'label-icon') : null, label),
       h('p', { class: 'kachel-wert', text: wert }),
-      unten ? h('p', { class: 'kachel-zusatz', text: unten }) : null);
+      unten ? h('p', { class: 'kachel-zusatz', text: unten }) : null,
+      extra ? h('p', { class: 'kachel-zusatz', text: extra }) : null);
   }
 
   /** Überschrift im Slide-Stil: erstes Wort fett, Rest normal (z. B. „**Top 10** Kunden“). */
@@ -161,8 +165,13 @@
     const stufe = st.stufe || 'leer';
     const proKiste = typeof k.flaschenProKiste === 'number' && k.flaschenProKiste > 0 ? k.flaschenProKiste : null;
     const summe = u.lager.reduce((x, l) => x + (typeof l.bestand === 'number' && l.bestand > 0 ? l.bestand : 0), 0);
+    const mitAnteil = H.anteileSinnvoll(u.lager); // ein einziger gezählter Standort hätte immer 100 %
+    const geschaetzt = k.gesamtQuelle !== 'inventur';
+    const hw = H.hinweiseOrdnen(u.hinweise);
+    const bisher = H.monatBisher(u.verkaeufe.monate, typeof u.heute === 'string' ? u.heute : H.heuteBerlin());
 
-    ziel.append(
+    // Fehlende Teile (null) überspringen, sonst schreibt append „null“ als Text
+    ziel.append(...[
       h('section', { class: 'karte bestellung stufe-' + stufe, 'aria-label': 'Bestellstatus' },
         h('div', { class: 'bestellung-kopf' },
           h('span', { class: 'pill pill-' + stufe }, h('span', { class: 'punkt', 'aria-hidden': 'true' }), st.text),
@@ -175,26 +184,27 @@
         h('p', { class: 'kachel-zusatz', text: 'Rechnet mit ' + H.kistenFormat(b.vorlaufMonate) + ' Monaten Vorlauf beim Abfüller und ' +
           H.kistenFormat(b.pufferWochen) + ' Wochen Puffer.' })),
       h('div', { class: 'kacheln' },
-        kachel('Bestand', H.zahlFormat(k.gesamtbestand, 0), 'Flaschen', k.gesamtQuelle === 'inventur' ? 'aus Inventur' : 'rechnerisch', 'flasche'),
-        (() => {
-          const t = H.kistenTeilen(k.gesamtbestand, proKiste);
-          return kachel('Kisten', t ? H.zahlFormat(t.kisten, 0) : '–', t && t.rest ? '+ ' + H.zahlFormat(t.rest, 0) + (t.rest === 1 ? ' Flasche' : ' Flaschen') : '',
-            proKiste ? 'volle Kisten à ' + H.zahlFormat(proKiste, 0) : null);
-        })(),
+        kachel('Bestand', H.zahlFormat(k.gesamtbestand, 0), 'Flaschen', geschaetzt ? 'geschätzt' : 'gezählt', 'flasche',
+          H.kistenKurz(k.gesamtbestand, proKiste, geschaetzt)),
         kachel('Reichweite', H.zahlFormat(b.reichweite, 1), 'Monate',
-          typeof k.mindestbestand === 'number' && k.mindestbestand > 0 ? 'bis zum Mindestbestand' : 'ab heute'),
+          typeof k.mindestbestand === 'number' && k.mindestbestand > 0 ? 'bis Mindestbestand' : 'ab heute'),
         kachel('Ø pro Monat', H.zahlFormat(k.abverkaufProMonat, 0), 'Flaschen',
-          typeof k.abverkaufProMonat === 'number' ? H.zeitraumFormat(k.abverkaufVon, k.abverkaufBis) : 'noch unbekannt')),
+          typeof k.abverkaufProMonat === 'number' ? H.zeitraumKurz(k.abverkaufVon, k.abverkaufBis) : 'noch unbekannt'),
+        // Laufender Monat ohne Trend: er ist erst bis heute gezählt, ein Vergleich mit vollen Monaten wäre unfair
+        kachel('Dieser Monat', bisher ? H.zahlFormat(bisher.flaschen, 0) : '–', bisher && bisher.flaschen === 1 ? 'Flasche' : 'Flaschen', 'bis heute')),
+      // „Noch keine Inventur …“ der Schnittstelle als freundlicher Satz direkt unter dem Bestand
+      hw.bestand ? h('p', { class: 'notiz' }, S.icon('info', 'notiz-icon'), h('span', { text: hw.bestand })) : null,
       letzterMonatKarte(u.verkaeufe.monate),
       ueberschrift('h2', 'Standorte'),
       h('div', { class: 'karte liste-karte' }, h('ul', { class: 'liste', role: 'list' }, u.lager.map((l) => h('li', { class: 'standort-zeile' },
         h('div', { class: 'zeile' }, h('span', { class: 'zeile-name', text: l.standort }),
-          l.bestand === null ? h('span', { class: 'badge', text: 'noch keine Inventur' }) : h('span', { class: 'zeile-wert', text: flaschen(l.bestand) })),
-        l.bestand === null ? null : anteil(summe > 0 ? (Math.max(l.bestand, 0) / summe) * 100 : 0))))),
-      u.hinweise.length
-        ? h('div', { class: 'karte info-karte', role: 'note', 'aria-label': 'Hinweise' }, S.icon('info', 'info-icon'),
-          h('div', {}, h('p', { class: 'info-titel', text: 'Hinweise' }), h('ul', { class: 'hinweise', role: 'list' }, u.hinweise.map((t) => h('li', { text: t })))))
-        : null);
+          l.bestand === null ? h('span', { class: 'zeile-leise', text: 'nicht gezählt' }) : h('span', { class: 'zeile-wert', text: flaschen(l.bestand) })),
+        l.bestand === null || !mitAnteil ? null : anteil(summe > 0 ? (Math.max(l.bestand, 0) / summe) * 100 : 0))))),
+      // Übrige Hinweise (z. B. unlesbare Zeilen im Sheet) unverändert, aber klein und dezent
+      hw.andere.length
+        ? h('div', { class: 'karte info-karte', role: 'note', 'aria-label': 'Hinweise aus dem Sheet' }, S.icon('info', 'info-icon'),
+          h('div', {}, h('p', { class: 'info-titel', text: 'Aus dem Sheet' }), h('ul', { class: 'hinweise', role: 'list' }, hw.andere.map((t) => h('li', { text: t })))))
+        : null].filter(Boolean));
   };
 
   // Verkäufe ----------------------------------------------------------------------------------------------------
@@ -334,27 +344,42 @@
     return 'Schwund seit der Inventur davor: ' + flaschen(l.schwund);
   }
 
+  /** Aus dem Lager in „Eintragen“ springen: Art Inventur, Standort vorgewählt, Ansicht oben. */
+  function inventurStarten(standort) {
+    if (!S.eintragenVorbelegen || !S.eintragenVorbelegen('Inventur', standort)) return;
+    S.ansichtZeigen('eintragen');
+    S.nachOben('eintragen');
+  }
+
+  /** Gezählter Standort: Bestand, Kisten, letzte Inventur, Schwund; oben rechts klein „Neu zählen“. */
   function lagerKarte(l) {
-    const kopf = h('div', { class: 'karte-kopf' }, h('h3', { text: l.standort }),
-      l.bestand === null ? h('span', { class: 'badge', text: 'noch keine Inventur' }) : null);
-    if (l.bestand === null) {
-      return h('div', { class: 'karte lager-karte ohne-inventur' }, kopf,
-        h('p', { class: 'kachel-zusatz', text: 'Zähl die Flaschen und trag sie unter „Eintragen“ als Inventur ein, dann rechnet die App hier den Bestand.' }));
-    }
-    return h('div', { class: 'karte lager-karte' }, kopf,
+    const pk = Z.daten && Z.daten.kennzahlen ? Z.daten.kennzahlen.flaschenProKiste : null;
+    const kistenText = H.kistenKurz(l.bestand, pk, false);
+    return h('div', { class: 'karte lager-karte' },
+      h('div', { class: 'karte-kopf' }, h('h3', { text: l.standort }),
+        h('button', { type: 'button', class: 'knopf klein leise-knopf', text: 'Neu zählen', 'aria-label': 'Neu zählen: ' + l.standort,
+          onclick: () => inventurStarten(l.standort) })),
       h('div', { class: 'lager-werte' },
         h('div', {},
           h('p', { class: 'kachel-label', text: 'Bestand' }),
           h('p', { class: 'kachel-wert', text: H.zahlFormat(l.bestand, 0) }),
-          h('p', { class: 'kachel-zusatz', text: 'Flaschen' + (() => {
-            const pk = Z.daten && Z.daten.kennzahlen ? Z.daten.kennzahlen.flaschenProKiste : null;
-            const t = H.kistenTeilen(l.bestand, pk);
-            return t ? ' · ' + H.zahlFormat(t.kisten, 0) + (t.kisten === 1 ? ' Kiste' : ' Kisten') + (t.rest ? ' + ' + H.zahlFormat(t.rest, 0) + ' Fl.' : '') : '';
-          })() })),
+          h('p', { class: 'kachel-zusatz', text: 'Flaschen' + (kistenText ? ' · ' + kistenText : '') })),
         h('div', {},
           h('p', { class: 'kachel-label', text: 'Letzte Inventur' }),
           h('p', { class: 'lager-datum', text: H.datumText(l.letzteInventur) }),
           h('p', { class: 'kachel-zusatz', text: schwundText(l) }))));
+  }
+
+  /** Noch nicht gezählte Standorte: eine Erklärung, dann je eine Zeile mit „Inventur eintragen“. */
+  function offeneLager(liste, keinerGezaehlt) {
+    return [
+      h('p', { class: 'hinweis offen-text', text: (keinerGezaehlt ? 'Noch kein Lager gezählt.' : 'Noch nicht gezählt:') +
+        ' Einmal zählen und als Inventur eintragen, dann rechnet die App dort den Bestand.' }),
+      h('div', { class: 'karte liste-karte' }, h('ul', { class: 'liste', role: 'list' }, liste.map((l) => h('li', { class: 'offen-zeile' },
+        h('span', { class: 'zeile-name', text: l.standort }),
+        h('button', { type: 'button', class: 'knopf klein', text: 'Inventur eintragen', 'aria-label': 'Inventur eintragen: ' + l.standort,
+          onclick: () => inventurStarten(l.standort) }))))),
+    ];
   }
 
   /** Eine Zeile im Verlauf in Worten, z. B. „48 Flaschen: Lager Süd → Lager Nord“. */
@@ -389,23 +414,31 @@
     if (Z.verlaufLaedt) ziel.append(h('p', { class: 'status-zeile laedt', text: 'Lädt neu …' }));
     if (Z.verlaufFehler) ziel.append(h('p', { class: 'fehler', text: 'Verlauf nicht geladen: ' + Z.verlaufFehler }));
     if (!v) return ziel.append(h('button', { type: 'button', class: 'knopf', text: 'Verlauf laden', onclick: () => S.verlaufLaden() }));
-    if (!v.eintraege.length) return ziel.append(leerKarte('Noch nichts eingetragen', 'Sobald jemand etwas unter „Eintragen“ speichert, steht es hier.'));
-    ziel.append(h('p', { class: 'hinweis', text: 'Die letzten ' + v.eintraege.length + ' Einträge, neueste zuerst.' }));
-    ziel.append(h('div', { class: 'karte liste-karte' }, h('ul', { class: 'liste verlauf', role: 'list' }, v.eintraege.map((e) => h('li', {
-      class: 'verlauf-zeile' + (e.storniert ? ' storniert' : '') + (e.art === 'Storno' ? ' storno-zeile' : ''),
+    // Storno-Gegenzeilen nicht als eigene Einträge: das Original trägt „storniert“
+    const liste = H.verlaufOhneStorno(v.eintraege);
+    if (!liste.length) {
+      // Der Server schickt die letzten 30 Zeilen; bestehen sie nur aus Stornos, stehen die Originale weiter oben im Lager-Log
+      return ziel.append(v.eintraege.length
+        ? leerKarte('Zuletzt nur Stornos', 'Die stornierten Einträge sind älter und stehen im Sheet (Tab Lager-Log).')
+        : leerKarte('Noch nichts eingetragen', 'Sobald jemand etwas unter „Eintragen“ speichert, steht es hier.'));
+    }
+    ziel.append(h('div', { class: 'karte liste-karte' }, h('ul', { class: 'liste verlauf', role: 'list' }, liste.map((e) => h('li', {
+      class: 'verlauf-zeile' + (e.storniert ? ' storniert' : ''),
     },
       h('span', { class: 'verlauf-icon' }, S.icon(ART_ICON[e.art] || 'info')),
       h('div', { class: 'verlauf-mitte' },
-        h('div', { class: 'zeile' },
-          h('strong', { class: 'verlauf-art' }, e.art || '?', e.storniert ? h('span', { class: 'badge badge-storno', text: 'storniert' }) : null),
-          h('span', { class: 'verlauf-datum', text: H.datumText(e.datum) })),
-        h('div', { class: 'eintrag-text', text: verlaufText(e) }),
-        h('div', { class: 'eintrag-fuss' },
-          h('span', { class: 'nebenzeile', text: (e.wer ? 'von ' + e.wer : '') + (e.kommentar && e.art !== 'Storno' ? ' · „' + e.kommentar + '“' : '') }),
-          e.stornierbar && e.id ? h('button', {
-            type: 'button', class: 'knopf klein storno-knopf', text: 'Storno', 'aria-label': 'Storno: ' + e.art + ' ' + verlaufText(e),
-            onclick: (ev) => stornieren(e, ev.currentTarget),
-          }) : null)))))));
+        h('p', { class: 'verlauf-kopf' },
+          h('strong', { class: 'verlauf-art', text: e.art || '?' }),
+          e.storniert ? h('span', { class: 'badge badge-storno', text: 'storniert' }) : null),
+        h('p', { class: 'eintrag-text', text: verlaufText(e) }),
+        // Datum, wer und Kommentar in einer leisen Zeile
+        h('p', { class: 'nebenzeile', text: [H.datumKurz(e.datum), e.wer ? 'von ' + e.wer : '', e.kommentar ? '„' + e.kommentar + '“' : '']
+          .filter(Boolean).join(' · ') })),
+      e.stornierbar && e.id ? h('button', {
+        type: 'button', class: 'knopf klein storno-knopf', text: 'Storno', 'aria-label': 'Storno: ' + e.art + ' ' + verlaufText(e),
+        onclick: (ev) => stornieren(e, ev.currentTarget),
+      }) : null)))));
+    ziel.append(h('p', { class: 'hinweis liste-fuss', text: liste.length === 1 ? 'Der letzte Eintrag.' : 'Die letzten ' + liste.length + ' Einträge, neueste zuerst.' }));
   }
 
   async function zuordnen(r, standort, auswahl) {
@@ -420,32 +453,64 @@
     S.ansichten.lager(); // bei Fehler oder Abbruch die alte Auswahl wiederherstellen
   }
 
+  /**
+   * Standort einer Rechnung als kleines tappbares Feld (natives <select>, sieht aus wie eine Pille). Ohne eigene Zuordnung
+   * zeigt es den Standard-Standort grau; gewählte Standorte weiß. Option '' = Standard.
+   */
+  function standortWahl(r, i, orte) {
+    const gesetzt = r.standortGesetzt ? r.standort : '';
+    const liste = orte.concat(gesetzt && orte.indexOf(gesetzt) < 0 ? [gesetzt] : [])
+      .filter((o) => r.standortGesetzt || o !== r.standort); // ohne eigene Zuordnung steht der Standard schon oben
+    const auswahl = h('select', { id: 'vk-' + i, class: 'ort-wahl' + (gesetzt ? ' gesetzt' : ''),
+      onchange: (ev) => zuordnen(r, ev.currentTarget.value, ev.currentTarget) },
+    h('option', { value: '', text: r.standortGesetzt ? 'Standard (zurücksetzen)' : r.standort }),
+    liste.map((o) => h('option', { value: o, text: o })));
+    auswahl.value = gesetzt;
+    if (Z.schreibt) auswahl.disabled = true;
+    return auswahl;
+  }
+
   function zuordnenZeigen() {
     const ziel = leeren('zuordnen-inhalt');
     const u = Z.daten;
-    if (!u) return platzhalter(ziel, ['zeile', 'zeile']);
-    if (!u.verkaufListe.length) return ziel.append(leerKarte('Keine Rechnungen', 'In den letzten 60 Tagen gab es keine Rechnungen zum Zuordnen.'));
+    if (!u) return; // ohne Daten zeigt schon das Lager oben den leeren Zustand
+    const n = u.verkaufListe.length;
+    if (!n) {
+      return ziel.append(h('h2', { class: 'klapp-h2' }, h('div', { class: 'karte klapp-kopf ohne-pfeil' },
+        h('span', { class: 'klapp-text' }, h('span', { class: 'klapp-titel', text: 'Verkäufe zuordnen' }),
+          h('span', { class: 'klapp-zusatz', text: 'Keine Rechnungen in den letzten 60 Tagen' })))));
+    }
+    const offen = !!Z.zuordnenOffen;
+    ziel.append(h('h2', { class: 'klapp-h2' }, h('button', {
+      type: 'button', id: 'zuordnen-kopf', class: 'karte klapp-kopf', 'aria-expanded': offen ? 'true' : 'false', 'aria-controls': 'zuordnen-liste',
+      onclick: () => { Z.zuordnenOffen = !offen; zuordnenZeigen(); S.el('zuordnen-kopf').focus({ preventScroll: true }); },
+    },
+    h('span', { class: 'klapp-text' }, h('span', { class: 'klapp-titel', text: 'Verkäufe zuordnen' }),
+      h('span', { class: 'klapp-zusatz', text: n + (n === 1 ? ' Rechnung' : ' Rechnungen') + ' der letzten 60 Tage' })),
+    h('span', { class: 'chevron klapp-pfeil', 'aria-hidden': 'true', text: '›' }))));
+    if (!offen) return;
     const orte = standorte();
-    ziel.append(h('div', { class: 'karte liste-karte' }, h('ul', { class: 'liste zuordnen', role: 'list' }, u.verkaufListe.map((r, i) => {
-      const gesetzt = r.standortGesetzt ? r.standort : '';
-      const optionen = [h('option', { value: '', text: r.standortGesetzt ? 'Standard (zurücksetzen)' : 'Standard: ' + r.standort })]
-        .concat(orte.concat(gesetzt && orte.indexOf(gesetzt) < 0 ? [gesetzt] : []).map((o) => h('option', { value: o, text: o })));
-      const auswahl = h('select', { id: 'vk-' + i, onchange: (ev) => zuordnen(r, ev.currentTarget.value, ev.currentTarget) }, optionen);
-      auswahl.value = gesetzt;
-      if (Z.schreibt) auswahl.disabled = true;
-      return h('li', {},
-        h('div', { class: 'zeile' }, h('strong', { text: r.rechnung }), h('span', { class: 'verlauf-datum', text: H.datumText(r.datum) })),
-        h('div', { class: 'nebenzeile', text: r.kunde + ' · ' + r.kanal + ' · ' + flaschen(r.flaschen) }),
-        r.gemischt ? h('div', { class: 'nebenzeile warnung', text: 'Achtung: Teile dieser Rechnung zählen bei verschiedenen Standorten.' }) : null,
-        // Beschriftung nur für Vorleseprogramme, sichtbar steht die Rechnung schon darüber
-        h('label', { for: 'vk-' + i, class: 'nur-vorlesen', text: 'Standort für Rechnung ' + r.rechnung }), auswahl);
-    }))));
+    ziel.append(h('div', { id: 'zuordnen-liste', class: 'klapp-inhalt' },
+      h('p', { class: 'hinweis', text: 'Kamen die Flaschen aus einem anderen Lager? Auf den Standort tippen und ändern. Grau = Standard.' }),
+      h('div', { class: 'karte liste-karte' }, h('ul', { class: 'liste zuordnen', role: 'list' }, u.verkaufListe.map((r, i) => h('li', { class: 'zuordnen-zeile' },
+        h('div', { class: 'zeile' }, h('strong', { class: 'zuordnen-kunde', text: r.kunde }), h('span', { class: 'zeile-wert', text: flaschen(r.flaschen) })),
+        h('div', { class: 'zuordnen-unten' },
+          h('span', { class: 'nebenzeile', text: r.rechnung + ' · ' + H.datumKurz(r.datum) }),
+          // Beschriftung nur für Vorleseprogramme, sichtbar stehen Rechnung und Kunde schon daneben
+          h('label', { for: 'vk-' + i, class: 'nur-vorlesen', text: 'Standort für Rechnung ' + r.rechnung + ', ' + r.kunde }),
+          standortWahl(r, i, orte)),
+        r.gemischt ? h('p', { class: 'nebenzeile warnung', text: 'Achtung: Teile dieser Rechnung zählen bei verschiedenen Standorten.' }) : null))))));
   }
 
   S.ansichten.lager = function () {
     const ziel = leeren('lager-inhalt');
     if (!Z.daten) platzhalter(ziel, ['gross', 'gross']);
-    else ziel.append(...Z.daten.lager.map(lagerKarte));
+    else {
+      const gezaehlt = Z.daten.lager.filter((l) => l.bestand !== null);
+      const offen = Z.daten.lager.filter((l) => l.bestand === null);
+      ziel.append(...gezaehlt.map(lagerKarte));
+      if (offen.length) ziel.append(...offeneLager(offen, !gezaehlt.length));
+    }
     verlaufZeigen();
     zuordnenZeigen();
   };

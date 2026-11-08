@@ -80,9 +80,8 @@
         <section id="ansicht-uebersicht" class="ansicht" role="tabpanel" aria-labelledby="reiter-uebersicht">
           <h1 class="titel"><strong>Hallo</strong> <span id="name"></span></h1>
           <div id="uebersicht-inhalt"></div>
-          <div class="knoepfe">
-            <button id="abmelden" type="button" class="knopf">Abmelden</button>
-          </div>
+          <!-- Abmelden klein und gedimmt ganz unten (app.js hängt die Zeile hinter die Fußzeile) -->
+          <p id="abmelden-zeile" class="abmelden-zeile"><button id="abmelden" type="button" class="text-link">Abmelden</button></p>
         </section>
 
         <section id="ansicht-verkaeufe" class="ansicht" role="tabpanel" aria-labelledby="reiter-verkaeufe">
@@ -92,11 +91,10 @@
 
         <section id="ansicht-lager" class="ansicht" role="tabpanel" aria-labelledby="reiter-lager">
           <h1 class="titel"><strong>Lager</strong> &amp; Verlauf</h1>
-          <div id="lager-inhalt" class="karten"></div>
+          <div id="lager-inhalt"></div>
           <h2><strong>Verlauf</strong></h2>
           <div id="verlauf-inhalt"></div>
-          <h2><strong>Verkäufe</strong> zuordnen</h2>
-          <p class="hinweis">Rechnungen der letzten 60 Tage. Kamen die Flaschen aus einem anderen Lager, hier den Standort ändern.</p>
+          <!-- „Verkäufe zuordnen“: einklappbar, Kopf mit Anzahl (ansichten.js) -->
           <div id="zuordnen-inhalt"></div>
         </section>
 
@@ -106,9 +104,11 @@
             <fieldset class="feld">
               <legend class="feld-label">Was ist passiert?</legend>
               <div id="arten" class="arten"></div>
-              <p id="art-text" class="hinweis art-text" aria-live="polite">Bitte oben auswählen.</p>
+              <p id="art-text" class="hinweis art-text" aria-live="polite"></p>
             </fieldset>
 
+            <!-- Erst nach Wahl der Art sichtbar (sanft eingeblendet) -->
+            <div id="b-formular" class="formular" hidden>
             <div class="karte formular-karte">
               <div class="feld">
                 <label for="b-standort" id="b-standort-label" class="feld-label">Standort</label>
@@ -119,19 +119,26 @@
                 <select id="b-nach"></select>
               </div>
 
+              <!-- Mengen mit Stepper −/+ (große Tippflächen), Summe darunter -->
               <fieldset class="feld">
-                <legend id="b-flaschen-legende" class="feld-label">Flaschen</legend>
-                <div class="zwei">
-                  <div id="b-kisten-feld">
-                    <label for="b-kisten" class="klein" id="b-kisten-label">Kisten</label>
+                <legend id="b-flaschen-legende" class="feld-label">Wie viele Flaschen?</legend>
+                <div class="menge" id="b-kisten-feld">
+                  <label for="b-kisten" class="menge-label" id="b-kisten-label">Kisten</label>
+                  <div class="stepper">
+                    <button id="b-kisten-minus" type="button" class="schritt" aria-label="Eine Kiste weniger"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M6 12h12"/></svg></button>
                     <input id="b-kisten" type="text" inputmode="numeric" autocomplete="off" placeholder="0">
-                  </div>
-                  <div>
-                    <label for="b-flaschen" class="klein">einzelne Flaschen</label>
-                    <input id="b-flaschen" type="text" inputmode="numeric" autocomplete="off" placeholder="0">
+                    <button id="b-kisten-plus" type="button" class="schritt" aria-label="Eine Kiste mehr"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M6 12h12M12 6v12"/></svg></button>
                   </div>
                 </div>
-                <p id="b-summe" class="summe" aria-live="polite"></p>
+                <div class="menge">
+                  <label for="b-flaschen" class="menge-label" id="b-flaschen-label">Einzelne Flaschen</label>
+                  <div class="stepper">
+                    <button id="b-flaschen-minus" type="button" class="schritt" aria-label="Eine Flasche weniger"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M6 12h12"/></svg></button>
+                    <input id="b-flaschen" type="text" inputmode="numeric" autocomplete="off" placeholder="0">
+                    <button id="b-flaschen-plus" type="button" class="schritt" aria-label="Eine Flasche mehr"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M6 12h12M12 6v12"/></svg></button>
+                  </div>
+                </div>
+                <p id="b-summe" class="summe" aria-live="polite" hidden></p>
               </fieldset>
 
               <div class="feld">
@@ -145,7 +152,10 @@
             </div>
 
             <p id="buchen-fehler" class="fehler" role="alert" hidden></p>
-            <button id="buchen-senden" type="submit" class="knopf haupt">Speichern</button>
+            <button id="buchen-senden" type="submit" class="knopf haupt" aria-describedby="buchen-offen" disabled>Speichern</button>
+            <!-- Was noch fehlt, solange „Speichern“ gesperrt ist (leise, kein Fehler) -->
+            <p id="buchen-offen" class="hinweis buchen-offen"></p>
+            </div>
           </form>
         </section>
       </div>
