@@ -264,7 +264,7 @@
   function uebersichtGueltig(u) {
     return !!u && typeof u === 'object' && typeof u.stand === 'string' && !!u.kennzahlen && typeof u.kennzahlen === 'object' &&
       !!u.bestellung && typeof u.bestellung === 'object' && Array.isArray(u.lager) && !!u.verkaeufe &&
-      Array.isArray(u.verkaeufe.monate) && !!u.verkaeufe.letzte12 && !!u.verkaeufe.jahr && Array.isArray(u.verkaufListe) &&
+      Array.isArray(u.verkaeufe.monate) && !!u.verkaeufe.jahr && !!u.verkaeufe.vorjahr && !!u.verkaeufe.gesamt && Array.isArray(u.verkaufListe) &&
       Array.isArray(u.hinweise);
   }
 

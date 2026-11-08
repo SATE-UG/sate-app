@@ -179,7 +179,7 @@ test('Diagramm: schöne Achse und Balkenmaße', () => {
 
 test('Übersicht erkennen und Stände vergleichen', () => {
   const u = { stand: '2026-11-08T10:00:00.000Z', kennzahlen: {}, bestellung: {}, lager: [], verkaufListe: [], hinweise: [],
-    verkaeufe: { monate: [], letzte12: {}, jahr: {} } };
+    verkaeufe: { monate: [], jahr: {}, vorjahr: {}, gesamt: {} } };
   assert.ok(H.uebersichtGueltig(u));
   assert.ok(!H.uebersichtGueltig(null));
   assert.ok(!H.uebersichtGueltig(Object.assign({}, u, { lager: null })));

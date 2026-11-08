@@ -29,7 +29,7 @@
       verlaufFehler: '',
       verlaufVeraltet: true,
       diagramm: 'flaschen',
-      zeitraum: 'letzte12',
+      zeitraum: 'jahr',
       balken: null,
     },
     ansichten: {},

@@ -161,16 +161,17 @@
     if (Z.balken === null || Z.balken < 0 || Z.balken >= monate.length) Z.balken = monate.length - 1;
     const wert = Z.diagramm === 'umsatz' ? 'umsatz' : 'flaschen';
     const info = h('p', { class: 'balken-info', 'aria-live': 'polite', text: balkenText(monate[Z.balken], Z.balken === monate.length - 1) });
-    const z = Z.zeitraum === 'jahr' ? u.verkaeufe.jahr : u.verkaeufe.letzte12;
+    if (Z.zeitraum !== 'vorjahr' && Z.zeitraum !== 'gesamt') Z.zeitraum = 'jahr';
+    const z = u.verkaeufe[Z.zeitraum];
     ziel.append(
       umschalter('Diagramm', [['flaschen', 'Flaschen'], ['umsatz', 'Umsatz']], wert, (w) => { Z.diagramm = w; S.ansichten.verkaeufe(); }),
       info,
       diagramm(monate, wert, info),
       h('p', { class: 'legende', text: 'Monat antippen für die Zahlen. Gestrichelt: laufender Monat.' }),
       h('h2', { text: 'Kanäle und Kunden' }),
-      umschalter('Zeitraum', [['letzte12', 'Letzte 12 Monate'], ['jahr', 'Dieses Jahr']], Z.zeitraum === 'jahr' ? 'jahr' : 'letzte12',
+      umschalter('Zeitraum', [['jahr', 'Dieses Jahr'], ['vorjahr', 'Vorjahr'], ['gesamt', 'Gesamt']], Z.zeitraum,
         (w) => { Z.zeitraum = w; S.ansichten.verkaeufe(); }),
-      h('p', { class: 'summen' }, H.zeitraumFormat(z.von, z.bis) + ': ', h('strong', { text: flaschen(z.flaschen) }), ' · ' + H.euroFormat(z.umsatz)),
+      h('p', { class: 'summen' }, (Z.zeitraum === 'gesamt' ? 'Seit ' + H.monatFormat(z.von, true) : H.zeitraumFormat(z.von, z.bis)) + ': ', h('strong', { text: flaschen(z.flaschen) }), ' · ' + H.euroFormat(z.umsatz)),
       h('h3', { text: 'Kanäle' }),
       tabelle(z.kanaele.map((x) => ({ name: x.kanal, flaschen: x.flaschen, umsatz: x.umsatz })), true, false),
       h('h3', { text: 'Top 10 Kunden' }),

@@ -160,10 +160,12 @@ dd.zusatz { font-size: 15px; font-weight: 400; color: var(--leise); word-spacing
 
 .leer { color: var(--leise); margin: 8px 0; }
 
-/* Umschalter (zwei Knöpfe nebeneinander), gewählter invertiert */
-.umschalter { display: grid; grid-template-columns: 1fr 1fr; margin: 0 0 16px; }
+/* Umschalter (zwei oder drei Knöpfe nebeneinander, gleich breit), gewählter invertiert */
+.umschalter { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; margin: 0 0 16px; }
 .umschalter button {
   min-height: 48px;
+  padding: 4px 2px;
+  line-height: 1.2;
   font: inherit;
   font-size: 16px;
   border: 2px solid var(--weiss);

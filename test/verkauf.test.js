@@ -66,6 +66,41 @@ test('Auswertung: 13 Monate inkl. laufendem, letzte 12 volle Monate, laufendes J
   assert.strictEqual(a.jahr.bis, '2026-11');
   const bar = a.jahr.kunden.find((x) => /bar eins/i.test(x.kunde));
   assert.deepStrictEqual(bar, { kunde: 'Bar Eins', flaschen: 48, umsatz: 60 }, 'laufender Monat zählt im Jahr mit');
+
+  assert.strictEqual(a.vorjahr.von, '2025-01');
+  assert.strictEqual(a.vorjahr.bis, '2025-12');
+  const alle = v.filter((x) => x.monat <= '2026-11');
+  const erster = alle.map((x) => x.monat).sort()[0];
+  assert.strictEqual(a.gesamt.von, erster);
+  assert.strictEqual(a.gesamt.bis, '2026-11');
+  const summe = (von, bis) => Math.round(v.filter((x) => x.monat >= von && x.monat <= bis).reduce((s, x) => s + x.flaschen, 0) * 100) / 100;
+  assert.strictEqual(a.gesamt.flaschen, summe(erster, '2026-11'));
+  assert.strictEqual(a.vorjahr.flaschen, summe('2025-01', '2025-12'));
+  assert.strictEqual(a.jahr.flaschen + a.vorjahr.flaschen, summe('2025-01', '2026-11'), 'Jahr + Vorjahr ohne Lücke');
+});
+
+test('Jahreswechsel: im Januar 2027 ist „Dieses Jahr“ 2027 und „Vorjahr“ 2026', () => {
+  const v = [
+    { monat: '2025-12', kanal: 'Karlsruhe', kunde: 'A', flaschen: 1, umsatz: 1 },
+    { monat: '2026-01', kanal: 'Karlsruhe', kunde: 'A', flaschen: 10, umsatz: 10 },
+    { monat: '2026-12', kanal: 'Karlsruhe', kunde: 'A', flaschen: 100, umsatz: 100 },
+    { monat: '2027-01', kanal: 'Karlsruhe', kunde: 'A', flaschen: 1000, umsatz: 1000 },
+  ];
+  const a = roh(k.verkaeufeAuswerten(v, '2027-01-01'));
+  assert.deepStrictEqual([a.jahr.von, a.jahr.bis, a.jahr.flaschen], ['2027-01', '2027-01', 1000]);
+  assert.deepStrictEqual([a.vorjahr.von, a.vorjahr.bis, a.vorjahr.flaschen], ['2026-01', '2026-12', 110]);
+  assert.deepStrictEqual([a.gesamt.von, a.gesamt.bis, a.gesamt.flaschen], ['2025-12', '2027-01', 1111]);
+  const d = roh(k.verkaeufeAuswerten(v, '2026-12-31'));
+  assert.deepStrictEqual([d.jahr.von, d.jahr.bis, d.jahr.flaschen], ['2026-01', '2026-12', 110]);
+  assert.deepStrictEqual([d.vorjahr.von, d.vorjahr.bis, d.vorjahr.flaschen], ['2025-01', '2025-12', 1]);
+  assert.strictEqual(d.gesamt.flaschen, 111, 'Januar 2027 liegt am 31.12.2026 in der Zukunft');
+});
+
+test('Auswertung ohne Verkäufe: Gesamt beginnt im laufenden Monat', () => {
+  const a = roh(k.verkaeufeAuswerten([], '2026-11-08'));
+  assert.strictEqual(a.gesamt.von, '2026-11');
+  assert.strictEqual(a.gesamt.flaschen, 0);
+  assert.strictEqual(a.vorjahr.flaschen, 0);
 });
 
 test('Top-Kunden: höchstens 10, zusammengefasst über Schreibweisen, häufigste Schreibweise gewinnt', () => {

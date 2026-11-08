@@ -47,6 +47,13 @@ function verkaeufeLesen(zeilen, formatieren) {
   return { verkaeufe: verkaeufe, hinweise: hinweise };
 }
 
+/** Frühester Monat mit Verkäufen (nicht nach `jetzt`); ohne Verkäufe `jetzt`. */
+function ersterMonat_(verkaeufe, jetzt) {
+  let erster = jetzt;
+  verkaeufe.forEach((v) => { if (v.monat < erster) erster = v.monat; });
+  return erster;
+}
+
 /** Summe über Verkäufe in [von, bis] (Monate `JJJJ-MM`, beide inklusive). */
 function zeitraumAuswerten_(verkaeufe, von, bis) {
   // Ohne Prototyp: Kundennamen wie „constructor“ oder „__proto__“ sind normale Schlüssel.
@@ -81,7 +88,8 @@ function zeitraumAuswerten_(verkaeufe, von, bis) {
 
 /**
  * Regel 8: Flaschen und Umsatz pro Monat (letzte 13 Monate inkl. laufendem, auch leere Monate), dazu pro Kanal und
- * Top-Kunden für die letzten 12 vollen Monate und das laufende Jahr (Januar bis laufender Monat).
+ * Top-Kunden für das laufende Jahr (Januar bis laufender Monat), das Vorjahr (Januar bis Dezember) und gesamt (erster
+ * Monat mit Verkäufen bis laufender Monat). `letzte12` (12 volle Monate) bleibt für ältere App-Versionen in der Antwort.
  */
 function verkaeufeAuswerten(verkaeufe, heute) {
   const jetzt = heute.slice(0, 7);
@@ -95,5 +103,7 @@ function verkaeufeAuswerten(verkaeufe, heute) {
     monate: monate,
     letzte12: zeitraumAuswerten_(verkaeufe, monatPlus(jetzt, -12), monatPlus(jetzt, -1)),
     jahr: zeitraumAuswerten_(verkaeufe, jetzt.slice(0, 4) + '-01', jetzt),
+    vorjahr: zeitraumAuswerten_(verkaeufe, (Number(jetzt.slice(0, 4)) - 1) + '-01', (Number(jetzt.slice(0, 4)) - 1) + '-12'),
+    gesamt: zeitraumAuswerten_(verkaeufe, ersterMonat_(verkaeufe, jetzt), jetzt),
   };
 }
