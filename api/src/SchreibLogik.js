@@ -64,6 +64,23 @@ function idErzeugen(ms, zufall) {
   return 'L' + ms.toString(36).toUpperCase() + '-' + (z + '0000').slice(0, 4);
 }
 
+/**
+ * Feste ID aus einer anfrageId (Doppelklick-Schutz ohne Cache): `hex` = SHA-256 (Hex) über Aktion, Name und
+ * anfrageId, z. B. „LA-3F9C0A…“ (20 Hex-Zeichen). Dieselbe Anfrage ergibt immer dieselbe ID.
+ */
+function idAusAnfrage(hex) {
+  return ANFRAGE_ID_PRAEFIX + String(hex).slice(0, ANFRAGE_ID_HEX).toUpperCase();
+}
+
+/** Zeile (0-basiert) im Lager-Log mit genau dieser ID (Spalte I), sonst -1. */
+function lagerLogZeileZuId(zeilen, id) {
+  for (let i = 1; i < (zeilen || []).length; i++) {
+    const z = zeilen[i];
+    if (z && String(z[LL.ID] === undefined || z[LL.ID] === null ? '' : z[LL.ID]).trim() === id) return i;
+  }
+  return -1;
+}
+
 /** Neue ID, die im Lager-Log noch nicht vorkommt. `zufall()` → Text (Utilities.getUuid). */
 function neueId_(lagerLog, ms, zufall) {
   const vorhanden = Object.create(null);
@@ -107,11 +124,14 @@ function buchungPruefen(d, e, heute) {
   return { buchung: { art: art, standort: standort, nach: nach, flaschen: flaschen, datum: datum, kommentar: kommentar } };
 }
 
-/** Bestand pro Standort (lagerBerechnen) aus den Tabs, optional mit zusätzlichen Lager-Log-Zeilen. */
-function bestandProStandort(t, e, formatieren, zusatz) {
+/**
+ * Bestand pro Standort (lagerBerechnen) aus den Tabs, optional mit zusätzlichen Lager-Log-Zeilen. Wie in der
+ * Übersicht zählt nichts mit Datum nach `heute`.
+ */
+function bestandProStandort(t, e, formatieren, zusatz, heute) {
   const vk = verkaeufeLesen(t.verkaeufe, formatieren);
-  const log = lagerLogLesen(zusatz ? t.lagerLog.concat(zusatz) : t.lagerLog, formatieren, e);
-  return lagerBerechnen(log.buchungen, vk.verkaeufe, e).standorte;
+  const log = lagerLogLesen(zusatz ? t.lagerLog.concat(zusatz) : t.lagerLog, formatieren, e, heute);
+  return lagerBerechnen(log.buchungen, vk.verkaeufe, e, heute).standorte;
 }
 
 /**
@@ -161,6 +181,17 @@ function abfuellungQuelle(wer, datum, id) {
   return 'SATE-App, ' + wer + ', ' + datum + ', ID ' + id;
 }
 
+/** Erste Zeile „N. Abfüllung“ im Tab Abfüllungen, deren Quelle auf „, ID <id>“ endet, sonst null. */
+function abfuellungZeileZuId(zeilen, id) {
+  const rest = (zeilen || []).slice(1);
+  for (let i = 0; i < rest.length; i++) {
+    const z = rest[i];
+    const m = /, ID ([A-Za-z0-9_-]+)$/.exec(String((z && z[AB.QUELLE]) || '').trim());
+    if (m && m[1] === id && /^\d+\.\s*Abfüllung$/i.test(String(z[AB.NAME] || '').trim())) return z;
+  }
+  return null;
+}
+
 // Storno ---------------------------------------------------------------------------------------------------
 
 /**
@@ -203,14 +234,8 @@ function stornoKommentar(orig, formatieren) {
  * Rückgabe { werte } oder { hinweis } (keine passende Zeile, schon storniert, unlesbar → Mark korrigiert von Hand).
  */
 function abfuellungStorno(zeilen, id, wer, heute) {
-  let orig = null;
-  let schon = false;
-  (zeilen || []).slice(1).forEach((z) => {
-    const q = String((z && z[AB.QUELLE]) || '');
-    const m = /, ID ([A-Za-z0-9_-]+)$/.exec(q.trim());
-    if (m && m[1] === id && /^\d+\.\s*Abfüllung$/i.test(String(z[AB.NAME] || '').trim())) orig = orig || z;
-    if (q.indexOf('Storno von ID ' + id + ',') >= 0) schon = true;
-  });
+  const orig = abfuellungZeileZuId(zeilen, id);
+  const schon = abfuellungGegenzeileDa(zeilen, id);
   const fl = orig ? betragLesen(orig[AB.FLASCHEN]) : null;
   if (!orig || schon || fl === null) {
     return { hinweis: 'Im Tab Abfüllungen gibt es keine passende App-Zeile zu dieser Abfüllung. Mark muss sie dort von Hand korrigieren.' };
@@ -218,6 +243,11 @@ function abfuellungStorno(zeilen, id, wer, heute) {
   return {
     werte: ['Storno ' + String(orig[AB.NAME]).trim(), orig[AB.MONAT], -fl, 'SATE-App, Storno von ID ' + id + ', ' + wer + ', ' + heute],
   };
+}
+
+/** Gibt es im Tab Abfüllungen schon die Gegenzeile zum Storno der Abfüllung `id`? */
+function abfuellungGegenzeileDa(zeilen, id) {
+  return (zeilen || []).slice(1).some((z) => String((z && z[AB.QUELLE]) || '').indexOf('Storno von ID ' + id + ',') >= 0);
 }
 
 // Verlauf --------------------------------------------------------------------------------------------------
@@ -317,9 +347,13 @@ function verkaufStandortPruefen(d, e, zeilen) {
  */
 function schreibAktion(aktion, daten, name, u) {
   let schluessel = null;
+  let festeId = null;
   if (daten.anfrageId !== undefined && daten.anfrageId !== null) {
     if (typeof daten.anfrageId !== 'string' || !ANFRAGE_ID_MUSTER.test(daten.anfrageId)) return { ok: false, fehler: FEHLER_ANFRAGE };
     schluessel = 'anfrage:' + u.sha256Hex(aktion + '\n' + name + '\n' + daten.anfrageId);
+    // buchen/stornieren: feste Lager-Log-ID, damit eine Wiederholung auch ohne Cache auffällt (verkaufStandort
+    // setzt nur Spalte L auf einen Wert und schadet doppelt nicht)
+    if (aktion !== 'verkaufStandort') festeId = idAusAnfrage(u.sha256Hex('lager-log-id\n' + aktion + '\n' + name + '\n' + daten.anfrageId));
   }
   const r = u.mitSperre(() => {
     const jetzt = u.jetzt();
@@ -330,15 +364,47 @@ function schreibAktion(aktion, daten, name, u) {
     }
     const e = einstellungenLesen(t.einstellungen);
     const heute = u.datumText(jetzt);
-    const erg = aktion === 'buchen' ? buchen_(daten, name, t, e, heute, jetzt, u)
-      : aktion === 'stornieren' ? stornieren_(daten, name, t, e, heute, jetzt, u)
-        : verkaufStandortSetzen_(daten, t, e, u);
+    if (festeId) {
+      // Langsamer, sicherer Weg: steht die feste ID schon im (eben unter der Sperre gelesenen) Lager-Log?
+      const schon = wiederholungImLog_(aktion, festeId, t);
+      if (schon) {
+        cacheSchreiben_(u, schluessel, schon);
+        return mitUebersicht_(Object.assign({}, schon, { wiederholt: true }), t, u, jetzt, false);
+      }
+    }
+    const erg = aktion === 'buchen' ? buchen_(daten, name, t, e, heute, jetzt, u, festeId)
+      : aktion === 'stornieren' ? stornieren_(daten, name, t, e, heute, jetzt, u, festeId)
+        : verkaufStandortSetzen_(daten, t, e, u, heute);
     if (!erg.ok) return erg;
     if (schluessel) cacheSchreiben_(u, schluessel, erg);
     return mitUebersicht_(erg, t, u, jetzt, true);
   });
   if (r.gesperrt) return { ok: false, fehler: FEHLER_BESCHAEFTIGT };
   return r.wert;
+}
+
+/**
+ * Steht die Zeile mit der festen ID `id` schon im Lager-Log, wurde diese Anfrage schon geschrieben: Antwort wie beim
+ * ersten Mal (ohne Übersicht), Hinweis, falls die Zeile in Abfüllungen fehlt. Sonst null.
+ */
+function wiederholungImLog_(aktion, id, t) {
+  lagerLogKopfPruefen(t.lagerLog);
+  const i = lagerLogZeileZuId(t.lagerLog, id);
+  if (i < 0) return null;
+  const z = t.lagerLog[i];
+  const hinweise = [];
+  if (aktion === 'buchen' && lagerArt(z[LL.ART]) === 'Abfüllung') {
+    const ab = abfuellungZeileZuId(t.abfuellungen, id);
+    hinweise.push(ab ? 'Im Tab Abfüllungen als „' + String(ab[AB.NAME]).trim() + '“ eingetragen.'
+      : 'Im Lager-Log eingetragen, aber die Zeile im Tab Abfüllungen fehlt. Bitte Mark Bescheid geben.');
+  } else if (aktion === 'stornieren') {
+    const von = String(z[LL.STORNO_VON] === undefined || z[LL.STORNO_VON] === null ? '' : z[LL.STORNO_VON]).trim();
+    const o = von ? lagerLogZeileZuId(t.lagerLog, von) : -1;
+    if (o >= 0 && lagerArt(t.lagerLog[o][LL.ART]) === 'Abfüllung' && !abfuellungGegenzeileDa(t.abfuellungen, von)) {
+      hinweise.push('Storniert, aber die Gegenzeile im Tab Abfüllungen fehlt. Mark muss sie dort von Hand korrigieren.');
+    }
+  }
+  return { ok: true, id: id, hinweise: hinweise };
 }
 
 function cacheLesen_(u, k) {
@@ -375,15 +441,15 @@ function mitUebersicht_(erg, t, u, jetzt, lagerTab) {
   return Object.assign({}, erg, { hinweise: hinweise, uebersicht: ueb });
 }
 
-function buchen_(daten, name, t, e, heute, jetzt, u) {
+function buchen_(daten, name, t, e, heute, jetzt, u, festeId) {
   const p = buchungPruefen(daten, e, heute);
   if (p.fehler) return { ok: false, fehler: p.fehler };
   const b = p.buchung;
-  const vorher = bestandProStandort(t, e, u.datumText); // prüft auch die Spaltenköpfe, bevor etwas geschrieben wird
+  const vorher = bestandProStandort(t, e, u.datumText, null, heute); // prüft auch die Spaltenköpfe, bevor etwas geschrieben wird
   if (b.art === 'Abfüllung') abfuellungenKopfPruefen(t.abfuellungen);
-  const id = neueId_(t.lagerLog, jetzt.getTime(), u.zufall);
+  const id = festeId || neueId_(t.lagerLog, jetzt.getTime(), u.zufall);
   const zeile = [u.datumZelle(b.datum), b.standort, b.art, b.flaschen, b.nach, name, b.kommentar, jetzt, id, ''];
-  const nachher = bestandProStandort(t, e, u.datumText, [zeile]);
+  const nachher = bestandProStandort(t, e, u.datumText, [zeile], heute);
   const warnung = negativWarnung(vorher, nachher, b.art === 'Umlagerung' ? [b.standort, b.nach] : [b.standort]);
   if (warnung && daten.bestaetigt !== true) return { ok: false, brauchtBestaetigung: true, warnung: warnung };
 
@@ -391,7 +457,11 @@ function buchen_(daten, name, t, e, heute, jetzt, u) {
   u.zeileSchreiben(LAGER_LOG_TAB, nr, zellenSicher(zeile), LL_FORMATE);
   zeileSetzen_(t.lagerLog, nr, zeile);
   const hinweise = [];
-  if (b.art === 'Abfüllung') {
+  const schonDa = b.art === 'Abfüllung' ? abfuellungZeileZuId(t.abfuellungen, id) : null;
+  if (schonDa) {
+    // nicht doppelt anhängen (z. B. Lager-Log-Zeile von Hand gelöscht und Anfrage wiederholt)
+    hinweise.push('Im Tab Abfüllungen stand diese Abfüllung schon als „' + String(schonDa[AB.NAME]).trim() + '“.');
+  } else if (b.art === 'Abfüllung') {
     const nummer = abfuellungNummer(t.abfuellungen) + '. Abfüllung';
     const abf = [nummer, u.datumZelle(b.datum.slice(0, 7) + '-01'), b.flaschen, abfuellungQuelle(name, b.datum, id)];
     try {
@@ -406,17 +476,17 @@ function buchen_(daten, name, t, e, heute, jetzt, u) {
   return { ok: true, id: id, hinweise: hinweise };
 }
 
-function stornieren_(daten, name, t, e, heute, jetzt, u) {
+function stornieren_(daten, name, t, e, heute, jetzt, u, festeId) {
   lagerLogKopfPruefen(t.lagerLog);
   const p = stornoPruefen(t.lagerLog, daten.id);
   if (p.fehler) return { ok: false, fehler: p.fehler };
-  const vorher = bestandProStandort(t, e, u.datumText); // prüft auch die Spaltenköpfe, bevor etwas geschrieben wird
-  const id = neueId_(t.lagerLog, jetzt.getTime(), u.zufall);
+  const vorher = bestandProStandort(t, e, u.datumText, null, heute); // prüft auch die Spaltenköpfe, bevor etwas geschrieben wird
+  const id = festeId || neueId_(t.lagerLog, jetzt.getTime(), u.zufall);
   const orig = p.zeile;
   const zeile = [u.datumZelle(heute), String(orig[LL.STANDORT] || '').trim(), 'Storno', '', '', name,
     stornoKommentar(orig, u.datumText), jetzt, id, p.id];
   // Storno einer Abfüllung oder Umlagerung kann einen Standort ins Minus bringen
-  const warnung = negativWarnung(vorher, bestandProStandort(t, e, u.datumText, [zeile]), e.standorte);
+  const warnung = negativWarnung(vorher, bestandProStandort(t, e, u.datumText, [zeile], heute), e.standorte);
   if (warnung && daten.bestaetigt !== true) return { ok: false, brauchtBestaetigung: true, warnung: warnung };
   const hinweise = [];
   let abf = null;
@@ -446,8 +516,8 @@ function stornieren_(daten, name, t, e, heute, jetzt, u) {
   return { ok: true, id: id, hinweise: hinweise };
 }
 
-function verkaufStandortSetzen_(daten, t, e, u) {
-  const vorher = bestandProStandort(t, e, u.datumText); // prüft auch die Spaltenköpfe, bevor etwas geschrieben wird
+function verkaufStandortSetzen_(daten, t, e, u, heute) {
+  const vorher = bestandProStandort(t, e, u.datumText, null, heute); // prüft auch die Spaltenköpfe, bevor etwas geschrieben wird
   const p = verkaufStandortPruefen(daten, e, t.verkaeufe);
   if (p.fehler) return { ok: false, fehler: p.fehler };
   // Umhängen kann den neuen Standort ins Minus bringen: erst im Speicher durchrechnen
@@ -458,10 +528,29 @@ function verkaufStandortSetzen_(daten, t, e, u) {
     kopie[VK.STANDORT] = p.standort;
     return kopie;
   });
-  const warnung = negativWarnung(vorher, bestandProStandort(Object.assign({}, t, { verkaeufe: neu }), e, u.datumText), e.standorte);
+  const warnung = negativWarnung(vorher, bestandProStandort(Object.assign({}, t, { verkaeufe: neu }), e, u.datumText, null, heute), e.standorte);
   if (warnung && daten.bestaetigt !== true) return { ok: false, brauchtBestaetigung: true, warnung: warnung };
+  // Zeile für Zeile, nur Spalte L. Scheitert eine, kommen die schon geschriebenen auf den alten Wert zurück.
+  const geschrieben = [];
+  try {
+    p.zeilen.forEach((nr) => {
+      const z = t.verkaeufe[nr - 1];
+      const alt = z.length > VK.STANDORT ? z[VK.STANDORT] : '';
+      u.zelleSchreiben(VERKAEUFE_TAB, nr, VK.STANDORT + 1, p.standort ? textSicher(p.standort) : '');
+      geschrieben.push({ nr: nr, alt: alt });
+    });
+  } catch (err) {
+    let offen = false;
+    geschrieben.reverse().forEach((g) => {
+      try {
+        u.zelleSchreiben(VERKAEUFE_TAB, g.nr, VK.STANDORT + 1, zelleZurueck_(g.alt));
+      } catch (err2) {
+        offen = true;
+      }
+    });
+    return { ok: false, fehler: offen ? FEHLER_ZUORDNEN_TEILWEISE + ' (Rechnung ' + p.rechnung + ')' : FEHLER_ZUORDNEN };
+  }
   p.zeilen.forEach((nr) => {
-    u.zelleSchreiben(VERKAEUFE_TAB, nr, VK.STANDORT + 1, p.standort ? textSicher(p.standort) : '');
     const z = t.verkaeufe[nr - 1];
     while (z.length <= VK.STANDORT) z.push('');
     z[VK.STANDORT] = p.standort;
@@ -470,4 +559,10 @@ function verkaufStandortSetzen_(daten, t, e, u) {
     ok: true, geaendert: p.zeilen.length,
     hinweise: p.standort ? [] : ['Rechnung ' + p.rechnung + ' zählt wieder beim Standard-Standort.'],
   };
+}
+
+/** Alter Zellwert zum Zurückschreiben: Texte wieder gegen Formel-Injektion geschützt, leer bleibt leer. */
+function zelleZurueck_(alt) {
+  if (alt === null || alt === undefined) return '';
+  return typeof alt === 'string' ? (alt === '' ? '' : textSicher(alt)) : alt;
 }

@@ -164,6 +164,11 @@
       S.el('dialog-nein').focus();
     });
   };
+  /** Offene Rückfrage schließen (wie „nein“), z. B. beim Abmelden. */
+  S.frageSchliessen = function () {
+    const d = S.el('dialog');
+    if (d && d.open && typeof d.close === 'function') d.close('nein');
+  };
   S.el('dialog-ja').addEventListener('click', () => S.el('dialog').close('ja'));
   S.el('dialog-nein').addEventListener('click', () => S.el('dialog').close('nein'));
 
@@ -178,5 +183,6 @@
     t.hidden = false;
     toastUhr = setTimeout(() => { t.hidden = true; }, fehler || (zusatz && zusatz.length) ? 9000 : 4500);
   };
-  S.el('toast').addEventListener('click', () => { clearTimeout(toastUhr); S.el('toast').hidden = true; });
+  S.meldenSchliessen = function () { clearTimeout(toastUhr); S.el('toast').hidden = true; };
+  S.el('toast').addEventListener('click', S.meldenSchliessen);
 })();

@@ -116,9 +116,14 @@ test('uebersichtBauen: mit allen Inventuren zählt die Summe, Zeitzone für „h
   const u = roh(k.uebersichtBauen(rohdaten(log), D.berlin, new Date('2026-10-31T23:30:00Z')));
   assert.strictEqual(u.heute, '2026-11-01');
   assert.strictEqual(u.kennzahlen.abverkaufBis, '2026-10');
-  // Bar Eins 03.11. (48 Fl., Lager Süd) zählt nach der Inventur
-  assert.strictEqual(u.lager[0].bestand, 952);
-  assert.strictEqual(u.kennzahlen.gesamtbestand, 1002);
+  // Bar Eins 03.11. (48 Fl., Lager Süd) liegt nach „heute“ (01.11.): zählt noch nicht, Hinweis (Codex 2026-11-08)
+  assert.strictEqual(u.lager[0].bestand, 1000);
+  assert.strictEqual(u.kennzahlen.gesamtbestand, 1050);
+  assert.ok(u.hinweise.some((h) => /Verkäufe: 1 Zeile mit Datum in der Zukunft/.test(h)), JSON.stringify(u.hinweise));
+  // zwei Tage später zählt sie (Ende des Inventurtags + Bewegungen danach)
+  const spaeter = roh(k.uebersichtBauen(rohdaten(log), D.berlin, new Date('2026-11-03T10:00:00Z')));
+  assert.strictEqual(spaeter.lager[0].bestand, 952);
+  assert.strictEqual(spaeter.kennzahlen.gesamtbestand, 1002);
   assert.strictEqual(u.kennzahlen.gesamtQuelle, 'inventur');
   assert.ok(!u.hinweise.some((h) => /Noch keine Inventur/.test(h)));
 });

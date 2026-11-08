@@ -106,14 +106,24 @@ const BUCHBARE_ARTEN = ['Inventur', 'Abfüllung', 'Umlagerung', 'Promo', 'Eigenv
 const MAX_FLASCHEN = 50000;
 /** Längster Kommentar (Zeichen). */
 const MAX_KOMMENTAR = 200;
-/** Buchungsdatum: höchstens so viele Tage in der Zukunft bzw. zurück (Kalendertage in Europe/Berlin). */
-const MAX_TAGE_ZUKUNFT = 1;
+/**
+ * Buchungsdatum: höchstens so viele Tage in der Zukunft bzw. zurück (Kalendertage in Europe/Berlin). Seit dem
+ * Codex-Befund vom 2026-11-08 höchstens heute: Zukunftsbuchungen würden den Bestand sofort verändern.
+ */
+const MAX_TAGE_ZUKUNFT = 0;
 const MAX_TAGE_ZURUECK = 400;
 /** So lange wartet eine Schreib-Anfrage auf die Sperre, dann kommt FEHLER_BESCHAEFTIGT. */
 const SPERRE_MS = 10000;
 /** Doppelklick-Schutz: gleiche anfrageId innerhalb dieser Zeit wird nicht doppelt geschrieben (CacheService). */
 const ANFRAGE_CACHE_SEKUNDEN = 600;
 const ANFRAGE_ID_MUSTER = /^[A-Za-z0-9_-]{8,64}$/;
+/**
+ * Mit anfrageId bekommt die Lager-Log-Zeile eine feste ID: Präfix + die ersten Hex-Zeichen von SHA-256 über Aktion,
+ * Name und anfrageId. So erkennt der Server eine Wiederholung auch ohne Cache im Lager-Log selbst wieder.
+ * Zufalls-IDs (idErzeugen) beginnen mit „L“ + Zeitstempel und kommen dem Präfix nie in die Quere.
+ */
+const ANFRAGE_ID_PRAEFIX = 'LA-';
+const ANFRAGE_ID_HEX = 20;
 /** Aktion verlauf: so viele Einträge (neueste zuerst). */
 const VERLAUF_ANZAHL = 30;
 /** uebersicht.verkaufListe: Rechnungen der letzten so vielen Tage, höchstens so viele. */
@@ -135,7 +145,7 @@ const FEHLER_NACH = 'Nach-Standort fehlt, ist unbekannt oder gleich dem Standort
 const FEHLER_FLASCHEN = 'Flaschen: bitte eine ganze Zahl von 1 bis 50.000';
 const FEHLER_FLASCHEN_INVENTUR = 'Flaschen: bitte eine ganze Zahl von 0 bis 50.000';
 const FEHLER_DATUM = 'Datum ungültig';
-const FEHLER_DATUM_ZUKUNFT = 'Datum liegt zu weit in der Zukunft (höchstens morgen)';
+const FEHLER_DATUM_ZUKUNFT = 'Datum liegt in der Zukunft (höchstens heute)';
 const FEHLER_DATUM_ALT = 'Datum liegt mehr als 400 Tage zurück';
 const FEHLER_KOMMENTAR = 'Kommentar zu lang (höchstens 200 Zeichen)';
 const FEHLER_STORNO_FEHLT = 'Eintrag nicht gefunden';
@@ -143,3 +153,5 @@ const FEHLER_STORNO_STORNO = 'Ein Storno kann man nicht stornieren';
 const FEHLER_STORNO_DOPPELT = 'Eintrag ist schon storniert';
 const FEHLER_STORNO_MEHRFACH = 'Diese ID steht mehrfach im Lager-Log, bitte Mark Bescheid geben';
 const FEHLER_RECHNUNG = 'Rechnung nicht gefunden';
+const FEHLER_ZUORDNEN = 'Speichern hat nicht geklappt, nichts geändert. Bitte gleich nochmal versuchen';
+const FEHLER_ZUORDNEN_TEILWEISE = 'Speichern hat nur teilweise geklappt, bitte Mark Bescheid geben';

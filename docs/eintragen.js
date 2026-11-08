@@ -59,7 +59,7 @@
   function datumGrenzen(setzen) {
     const heute = H.heuteBerlin();
     datum.min = H.tagePlus(heute, -400);
-    datum.max = H.tagePlus(heute, 1);
+    datum.max = heute; // keine Buchungen in die Zukunft
     if (setzen || !datum.value) datum.value = heute;
   }
 
@@ -75,6 +75,12 @@
     artAnpassen();
     summeZeigen();
   }
+
+  /** Beim Abmelden: Eingaben, Entwurf (anfrageId) und Fehlermeldung verwerfen. */
+  S.eintragenZuruecksetzen = function () {
+    fehler('');
+    leeren();
+  };
 
   /** Nach jeder neuen Antwort: Standorte und Kisten-Größe übernehmen, Eingaben bleiben stehen. */
   S.ansichten.eintragen = function () {
@@ -107,6 +113,7 @@
     if (problem) return fehler(problem);
 
     if (!entwurfId) entwurfId = S.neueAnfrageId();
+    const sitzung = Z.sitzung;
     const daten = { art: b.art, standort: b.standort, flaschen: b.flaschen, datum: b.datum, kommentar: b.kommentar, anfrageId: entwurfId };
     if (b.art === 'Umlagerung') daten.nachStandort = b.nach;
     sperren(true);
@@ -116,6 +123,7 @@
     } finally {
       sperren(false);
     }
+    if (sitzung !== Z.sitzung) return; // inzwischen abgemeldet: Formular ist schon geleert
     if (e.art === 'ok') {
       S.melden((e.daten.wiederholt ? 'War schon gespeichert: ' : 'Gespeichert: ') + H.buchungText(b) + '.', false, e.daten.hinweise);
       leeren();

@@ -142,7 +142,10 @@
     S.ansichten.lager();
   };
 
-  /** Alles zum Konto auf dem Gerät und im Speicher vergessen. Rückgabe: Code wirklich gelöscht? */
+  /**
+   * Alles zum Konto auf dem Gerät und im Speicher vergessen, auch den Buchungsentwurf (Formular und anfrageId),
+   * offene Rückfragen und Rückmeldungen. Rückgabe: Code wirklich gelöscht?
+   */
   function vergessen() {
     const geloescht = S.speicher.loeschen(K.code);
     S.speicher.loeschen(K.daten);
@@ -153,6 +156,9 @@
     Object.assign(Z, { code: '', name: '', daten: null, frisch: false, laedt: false, verlauf: null, verlaufLaedt: false,
       verlaufFehler: '', verlaufVeraltet: true, balken: null, sitzung: Z.sitzung + 1 });
     meldung('');
+    S.frageSchliessen();
+    S.meldenSchliessen();
+    S.eintragenZuruecksetzen();
     S.renderAlle();
     return geloescht;
   }

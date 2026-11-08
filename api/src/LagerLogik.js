@@ -205,9 +205,10 @@ function lagerLogKopfPruefen(zeilen) {
 /**
  * Tab Lager-Log (Zeilen A–J, erste Zeile Kopf) → gültige Buchungen ohne stornierte Zeilen (Regel 4).
  * Rückgabe { buchungen: [{zeile, datum, standort, art, flaschen, nach, id, erfasst}], hinweise }.
- * Ungültige Zeilen fallen mit Hinweis weg, leere Zeilen still.
+ * Ungültige Zeilen fallen mit Hinweis weg, leere Zeilen still. Mit `heute` (`JJJJ-MM-TT`) zählen Storno-Zeilen mit
+ * Datum danach noch nicht (Hinweis); die übrigen Zukunftszeilen filtert lagerBerechnen.
  */
-function lagerLogLesen(zeilen, formatieren, e) {
+function lagerLogLesen(zeilen, formatieren, e, heute) {
   const hinweise = [];
   lagerLogKopfPruefen(zeilen);
   const alle = [];
@@ -221,7 +222,15 @@ function lagerLogLesen(zeilen, formatieren, e) {
     const b = { zeile: nr, art: art, id: id, stornoVon: String(z[LL.STORNO_VON] === undefined ? '' : z[LL.STORNO_VON]).trim() };
     if (art && art !== 'Storno' && id) ids[id] = true;
     if (!art) { hinweise.push('Lager-Log Zeile ' + nr + ': Art „' + String(z[LL.ART]) + '“ unbekannt, zählt nicht.'); continue; }
-    if (art === 'Storno') { alle.push(b); continue; }
+    if (art === 'Storno') {
+      const d = zelleDatum(z[LL.DATUM], formatieren);
+      if (heute && d && d > heute) {
+        hinweise.push('Lager-Log Zeile ' + nr + ': Datum ' + d + ' liegt in der Zukunft, zählt noch nicht.');
+        continue;
+      }
+      alle.push(b);
+      continue;
+    }
     b.datum = zelleDatum(z[LL.DATUM], formatieren);
     b.standort = String(z[LL.STANDORT] || '').trim() || (art === 'Abfüllung' ? e.hauptlager : '');
     b.flaschen = betragLesen(z[LL.FLASCHEN]);
@@ -257,15 +266,22 @@ function spaeterErfasst_(a, b) {
 /**
  * Regeln 3 und 5: Bestand pro Standort aus der letzten gültigen Inventur plus Bewegungen danach.
  * `verkaeufe`: [{zeile, monat, datum, kanal, kunde, flaschen, standort}] (verkaeufeLesen).
+ * `heute` (`JJJJ-MM-TT`, optional): Log-Zeilen und Verkäufe mit (Lager)datum danach zählen noch nicht (Hinweis);
+ * Altzeilen ohne Rechnungsdatum erst, wenn ihr Monat nach dem laufenden liegt.
  * Rückgabe { standorte: [{standort, bestand, letzteInventur, gezaehlt, schwund}], hinweise }.
  * bestand/letzteInventur/schwund = null, solange es keine Inventur gibt (Schwund auch bei der ersten Inventur).
  */
-function lagerBerechnen(buchungen, verkaeufe, e) {
+function lagerBerechnen(buchungen, verkaeufe, e, heute) {
   const hinweise = [];
   const bewegungen = Object.create(null); // ohne Prototyp, Standortnamen sind frei wählbar
   const inventuren = Object.create(null);
   e.standorte.forEach((s) => { bewegungen[s] = []; inventuren[s] = Object.create(null); });
+  const zukunft = (d) => !!heute && !!d && d > heute;
   buchungen.forEach((b) => {
+    if (zukunft(b.datum)) {
+      hinweise.push('Lager-Log Zeile ' + b.zeile + ': Datum ' + b.datum + ' liegt in der Zukunft, zählt noch nicht.');
+      return;
+    }
     if (b.art === 'Inventur') {
       const alt = inventuren[b.standort][b.datum];
       if (!alt || spaeterErfasst_(b, alt)) inventuren[b.standort][b.datum] = b;
@@ -279,14 +295,18 @@ function lagerBerechnen(buchungen, verkaeufe, e) {
     bewegungen[b.standort].push({ datum: b.datum, menge: LAGER_ARTEN[b.art] * b.flaschen });
   });
   const unbekannt = Object.create(null);
+  let spaeter = 0;
   verkaeufe.forEach((v) => {
     const s = verkaufStandort(v, e);
     const datum = verkaufLagerdatum(v);
     if (!bewegungen[s]) { unbekannt[s] = (unbekannt[s] || 0) + 1; return; }
+    // Altliste ohne Rechnungsdatum (Lagerdatum = Monatsende): erst ein Monat nach dem laufenden ist Zukunft
+    if (v.datum ? zukunft(datum) : !!heute && !!v.monat && v.monat > heute.slice(0, 7)) { spaeter++; return; }
     if (datum) bewegungen[s].push({ datum: datum, menge: -v.flaschen });
   });
   Object.keys(unbekannt).forEach((s) => hinweise.push('Verkäufe: Standort „' + s + '“ unbekannt (' + unbekannt[s] +
     ' Zeilen), zählt bei keinem Lager.'));
+  if (spaeter) hinweise.push('Verkäufe: ' + spaeter + (spaeter === 1 ? ' Zeile' : ' Zeilen') + ' mit Datum in der Zukunft, zählt noch nicht.');
 
   const summe = (s, von, bis) => bewegungen[s].reduce((x, w) => x + ((von === null || w.datum > von) && (bis === null || w.datum <= bis) ? w.menge : 0), 0);
   const standorte = e.standorte.map((s) => {

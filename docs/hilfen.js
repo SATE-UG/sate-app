@@ -7,7 +7,7 @@
   /** Grenzen wie in der Schnittstelle (api/src/Konfig.js). */
   const MAX_FLASCHEN = 50000;
   const MAX_KOMMENTAR = 200;
-  const MAX_TAGE_ZUKUNFT = 1;
+  const MAX_TAGE_ZUKUNFT = 0; // höchstens heute (seit 2026-11-08)
   const MAX_TAGE_ZURUECK = 400;
   const MONATE_KURZ = ['Jan', 'Feb', 'Mär', 'Apr', 'Mai', 'Jun', 'Jul', 'Aug', 'Sep', 'Okt', 'Nov', 'Dez'];
   const MONATE_LANG = ['Januar', 'Februar', 'März', 'April', 'Mai', 'Juni', 'Juli', 'August', 'September', 'Oktober',
@@ -175,7 +175,7 @@
     }
     if (!datumGueltig(b.datum)) return 'Bitte ein gültiges Datum wählen.';
     const abstand = tageZwischen(heute, b.datum);
-    if (abstand > MAX_TAGE_ZUKUNFT) return 'Das Datum liegt zu weit in der Zukunft (höchstens morgen).';
+    if (abstand > MAX_TAGE_ZUKUNFT) return 'Das Datum liegt in der Zukunft (höchstens heute).';
     if (abstand < -MAX_TAGE_ZURUECK) return 'Das Datum liegt mehr als 400 Tage zurück.';
     if (Array.from(String(b.kommentar || '')).length > MAX_KOMMENTAR) return 'Kommentar: höchstens 200 Zeichen.';
     return '';

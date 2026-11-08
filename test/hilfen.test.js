@@ -130,7 +130,8 @@ test('Buchung prüfen wie die Schnittstelle', () => {
   assert.strictEqual(p({ flaschen: 50000 }), '');
   assert.match(p({ datum: '' }), /gültiges Datum/);
   assert.match(p({ datum: '2026-02-30' }), /gültiges Datum/);
-  assert.strictEqual(p({ datum: '2026-11-09' }), '', 'morgen geht');
+  assert.strictEqual(p({ datum: heute }), '', 'heute geht');
+  assert.strictEqual(p({ datum: '2026-11-09' }), 'Das Datum liegt in der Zukunft (höchstens heute).', 'morgen nicht mehr');
   assert.match(p({ datum: '2026-11-10' }), /Zukunft/);
   assert.strictEqual(p({ datum: '2025-10-04' }), '', '400 Tage zurück geht');
   assert.match(p({ datum: '2025-10-03' }), /400 Tage/);

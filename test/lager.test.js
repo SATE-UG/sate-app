@@ -271,3 +271,41 @@ test('Codex-Befunde: Vorlauf nur ganze Monate, Ø ungerundet, negative Reichweit
   assert.ok(s.hinweise.some((h) => /unbekannte ID „toString“/.test(h)));
   assert.ok(s.hinweise.some((h) => /Standort „constructor“ unbekannt/.test(h)));
 });
+
+test('Codex 2026-11-08: Log-Zeilen und Verkäufe nach „heute“ zählen noch nicht (Hinweis), ohne heute wie bisher', () => {
+  const e = k.einstellungenLesen(einstellungen());
+  const log = k.lagerLogLesen([lagerKopf(),
+    z('2026-11-01', 'Lager Süd', 'Inventur', 1000),
+    z('2026-11-05', 'Lager Süd', 'Bruch', 10),
+    z('2026-11-09', 'Lager Süd', 'Bruch', 500), // morgen
+    z('2026-11-12', 'Lager Süd', 'Inventur', 3), // Inventur in der Zukunft
+  ], berlin, e);
+  const verkaeufe = [
+    { monat: '2026-11', datum: '2026-11-06', kanal: 'Karlsruhe', kunde: 'Bar', flaschen: 20, standort: '' },
+    { monat: '2026-11', datum: '2026-11-20', kanal: 'Karlsruhe', kunde: 'Bar', flaschen: 40, standort: '' }, // Zukunft
+    { monat: '2026-12', datum: '2026-12-03', kanal: 'Karlsruhe', kunde: 'Dörflinger', flaschen: 30, standort: '' }, // Lagerdatum 30.11.
+    { monat: '2026-11', datum: null, kanal: 'Karlsruhe', kunde: 'Alt', flaschen: 7, standort: '' }, // Altliste laufender Monat zählt
+  ];
+  const l = k.lagerBerechnen(log.buchungen, verkaeufe, e, '2026-11-08');
+  const sued = roh(l.standorte[0]);
+  assert.strictEqual(sued.bestand, 1000 - 10 - 20 - 7);
+  assert.strictEqual(sued.letzteInventur, '2026-11-01');
+  assert.deepStrictEqual(roh(l.hinweise), [
+    'Lager-Log Zeile 4: Datum 2026-11-09 liegt in der Zukunft, zählt noch nicht.',
+    'Lager-Log Zeile 5: Datum 2026-11-12 liegt in der Zukunft, zählt noch nicht.',
+    'Verkäufe: 2 Zeilen mit Datum in der Zukunft, zählt noch nicht.',
+  ]);
+  // ohne heute (alte Aufrufe): alles zählt
+  assert.strictEqual(k.lagerBerechnen(log.buchungen, verkaeufe, e).standorte[0].letzteInventur, '2026-11-12');
+});
+
+test('Codex 2026-11-08: Storno mit Datum nach heute hebt das Original noch nicht auf', () => {
+  const e = k.einstellungenLesen(einstellungen());
+  const zeilen = [lagerKopf(), z('2026-11-01', 'Lager Süd', 'Inventur', 100), z('2026-11-02', 'Lager Süd', 'Bruch', 10, { id: 'b1' }),
+    z('2026-11-09', 'Lager Süd', 'Storno', '', { id: 's1', von: 'b1' })];
+  const log = k.lagerLogLesen(zeilen, berlin, e, '2026-11-08');
+  assert.strictEqual(k.lagerBerechnen(log.buchungen, [], e, '2026-11-08').standorte[0].bestand, 90);
+  assert.deepStrictEqual(roh(log.hinweise), ['Lager-Log Zeile 4: Datum 2026-11-09 liegt in der Zukunft, zählt noch nicht.']);
+  const ab = k.lagerLogLesen(zeilen, berlin, e, '2026-11-09');
+  assert.strictEqual(k.lagerBerechnen(ab.buchungen, [], e, '2026-11-09').standorte[0].bestand, 100, 'ab dem Storno-Tag aufgehoben');
+});

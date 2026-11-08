@@ -18,8 +18,8 @@ function uebersichtBauen(roh, formatieren, jetzt) {
   const heute = formatieren(jetzt);
   const e = einstellungenLesen(roh.einstellungen);
   const vk = verkaeufeLesen(roh.verkaeufe, formatieren);
-  const log = lagerLogLesen(roh.lagerLog, formatieren, e);
-  const lager = lagerBerechnen(log.buchungen, vk.verkaeufe, e);
+  const log = lagerLogLesen(roh.lagerLog, formatieren, e, heute);
+  const lager = lagerBerechnen(log.buchungen, vk.verkaeufe, e, heute);
   const u = (roh.uebersicht || []).map((z) => zahlLesen(z && z[0]));
   const rechnerisch = u[2] === undefined ? null : u[2];
   const gesamt = gesamtBestand(lager.standorte, rechnerisch);

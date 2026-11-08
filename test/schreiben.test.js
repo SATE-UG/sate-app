@@ -45,10 +45,11 @@ test('buchungPruefen: Art, Standort, Nach-Standort, Flaschen, Datum, Kommentar',
   assert.strictEqual(p({ art: 'Inventur', flaschen: 0 }).buchung.flaschen, 0, 'Inventur darf 0');
   assert.strictEqual(p({ art: 'Inventur', flaschen: -1 }).fehler, 'Flaschen: bitte eine ganze Zahl von 0 bis 50.000');
   assert.strictEqual(p({ art: 'Inventur', flaschen: 50001 }).fehler, 'Flaschen: bitte eine ganze Zahl von 0 bis 50.000');
-  // Datum (Berlin): höchstens 1 Tag in der Zukunft, höchstens 400 Tage zurück
+  // Datum (Berlin): höchstens heute (Codex 2026-11-08), höchstens 400 Tage zurück
   for (const d of ['2026-02-30', '08.11.2026', '2026-11-8', '', undefined, 20261108]) assert.strictEqual(p({ datum: d }).fehler, 'Datum ungültig', String(d));
-  assert.strictEqual(p({ datum: '2026-11-09' }).buchung.datum, '2026-11-09');
-  assert.strictEqual(p({ datum: '2026-11-10' }).fehler, 'Datum liegt zu weit in der Zukunft (höchstens morgen)');
+  assert.strictEqual(p({ datum: HEUTE }).buchung.datum, HEUTE);
+  assert.strictEqual(p({ datum: '2026-11-09' }).fehler, 'Datum liegt in der Zukunft (höchstens heute)');
+  assert.strictEqual(p({ datum: '2026-11-10' }).fehler, 'Datum liegt in der Zukunft (höchstens heute)');
   assert.strictEqual(p({ datum: k.tagePlus(HEUTE, -400) }).buchung.datum, '2025-10-04');
   assert.strictEqual(p({ datum: k.tagePlus(HEUTE, -401) }).fehler, 'Datum liegt mehr als 400 Tage zurück');
   // Kommentar: Steuerzeichen raus, höchstens 200 Zeichen, nur Text
@@ -471,4 +472,136 @@ test('Codex: Formate vor den Werten, belegte Zielzeile (auch Formel mit "") wird
   delete w.formelZellen['Lager-Log!C5'];
   assert.strictEqual(p('buchen', daten).ok, true);
   assert.deepStrictEqual(w.sheetSchreiben, ['Lager-Log!A5:J5', 'Lager!B2:F5']);
+});
+
+// Codex-Befunde Task 7 (2026-11-08) -------------------------------------------------------------------------------
+
+/** Zeilen im Lager-Log mit dieser ID. */
+const mitId = (w, id) => w.tabs['Lager-Log'].filter((z) => z && z[8] === id).length;
+
+test('Codex: gleiche anfrageId ohne Cache → eine Zeile, feste ID aus der anfrageId, Erfolg mit derselben ID', () => {
+  const { w, p } = welt();
+  w.cacheKaputt = true;
+  const daten = { art: 'Bruch', standort: 'Lager Süd', flaschen: 3, datum: heuteText(), anfrageId: 'ohne-cache-0001' };
+  const a = p('buchen', daten);
+  assert.strictEqual(a.ok, true, JSON.stringify(a));
+  assert.match(a.id, /^LA-[0-9A-F]{20}$/);
+  const b = p('buchen', daten);
+  assert.strictEqual(b.ok, true, JSON.stringify(b));
+  assert.strictEqual(b.id, a.id);
+  assert.strictEqual(b.wiederholt, true);
+  assert.ok(b.uebersicht, 'frische Übersicht auch bei Wiederholung');
+  assert.strictEqual(mitId(w, a.id), 1);
+  assert.strictEqual(w.schreibLog.filter((x) => x.tab === 'Lager-Log').length, 1);
+  assert.strictEqual(b.uebersicht.lager[0].bestand, a.uebersicht.lager[0].bestand, 'Bestand nur einmal gemindert');
+
+  // Cache läuft ab (10 Minuten vorbei): trotzdem nicht doppelt
+  w.cacheKaputt = false;
+  const c = p('buchen', Object.assign({}, daten, { anfrageId: 'abgelaufen-0002' }));
+  Object.keys(w.cache).forEach((s) => delete w.cache[s]);
+  const d = p('buchen', Object.assign({}, daten, { anfrageId: 'abgelaufen-0002' }));
+  assert.strictEqual(d.id, c.id);
+  assert.strictEqual(d.wiederholt, true);
+  assert.strictEqual(mitId(w, c.id), 1);
+  assert.notStrictEqual(c.id, a.id, 'andere anfrageId → andere ID');
+  // ohne anfrageId weiter Zufalls-IDs
+  assert.match(p('buchen', { art: 'Bruch', standort: 'Lager Süd', flaschen: 1, datum: heuteText() }).id, /^L[0-9A-Z]+-[0-9A-Z]{4}$/);
+});
+
+test('Codex: Warnung bestätigt und wiederholt ohne Cache → eine Zeile', () => {
+  const { w, p } = welt();
+  w.cacheKaputt = true;
+  const n = { art: 'Promo', standort: 'Lager Nord', flaschen: 900, datum: heuteText(), anfrageId: 'neg-ohne-cache' };
+  assert.strictEqual(p('buchen', n).brauchtBestaetigung, true);
+  const a = p('buchen', Object.assign({ bestaetigt: true }, n));
+  const b = p('buchen', Object.assign({ bestaetigt: true }, n));
+  assert.strictEqual(a.ok, true);
+  assert.strictEqual(b.wiederholt, true);
+  assert.strictEqual(mitId(w, a.id), 1);
+});
+
+test('Codex: Abfüllung zweimal ohne Cache → je eine Zeile in Lager-Log und Abfüllungen', () => {
+  const { w, p } = welt();
+  w.cacheKaputt = true;
+  const daten = { art: 'Abfüllung', flaschen: 1200, datum: heuteText(), anfrageId: 'abf-ohne-cache' };
+  const a = p('buchen', daten);
+  const b = p('buchen', daten);
+  assert.strictEqual(b.id, a.id);
+  assert.strictEqual(b.wiederholt, true);
+  assert.deepStrictEqual(b.hinweise, ['Im Tab Abfüllungen als „2. Abfüllung“ eingetragen.']);
+  assert.strictEqual(mitId(w, a.id), 1);
+  assert.strictEqual(w.tabs['Abfüllungen'].length, 3);
+  // Lager-Log-Zeile von Hand gelöscht, Anfrage kommt nochmal: Lager-Log neu, Abfüllungen nicht doppelt
+  const i = w.tabs['Lager-Log'].findIndex((z) => z && z[8] === a.id);
+  w.tabs['Lager-Log'][i] = ['', '', '', '', '', '', '', '', '', ''];
+  const c = p('buchen', daten);
+  assert.strictEqual(c.ok, true);
+  assert.ok(!c.wiederholt);
+  assert.strictEqual(mitId(w, a.id), 1);
+  assert.strictEqual(w.tabs['Abfüllungen'].length, 3, 'keine zweite Abfüllungen-Zeile');
+  assert.deepStrictEqual(c.hinweise, ['Im Tab Abfüllungen stand diese Abfüllung schon als „2. Abfüllung“.']);
+});
+
+test('Codex: Storno zweimal mit gleicher anfrageId ohne Cache → eine Storno-Zeile, zweites Mal Erfolg', () => {
+  const { w, p } = welt();
+  w.cacheKaputt = true;
+  const ab = p('buchen', { art: 'Abfüllung', flaschen: 1200, datum: heuteText() });
+  const a = p('stornieren', { id: ab.id, anfrageId: 'storno-ohne-cache' });
+  const b = p('stornieren', { id: ab.id, anfrageId: 'storno-ohne-cache' });
+  assert.strictEqual(a.ok, true, JSON.stringify(a));
+  assert.strictEqual(b.ok, true, JSON.stringify(b));
+  assert.strictEqual(b.id, a.id);
+  assert.strictEqual(b.wiederholt, true);
+  assert.deepStrictEqual(b.hinweise, []);
+  assert.strictEqual(w.tabs['Lager-Log'].filter((z) => z && z[2] === 'Storno').length, 1);
+  assert.strictEqual(w.tabs['Abfüllungen'].filter((z) => /^Storno/.test(z[0])).length, 1);
+  // andere anfrageId: wie bisher „schon storniert“
+  assert.deepStrictEqual(p('stornieren', { id: ab.id, anfrageId: 'storno-andere-id' }), { ok: false, fehler: 'Eintrag ist schon storniert' });
+});
+
+test('Codex: verkaufStandort, Fehler beim zweiten Schreiben → erste Zelle zurück, verständlicher Fehler, nur Spalte L', () => {
+  const { w, p } = welt();
+  w.tabs['Verkäufe'][2][11] = 'Lager Süd'; // alter Wert in L3
+  const vorher = JSON.stringify(w.tabs['Verkäufe'].map((z) => z.slice(0, 11)));
+  w.schreibFehler = (tab, bereich) => tab === 'Verkäufe' && bereich === 'L4';
+  const a = p('verkaufStandort', { rechnung: 'R-100', standort: 'Lager Ost' });
+  assert.deepStrictEqual(a, { ok: false, fehler: 'Speichern hat nicht geklappt, nichts geändert. Bitte gleich nochmal versuchen' });
+  assert.deepStrictEqual(w.sheetSchreiben, ['Verkäufe!L3', 'Verkäufe!L4', 'Verkäufe!L3'], 'L3 zurückgesetzt, kein Tab Lager');
+  assert.deepStrictEqual(w.tabs['Verkäufe'].map((z) => z[11]), ['Standort', '', 'Lager Süd', '', '', '']);
+  assert.strictEqual(JSON.stringify(w.tabs['Verkäufe'].map((z) => z.slice(0, 11))), vorher, 'A–K unverändert');
+
+  // Zurücksetzen scheitert auch → Hinweis an Mark mit Rechnungsnummer
+  let l3 = 0;
+  w.schreibFehler = (tab, bereich) => tab === 'Verkäufe' && (bereich === 'L4' || (bereich === 'L3' && ++l3 > 1));
+  const b = p('verkaufStandort', { rechnung: 'R-100', standort: 'Lager Ost' });
+  assert.deepStrictEqual(b, { ok: false, fehler: 'Speichern hat nur teilweise geklappt, bitte Mark Bescheid geben (Rechnung R-100)' });
+
+  // danach klappt es normal, Tab Lager wird geschrieben
+  w.schreibFehler = null;
+  w.sheetSchreiben.length = 0;
+  const c = p('verkaufStandort', { rechnung: 'R-100', standort: 'Lager Ost' });
+  assert.strictEqual(c.ok, true, JSON.stringify(c));
+  assert.deepStrictEqual(w.sheetSchreiben, ['Verkäufe!L3', 'Verkäufe!L4', 'Lager!B2:F5']);
+  assert.deepStrictEqual(w.tabs['Verkäufe'].map((z) => z[11]), ['Standort', '', 'Lager Ost', 'Lager Ost', '', '']);
+});
+
+test('Codex: keine Buchung in die Zukunft, Zukunftszeilen im Log zählen nicht (Hinweis)', () => {
+  const { w, p } = welt();
+  assert.deepStrictEqual(p('buchen', { art: 'Bruch', standort: 'Lager Süd', flaschen: 1, datum: tag(1) }),
+    { ok: false, fehler: 'Datum liegt in der Zukunft (höchstens heute)' });
+  assert.deepStrictEqual(w.sheetSchreiben, []);
+  const vorher = p('buchen', { art: 'Bruch', standort: 'Lager Süd', flaschen: 1, datum: heuteText() }).uebersicht.lager[0].bestand;
+  // von Hand eingetragene Zeilen mit Datum nach heute: Bruch und Inventur zählen noch nicht
+  w.tabs['Lager-Log'].push([zelleAus(tag(3)), 'Lager Süd', 'Bruch', 500, '', 'Mark', '', '', 'z1', ''],
+    [zelleAus(tag(2)), 'Lager Süd', 'Inventur', 7, '', 'Mark', '', '', 'z2', '']);
+  w.tabs['Verkäufe'].push(vz(tag(4), 'Karlsruhe', 'Bar Vier', 30, 'R-103'));
+  const a = p('buchen', { art: 'Bruch', standort: 'Lager Süd', flaschen: 1, datum: heuteText() });
+  assert.strictEqual(a.ok, true, JSON.stringify(a));
+  assert.ok(!a.brauchtBestaetigung);
+  assert.strictEqual(a.uebersicht.lager[0].bestand, vorher - 1);
+  assert.strictEqual(a.uebersicht.lager[0].letzteInventur, '2026-10-31');
+  assert.ok(a.uebersicht.hinweise.some((h) => h === 'Lager-Log Zeile 7: Datum ' + tag(3) + ' liegt in der Zukunft, zählt noch nicht.'),
+    JSON.stringify(a.uebersicht.hinweise));
+  assert.ok(a.uebersicht.hinweise.some((h) => /^Lager-Log Zeile 8: .*Zukunft/.test(h)));
+  assert.ok(a.uebersicht.hinweise.some((h) => h === 'Verkäufe: 1 Zeile mit Datum in der Zukunft, zählt noch nicht.'));
 });

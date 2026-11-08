@@ -40,6 +40,8 @@ function neueWelt() {
     freigaben: 0,
     cache: {},
     cacheZeiten: [],
+    cacheKaputt: false, // true: CacheService wirft (z. B. Dienst gestört)
+    schreibFehler: null, // (tab, bereich) → true: dieser Schreibversuch wirft (nach dem Eintrag in sheetSchreiben)
     flushes: 0,
   };
 
@@ -103,6 +105,7 @@ function neueWelt() {
       const schreiben = (w) => {
         welt.sheetSchreiben.push(name + '!' + text);
         if (!erlaubt(name, z, sp, nz, ns)) throw new Error('Schreiben in ' + name + '!' + text + ' nicht erlaubt');
+        if (welt.schreibFehler && welt.schreibFehler(name, text)) throw new Error('Schreibfehler ' + name + '!' + text);
         if (w.length !== nz || w.some((x) => x.length !== ns)) throw new Error('Größe passt nicht');
         w.forEach((x, r) => {
           daten[z + r] = daten[z + r] || [];
@@ -232,8 +235,15 @@ function neueWelt() {
     },
     CacheService: {
       getScriptCache: () => ({
-        get: (k) => (Object.prototype.hasOwnProperty.call(welt.cache, k) ? welt.cache[k] : null),
-        put: (k, v, sek) => { welt.cache[k] = String(v); welt.cacheZeiten.push(sek); },
+        get: (k) => {
+          if (welt.cacheKaputt) throw new Error('Cache gestört');
+          return Object.prototype.hasOwnProperty.call(welt.cache, k) ? welt.cache[k] : null;
+        },
+        put: (k, v, sek) => {
+          if (welt.cacheKaputt) throw new Error('Cache gestört');
+          welt.cache[k] = String(v);
+          welt.cacheZeiten.push(sek);
+        },
       }),
     },
     Logger: { log: (...a) => { welt.logs.push(a.map(String).join(' ')); } },
