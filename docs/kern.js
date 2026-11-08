@@ -19,9 +19,10 @@
       daten: null,       // letzte Antwort der Aktion `uebersicht` (ohne ok/name)
       frisch: false,     // false = Daten aus dem Gerätespeicher, noch nicht neu geladen
       laedt: false,      // uebersicht wird gerade geladen
-      fehlgeschlagen: false,
+      offline: false,    // letzter Abruf scheiterte an fehlender Verbindung (oder navigator.onLine === false)
       schreibt: false,   // eine Schreib-Aktion läuft (nie zwei gleichzeitig)
       schreibNr: 0,      // zählt bei Beginn und Ende jeder Schreib-Aktion hoch
+      ladenNachholen: false, // ein Neuladen wurde während des Schreibens verworfen
       sitzung: 0,        // zählt bei Abmelden hoch; ältere Antworten werden verworfen
       ansicht: 'uebersicht',
       verlauf: null,     // { eintraege, zeit } aus der Aktion `verlauf`
@@ -95,12 +96,22 @@
 
   // Schnittstelle -----------------------------------------------------------------------------------------------
 
+  /** Verbindung merken (für das Offline-Banner): true = keine Verbindung, false = Server hat geantwortet. */
+  function verbindungMerken(offline) {
+    if (S.zustand.offline === offline) return;
+    S.zustand.offline = offline;
+    if (typeof S.offlineZeigen === 'function') S.offlineZeigen();
+  }
+
   /** Eine Aktion an die Web-App. `extra` = weitere Felder, `code` nur bei der Anmeldung. Rückgabe wie antwortDeuten. */
   S.anfrage = async function (aktion, extra, code, zeitlimit) {
     if (!H.apiUrlGueltig(API_URL)) {
       return { art: 'fehler', meldung: 'Die App ist noch nicht fertig eingerichtet (Web-App-URL fehlt in config.js).' };
     }
-    if (navigator.onLine === false) return { art: 'fehler', meldung: 'Kein Internet. Bitte Verbindung prüfen und neu laden.', netz: true };
+    if (navigator.onLine === false) {
+      verbindungMerken(true);
+      return { art: 'fehler', meldung: 'Kein Internet. Bitte Verbindung prüfen und neu laden.', netz: true, offline: true };
+    }
     const abbruch = new AbortController();
     const uhr = setTimeout(() => abbruch.abort(), zeitlimit || ZEITLIMIT_LESEN_MS);
     try {
@@ -115,10 +126,14 @@
         referrerPolicy: 'no-referrer',
         signal: abbruch.signal,
       });
-      return H.antwortDeuten(antwort.status, await antwort.text());
+      const text = await antwort.text();
+      verbindungMerken(false);
+      return H.antwortDeuten(antwort.status, text);
     } catch (e) {
+      // Zeitüberschreitung sagt nichts Sicheres über die Verbindung (oft nur ein langsamer Server): Banner nicht ändern
       if (e && e.name === 'AbortError') return { art: 'fehler', meldung: 'Die Schnittstelle antwortet nicht. Bitte später nochmal versuchen.', netz: true };
-      return { art: 'fehler', meldung: 'Keine Verbindung zur Schnittstelle. Bitte Internet prüfen und neu laden.', netz: true };
+      verbindungMerken(true);
+      return { art: 'fehler', meldung: 'Keine Verbindung zur Schnittstelle. Bitte Internet prüfen und neu laden.', netz: true, offline: true };
     } finally {
       clearTimeout(uhr);
     }
@@ -141,6 +156,7 @@
     if (Z.schreibt) return { art: 'fehler', meldung: 'Moment, es wird gerade noch gespeichert.' };
     const sitzung = Z.sitzung;
     const gleicheSitzung = () => sitzung === Z.sitzung; // nach Abmelden keine Antwort mehr übernehmen
+    let frisch = false; // hat die Antwort eine neue Übersicht gebracht?
     Z.schreibt = true;
     Z.schreibNr++; // laufende Lese-Anfragen gelten ab jetzt als veraltet (siehe S.laden, S.verlaufLaden)
     try {
@@ -155,7 +171,8 @@
       }
       if (e.art === 'ok') {
         Z.verlaufVeraltet = true;
-        if (!S.datenSetzen(e.daten.uebersicht, e.daten.name)) S.laden(); // Übersicht fehlte: neu holen
+        frisch = S.datenSetzen(e.daten.uebersicht, e.daten.name);
+        if (!frisch) S.laden(); // Übersicht fehlte: neu holen
       } else if (e.art === 'code') {
         S.codeUngueltig(e.meldung);
       }
@@ -163,6 +180,11 @@
     } finally {
       Z.schreibt = false;
       Z.schreibNr++;
+      // Ein Neuladen wurde während des Schreibens verworfen und die Schreib-Antwort brachte nichts Frisches: nachholen
+      if (Z.ladenNachholen) {
+        Z.ladenNachholen = false;
+        if (!frisch && gleicheSitzung() && Z.code) S.laden();
+      }
       // Während des Schreibens gesperrte Bedienelemente (z. B. Verkäufe zuordnen) wieder freigeben
       if (gleicheSitzung() && Z.code) S.ansichten.lager();
     }
@@ -194,6 +216,15 @@
   S.el('dialog-ja').addEventListener('click', () => S.el('dialog').close('ja'));
   S.el('dialog-nein').addEventListener('click', () => S.el('dialog').close('nein'));
 
+  /** Text für Vorleseprogramme ansagen (VoiceOver). Erst leeren, dann kurz danach füllen, damit auch ein gleicher Text erneut kommt. */
+  let ansageUhr = null;
+  S.ansagen = function (text) {
+    const ansage = S.el('ansage');
+    clearTimeout(ansageUhr);
+    ansage.textContent = '';
+    ansageUhr = setTimeout(() => { ansage.textContent = text; }, 60);
+  };
+
   /** Kurze Rückmeldung über der Leiste. `zusatz` = weitere Zeilen (z. B. Hinweise der Antwort). Antippen schließt. */
   let toastUhr = null;
   S.melden = function (text, fehler, zusatz) {
@@ -204,10 +235,7 @@
         ...(zusatz || []).filter(Boolean).map((z) => S.h('div', { class: 'nebenzeile', text: z }))));
     t.classList.toggle('fehler-toast', !!fehler);
     t.hidden = false;
-    // Für Vorleseprogramme: erst leeren, dann kurz danach füllen, damit auch eine gleiche Meldung erneut angesagt wird
-    const ansage = S.el('ansage');
-    ansage.textContent = '';
-    setTimeout(() => { ansage.textContent = (fehler ? 'Fehler: ' : '') + [text].concat((zusatz || []).filter(Boolean)).join('. '); }, 60);
+    S.ansagen((fehler ? 'Fehler: ' : '') + [text].concat((zusatz || []).filter(Boolean)).join('. '));
     toastUhr = setTimeout(() => { t.hidden = true; }, fehler || (zusatz && zusatz.length) ? 9000 : 4500);
   };
   S.meldenSchliessen = function () { clearTimeout(toastUhr); S.el('toast').hidden = true; };

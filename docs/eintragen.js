@@ -86,6 +86,15 @@
     leeren();
   };
 
+  /**
+   * Steht etwas Ungespeichertes im Formular (für das automatische Update, update.js)? Art gewählt, Standort, Zahl oder
+   * Kommentar eingetragen oder ein anderes Datum als heute.
+   */
+  S.eintragenHatEingaben = function () {
+    return !!(art() || standortSel.value || nachSel.value || kisten.value.trim() || einzel.value.trim() || kommentar.value.trim() ||
+      (datum.value && datum.value !== H.heuteBerlin()));
+  };
+
   /** Nach jeder neuen Antwort: Standorte und Kisten-Größe übernehmen, Eingaben bleiben stehen. */
   S.ansichten.eintragen = function () {
     auswahlFuellen(standortSel, orte());

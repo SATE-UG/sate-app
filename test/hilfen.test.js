@@ -212,3 +212,92 @@ test('Kisten teilen: volle Kisten und Rest', () => {
   assert.strictEqual(H.kistenTeilen(100, null), null);
   assert.strictEqual(H.kistenTeilen(100, 0), null);
 });
+
+test('Relative Zeit für „Aktualisiert vor …“', () => {
+  const jetzt = new Date('2026-11-08T15:00:00.000Z');
+  const vor = (ms) => new Date(jetzt.getTime() - ms).toISOString();
+  assert.strictEqual(H.relativZeit(vor(0), jetzt), 'gerade eben');
+  assert.strictEqual(H.relativZeit(vor(59 * 1000), jetzt), 'gerade eben');
+  assert.strictEqual(H.relativZeit(vor(-2 * 60000), jetzt), 'gerade eben', 'Uhr des Servers geht leicht vor');
+  assert.strictEqual(H.relativZeit(vor(60 * 1000), jetzt), 'vor 1 Min.');
+  assert.strictEqual(H.relativZeit(vor(5 * 60000 + 30000), jetzt), 'vor 5 Min.');
+  assert.strictEqual(H.relativZeit(vor(59 * 60000), jetzt), 'vor 59 Min.');
+  assert.strictEqual(H.relativZeit(vor(60 * 60000), jetzt), 'vor 1 Std.');
+  assert.strictEqual(H.relativZeit(vor(2.5 * 3600000), jetzt), 'vor 2 Std.');
+  assert.strictEqual(H.relativZeit(vor(23.9 * 3600000), jetzt), 'vor 23 Std.');
+  assert.strictEqual(H.relativZeit('2026-11-06T13:05:00.000Z', jetzt), 'am 6. Nov 2026, 14:05 Uhr', 'älter als ein Tag: Datum (Berlin)');
+  assert.strictEqual(H.relativZeit('2026-11-08T16:00:00.000Z', jetzt), 'am 8. Nov 2026, 17:00 Uhr', 'weit in der Zukunft: Datum');
+  assert.strictEqual(H.relativZeit('quatsch', jetzt), '');
+  assert.strictEqual(H.relativZeit('', jetzt), '');
+  assert.strictEqual(H.relativZeit(vor(3 * 60000), jetzt.getTime()), 'vor 3 Min.', 'jetzt als Zahl');
+});
+
+test('Trends: Monate rechnen, Prozent, Richtung', () => {
+  assert.strictEqual(H.monatPlus('2026-01', -1), '2025-12');
+  assert.strictEqual(H.monatPlus('2026-11', -12), '2025-11');
+  assert.strictEqual(H.monatPlus('2025-12', 1), '2026-01');
+  assert.strictEqual(H.monatPlus('2026-13', 1), '');
+  assert.strictEqual(H.veraenderung(120, 100), 20);
+  assert.strictEqual(H.veraenderung(80, 100), -20);
+  assert.strictEqual(H.veraenderung(100, 100), 0);
+  assert.ok(Object.is(H.veraenderung(99.9, 100), 0), 'kein −0');
+  assert.strictEqual(H.veraenderung(0, 100), -100);
+  assert.strictEqual(H.veraenderung(1, 3), -67, 'gerundet');
+  assert.strictEqual(H.veraenderung(100, 0), null, 'Vergleich 0: keine Prozent');
+  assert.strictEqual(H.veraenderung(100, -12), null, 'Gutschrift-Monat');
+  assert.strictEqual(H.veraenderung(null, 100), null);
+  assert.strictEqual(H.prozentText(12), '+12 %');
+  assert.strictEqual(H.prozentText(-5), '−5 %');
+  assert.strictEqual(H.prozentText(0), '±0 %');
+  assert.strictEqual(H.prozentText(1234), '+1.234 %');
+  assert.strictEqual(H.prozentText(null), '');
+  assert.deepStrictEqual([H.richtung(3), H.richtung(-1), H.richtung(0), H.richtung(null)], ['hoch', 'runter', 'gleich', '']);
+});
+
+test('Trends: Vormonat und Vorjahresmonat aus den 13 Monaten', () => {
+  const monate = [];
+  for (let i = 0; i < 13; i++) {
+    const m = H.monatPlus('2025-11', i);
+    monate.push({ monat: m, flaschen: 100 + i * 10, umsatz: (100 + i * 10) * 2 });
+  }
+  monate[5].flaschen = 0;
+  // Laufender Monat (Nov 2026): nicht vergleichen, obwohl Nov 2025 in den Daten steht
+  assert.deepStrictEqual(H.monatsTrend(monate, 12, 'flaschen'),
+    { monat: '2026-11', wert: 220, laufend: true, vormonat: null, vorjahr: null });
+  // Letzter voller Monat (Okt 2026): Vormonat ja, Vorjahresmonat (Okt 2025) liegt außerhalb der 13 Monate
+  assert.deepStrictEqual(H.monatsTrend(monate, 11, 'flaschen'),
+    { monat: '2026-10', wert: 210, laufend: false, vormonat: { monat: '2026-09', wert: 200, prozent: 5 }, vorjahr: null });
+  assert.strictEqual(H.monatsTrend(monate, 11, 'umsatz').vormonat.wert, 400, 'Umsatz');
+  assert.strictEqual(H.monatsTrend(monate, 6, 'flaschen').vormonat, null, 'Vormonat 0 Flaschen: kein Vergleich');
+  assert.strictEqual(H.monatsTrend(monate, 0, 'flaschen').vormonat, null, 'erster Monat: Vormonat fehlt');
+  // Kommen später mehr Monate (z. B. 25), wird der Vorjahresmonat automatisch verglichen
+  const lang = [{ monat: '2025-10', flaschen: 300, umsatz: 600 }].concat(monate);
+  assert.deepStrictEqual(H.monatsTrend(lang, 12, 'flaschen').vorjahr, { monat: '2025-10', wert: 300, prozent: -30 });
+  assert.strictEqual(H.monatsTrend(monate, 13, 'flaschen'), null);
+  assert.strictEqual(H.monatsTrend(null, 0, 'flaschen'), null);
+});
+
+test('Gesten: Wischen erkennen, Nachbar-Reiter, Gummiband', () => {
+  const w = (dx, dy, ms) => H.wischRichtung({ dx: dx, dy: dy, ms: ms === undefined ? 200 : ms, breite: 390 });
+  assert.strictEqual(w(-80, 10), 1, 'nach links gewischt: nächster Reiter');
+  assert.strictEqual(w(80, -10), -1, 'nach rechts: voriger');
+  assert.strictEqual(w(-60, 0), 0, 'genau 60 px reicht nicht');
+  assert.strictEqual(w(-90, 61), 0, 'zu schräg (90 < 1,5 × 61)');
+  assert.strictEqual(w(-90, 59), 1);
+  assert.strictEqual(w(-100, 0, 900), 0, 'zu langsam und zu kurz');
+  assert.strictEqual(w(-170, 0, 900), 1, 'langsam, aber weit (über 40 % der Breite)');
+  assert.strictEqual(w(NaN, 0), 0);
+  const liste = ['uebersicht', 'verkaeufe', 'lager', 'eintragen'];
+  assert.strictEqual(H.nachbar(liste, 'uebersicht', 1), 'verkaeufe');
+  assert.strictEqual(H.nachbar(liste, 'uebersicht', -1), null, 'am Rand nichts');
+  assert.strictEqual(H.nachbar(liste, 'eintragen', 1), null, 'am Rand nichts');
+  assert.strictEqual(H.nachbar(liste, 'lager', -1), 'verkaeufe');
+  assert.strictEqual(H.nachbar(liste, 'quatsch', 1), null);
+  assert.strictEqual(H.nachbar(liste, 'lager', 0), null);
+  assert.strictEqual(H.gummiband(0), 0);
+  assert.strictEqual(H.gummiband(-20), 0);
+  assert.ok(H.gummiband(10) > 9 && H.gummiband(10) < 10, 'am Anfang fast 1:1');
+  assert.ok(H.gummiband(108) >= 70 && H.gummiband(100) < 70, 'Schwelle 70 px nach gut 100 px Fingerweg');
+  assert.ok(H.gummiband(5000) < 200, 'nie über das Maximum');
+  assert.ok(H.gummiband(300) - H.gummiband(200) < H.gummiband(100) - H.gummiband(0), 'wird zäher');
+});

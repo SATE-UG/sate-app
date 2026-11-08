@@ -3,6 +3,7 @@
    Status „bald/jetzt bestellen“, gewählte Elemente und das Diagramm; Rot nur für Fehler und Storno.
    Kontraste (WCAG AA, gerechnet): Grau #98989F auf #1C1C1E 5,9:1, auf #2C2C2E 4,8:1; Gelb auf #1C1C1E 10:1, Schwarz auf
    Gelb 12:1; Rot #FF8F85 auf rotem Grund ≥ 5,2:1; Balken #7A7A80 auf #1C1C1E 3,9:1 (Grafik ≥ 3:1).
+   Trends (seit v9): Grün #6CD38A auf #2C2C2E 7,5:1, Rot #FF8F85 auf #2C2C2E 6,3:1; Richtung steht zusätzlich als Vorzeichen da.
    Abstände für Notch und Home-Leiste (Safe Area, Statusleiste ist durchsichtig: black-translucent). */
 :root {
   --grund: #000000;
@@ -16,6 +17,7 @@
   --akzent-weich: rgba(232, 197, 71, 0.16);
   --rot: #FF8F85;
   --rot-weich: rgba(255, 92, 80, 0.15);
+  --gruen: #6CD38A;
   --radius: 16px;
   --radius-klein: 12px;
   --leiste: 58px;   /* Höhe der unteren Leiste ohne Safe Area */
@@ -26,7 +28,15 @@
 
 * { box-sizing: border-box; }
 
-html { -webkit-text-size-adjust: 100%; background: var(--grund); }
+/* Kein Gummiband der ganzen Seite (sonst zieht iOS die Tab-Bar mit; „Ziehen zum Aktualisieren“ macht gesten.js),
+   kein grauer Tipp-Kasten, nie waagerecht scrollen (beim Wischen folgt der Inhalt kurz dem Finger) */
+html {
+  -webkit-text-size-adjust: 100%;
+  background: var(--grund);
+  -webkit-tap-highlight-color: transparent;
+  overscroll-behavior: none;
+  overflow-x: hidden;
+}
 
 body {
   margin: 0;
@@ -39,6 +49,7 @@ body {
   font-size: 17px;
   line-height: 1.4;
   -webkit-font-smoothing: antialiased;
+  overscroll-behavior: none;
   padding: calc(10px + env(safe-area-inset-top)) calc(16px + env(safe-area-inset-right))
            calc(16px + env(safe-area-inset-bottom)) calc(16px + env(safe-area-inset-left));
 }
@@ -56,6 +67,14 @@ p { margin: 0; }
   margin: 0 auto;
   display: flex;
   flex-direction: column;
+  touch-action: pan-y pinch-zoom; /* senkrecht scrollen und zoomen macht der Browser, waagerecht wischen gesten.js */
+}
+
+/* Bedienelemente: keine Textauswahl und kein Lupen-Menü beim langen Drücken, kurze Rückmeldung beim Tippen */
+button, .leiste, .segment, .art-kachel, .banner, .ziehen {
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
 }
 
 .icon {
@@ -89,7 +108,8 @@ body:not(.mit-leiste) .kopf { display: none; }
   -webkit-tap-highlight-color: transparent;
 }
 .rund .icon { width: 20px; height: 20px; }
-.rund:active { background: var(--feld-aktiv); }
+.rund { transition: transform 0.1s ease, background-color 0.1s ease; }
+.rund:active { background: var(--feld-aktiv); transform: scale(0.92); }
 .rund:disabled { cursor: default; }
 .rund:disabled .icon { animation: drehen 0.9s linear infinite; }
 .rund:focus-visible { outline: 2px solid var(--akzent); outline-offset: 2px; }
@@ -295,14 +315,15 @@ h2 {
   -webkit-appearance: none;
   appearance: none;
   -webkit-tap-highlight-color: transparent;
-  transition: background-color 0.2s ease, color 0.2s ease;
+  transition: background-color 0.2s ease, color 0.2s ease, opacity 0.1s ease;
 }
+.segment button:active { opacity: 0.7; }
 .segment button[aria-pressed="true"] { background: #F2F2F2; color: #000000; box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4); }
 .segment button:focus-visible { outline: 2px solid var(--akzent); outline-offset: 1px; }
 
 /* Verkäufe: Diagramm-Karte (SVG aus ansichten.js) */
 .diagramm-karte { padding: 16px 8px 14px; }
-.balken-info { padding: 0 8px 6px; min-height: 84px; }
+.balken-info { padding: 0 8px 6px; min-height: 118px; }
 .info-wert { margin: 4px 0 2px; font-size: 34px; font-weight: 700; line-height: 1.1; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
 .diagramm { display: block; width: 100%; height: auto; overflow: visible; touch-action: manipulation; }
 .diagramm text { fill: var(--leise); font-family: var(--schrift); font-size: 10px; font-variant-numeric: tabular-nums; }
@@ -442,8 +463,9 @@ select:disabled, input:disabled, textarea:disabled { opacity: 0.5; }
   color: var(--text);
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
-  transition: background-color 0.15s ease, box-shadow 0.15s ease, color 0.15s ease;
+  transition: background-color 0.15s ease, box-shadow 0.15s ease, color 0.15s ease, transform 0.1s ease;
 }
+.art:active .art-kachel { transform: scale(0.96); background-color: var(--feld); }
 .art-kachel .icon { width: 26px; height: 26px; color: var(--leise); transition: color 0.15s ease; }
 .art-name { font-size: 13px; font-weight: 600; text-align: center; line-height: 1.2; -webkit-hyphens: auto; hyphens: auto; overflow-wrap: anywhere; }
 .art input:checked + .art-kachel { background: var(--akzent-weich); box-shadow: inset 0 0 0 1.5px var(--akzent); color: var(--akzent); }
@@ -473,9 +495,10 @@ select:disabled, input:disabled, textarea:disabled { opacity: 0.5; }
   -webkit-appearance: none;
   appearance: none;
   -webkit-tap-highlight-color: transparent;
-  transition: background-color 0.15s ease, opacity 0.15s ease;
+  transition: background-color 0.1s ease, opacity 0.15s ease, transform 0.1s ease;
 }
-.knopf:active { background: var(--feld-aktiv); }
+.knopf:active { background: var(--feld-aktiv); transform: scale(0.98); }
+.knopf:disabled:active { transform: none; }
 .knopf.haupt { background: var(--text); color: #000000; }
 .knopf.haupt:active { background: #D6D6D6; }
 .knopf:focus-visible { outline: 2px solid var(--akzent); outline-offset: 2px; }
@@ -567,7 +590,9 @@ form .fehler { margin: 16px 0; }
   -webkit-tap-highlight-color: transparent;
   transition: color 0.15s ease;
 }
-.leiste .icon { width: 25px; height: 25px; }
+.leiste .icon { width: 25px; height: 25px; transition: transform 0.1s ease; }
+.leiste button:active { color: var(--text); }
+.leiste button:active .icon { transform: scale(0.88); }
 .leiste button[aria-selected="true"] { color: var(--text); }
 .leiste button[aria-selected="true"] .icon { stroke-width: 2.1; }
 .leiste button:focus-visible { outline: 2px solid var(--akzent); outline-offset: -3px; border-radius: 12px; }
@@ -619,8 +644,117 @@ form .fehler { margin: 16px 0; }
 .dialog-knoepfe { display: grid; gap: 10px; margin-top: 22px; }
 .dialog-knoepfe .knopf { min-height: 46px; padding: 0 10px; font-size: 16px; }
 
+/* Banner oben: „Offline – zeigt gespeicherten Stand“ (grau) und „Neue Version – tippen zum Laden“ (gelb, ein Knopf) */
+.banner {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 12px;
+  padding: 9px 14px;
+  border: 0;
+  border-radius: var(--radius-klein);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.3;
+  text-align: left;
+  animation: rein 0.22s ease-out;
+}
+.banner .icon { width: 18px; height: 18px; }
+.offline-banner { background: var(--feld); color: var(--leise); }
+.update-banner {
+  background: var(--akzent-weich);
+  color: var(--akzent);
+  cursor: pointer;
+  -webkit-appearance: none;
+  appearance: none;
+  transition: transform 0.1s ease;
+}
+.update-banner:active { transform: scale(0.98); }
+.update-banner:focus-visible { outline: 2px solid var(--akzent); outline-offset: 2px; }
+
+/* Trends (Verkäufe und Übersicht): Pfeil und Zahl farbig, Rest grau; neutraler Grund */
+.trend-zeile { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0 0; }
+.trend {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 3px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: var(--feld);
+  color: var(--leise);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.35;
+  font-variant-numeric: tabular-nums;
+}
+.trend-pfeil { font-weight: 700; }
+.trend-wozu { font-weight: 500; color: var(--leise); }
+.trend-hoch .trend-pfeil, .trend-hoch .trend-zahl { color: var(--gruen); }
+.trend-runter .trend-pfeil, .trend-runter .trend-zahl { color: var(--rot); }
+.trend-gleich .trend-zahl { color: var(--text); }
+.trend-hinweis { font-size: 13px; color: var(--leise); line-height: 1.35; }
+
+.trend-karte {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border: 0;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  -webkit-appearance: none;
+  appearance: none;
+  transition: transform 0.1s ease, background-color 0.1s ease;
+}
+.trend-karte:active { transform: scale(0.98); background: #242426; }
+.trend-karte:focus-visible { outline: 2px solid var(--akzent); outline-offset: 2px; }
+.trend-karte-text { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: flex-start; }
+.trend-karte-wert { margin: 6px 0 0; font-size: 26px; font-weight: 700; line-height: 1.1; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+.chevron { flex: none; font-size: 28px; line-height: 1; color: var(--leise); }
+
+/* Ziehen zum Aktualisieren: runder Knopf mit Pfeil (dreht sich bis zur Schwelle), beim Laden ein Kreisel */
+.ziehen {
+  position: fixed;
+  top: calc(env(safe-area-inset-top) + 4px);
+  left: 50%;
+  z-index: 15;
+  width: 36px;
+  height: 36px;
+  margin-left: -18px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--feld);
+  color: var(--leise);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.5);
+  pointer-events: none;
+}
+.ziehen .icon { width: 20px; height: 20px; transform: rotate(var(--drehung, 0deg)); transition: color 0.15s ease; }
+.ziehen.bereit { color: var(--akzent); }
+.ziehen.laedt-ring .icon { display: none; }
+.ziehen.laedt-ring::after {
+  content: '';
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.22);
+  border-top-color: var(--akzent);
+  animation: drehen 0.8s linear infinite;
+}
+
+/* Gesten: zurückfedern bzw. nach dem Wischen von der Seite hereingleiten */
+.feder { transition: transform 0.28s cubic-bezier(0.2, 0.8, 0.2, 1), opacity 0.28s ease; }
+
 /* Sanfte Übergänge */
 .ansicht:not([hidden]) { animation: rein 0.22s ease-out; }
+.ansicht.rein-von-rechts:not([hidden]) { animation: von-rechts 0.26s cubic-bezier(0.2, 0.8, 0.2, 1); }
+.ansicht.rein-von-links:not([hidden]) { animation: von-links 0.26s cubic-bezier(0.2, 0.8, 0.2, 1); }
+@keyframes von-rechts { from { opacity: 0.4; transform: translateX(28%); } to { opacity: 1; transform: none; } }
+@keyframes von-links { from { opacity: 0.4; transform: translateX(-28%); } to { opacity: 1; transform: none; } }
 @keyframes rein { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
 @keyframes hoch { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
 @keyframes auf { from { opacity: 0; transform: scale(0.96); } to { opacity: 1; transform: none; } }

@@ -43,33 +43,69 @@
     el('anmelden-fehler').hidden = !text;
   }
 
+  /**
+   * Stand-Zeile oben: „Aktualisiert vor 5 Min.“ (läuft jede Minute mit, siehe unten). Bewusst keine Live-Region, sonst
+   * würde VoiceOver jede Minute vorlesen; das Ergebnis eines Neuladens sagt S.aktualisieren an.
+   */
   function standZeigen() {
     let t = '';
-    if (Z.daten) t = (Z.frisch ? 'Stand: ' : 'Gespeicherter Stand von ') + H.zeitFormat(Z.daten.stand);
+    if (Z.daten) {
+      const rel = H.relativZeit(Z.daten.stand) || H.zeitFormat(Z.daten.stand);
+      t = Z.frisch ? 'Aktualisiert ' + rel : 'Gespeicherter Stand · ' + rel;
+      el('stand').title = 'Stand: ' + H.zeitFormat(Z.daten.stand);
+    }
     if (Z.laedt) t += (t ? ' – ' : '') + 'lädt neu …';
     el('stand').textContent = t;
     el('stand').classList.toggle('laedt', Z.laedt); // kleiner Kreisel vor dem Text (CSS)
     el('neu-laden').disabled = Z.laedt;
   }
 
+  /** Schmales Banner „Offline – zeigt gespeicherten Stand“: kein Netz laut Gerät oder letzter Abruf ohne Verbindung. */
+  S.offlineZeigen = function () {
+    const offline = !!Z.code && (navigator.onLine === false || Z.offline);
+    el('offline-text').textContent = Z.daten ? 'Offline – zeigt gespeicherten Stand' : 'Offline – keine Verbindung';
+    el('offline').hidden = !offline;
+  };
+
   S.renderAlle = function () {
     Object.keys(S.ansichten).forEach((n) => S.ansichten[n]());
     standZeigen();
+    S.offlineZeigen();
   };
 
-  function ansichtZeigen(name) {
+  S.ANSICHTEN = ANSICHTEN;
+
+  /**
+   * Reiter wechseln (Tab-Bar, Pfeiltasten, Wischen). `wie` = { gewischt: +1 | -1 } lässt die neue Ansicht von der Seite
+   * hereingleiten und sagt sie für VoiceOver an. Steht der Fokus in der alten (jetzt versteckten) Ansicht, geht er
+   * auf den neuen Reiter, damit er nicht im Nichts landet.
+   */
+  function ansichtZeigen(name, wie) {
     const a = ANSICHTEN.indexOf(name) >= 0 ? name : 'uebersicht';
     const wechsel = a !== Z.ansicht;
+    const alt = el('ansicht-' + Z.ansicht);
+    const fokusWeg = wechsel && alt && alt.contains(document.activeElement);
     Z.ansicht = a;
     ANSICHTEN.forEach((n) => {
-      el('ansicht-' + n).hidden = n !== a;
+      const sek = el('ansicht-' + n);
+      sek.hidden = n !== a;
+      sek.classList.remove('rein-von-rechts', 'rein-von-links');
+      sek.style.transform = '';
+      sek.style.opacity = '';
       el('reiter-' + n).setAttribute('aria-selected', n === a ? 'true' : 'false');
       el('reiter-' + n).tabIndex = n === a ? 0 : -1;
     });
     S.speicher.schreiben(K.ansicht, a);
     if (wechsel) window.scrollTo(0, 0);
+    if (wechsel && wie && wie.gewischt) {
+      el('ansicht-' + a).classList.add(wie.gewischt > 0 ? 'rein-von-rechts' : 'rein-von-links');
+      const r = el('reiter-' + a);
+      S.ansagen(r.textContent.trim() + ', Reiter ' + (ANSICHTEN.indexOf(a) + 1) + ' von ' + ANSICHTEN.length);
+    }
+    if (fokusWeg) el('reiter-' + a).focus({ preventScroll: true });
     if (a === 'lager' && (Z.verlaufVeraltet || !Z.verlauf) && !Z.verlaufLaedt) S.verlaufLaden();
   }
+  S.ansichtZeigen = ansichtZeigen;
 
   // Daten -------------------------------------------------------------------------------------------------------
 
@@ -92,9 +128,20 @@
     return true;
   };
 
-  /** Übersicht frisch laden. Bei Fehlern bleiben die gezeigten (ggf. gespeicherten) Daten stehen. */
-  S.laden = async function () {
-    if (Z.laedt) return;
+  /**
+   * Übersicht frisch laden. Bei Fehlern bleiben die gezeigten (ggf. gespeicherten) Daten stehen. Rückgabe: Promise, das
+   * nach dem Laden erfüllt ist; läuft schon ein Laden in dieser Sitzung, dasselbe (für „Ziehen zum Aktualisieren“).
+   */
+  let laufend = null;
+  let laufendSitzung = -1;
+  S.laden = function () {
+    if (laufend && laufendSitzung === Z.sitzung) return laufend;
+    laufendSitzung = Z.sitzung;
+    const p = laufend = ladenEinmal().finally(() => { if (laufend === p) laufend = null; });
+    return p;
+  };
+
+  async function ladenEinmal() {
     const sitzung = Z.sitzung;
     const schreibNr = Z.schreibNr;
     Z.laedt = true;
@@ -107,17 +154,37 @@
     if (schreibNr !== Z.schreibNr || Z.schreibt) {
       // Während des Ladens wurde geschrieben: die Antwort kann ältere Bestände enthalten (der Server stempelt „stand“
       // erst nach dem Lesen). Die Schreib-Antwort bringt die frische Übersicht; ohne sie einmal neu laden.
-      if (!Z.schreibt) S.laden();
-      return standZeigen();
+      standZeigen();
+      if (!Z.schreibt) return ladenEinmal();
+      Z.ladenNachholen = true; // kommt mit der Schreib-Antwort keine Übersicht (Fehler), lädt S.schreiben nach
+      return;
     }
     if (e.art === 'ok') {
       if (!S.datenSetzen(e.daten, e.daten.name)) meldung('Die Antwort der Schnittstelle ist unvollständig. Bitte Mark Bescheid geben.');
     } else if (e.art === 'code') {
       return S.codeUngueltig(e.meldung);
-    } else {
+    } else if (!(e.offline && Z.daten)) {
+      // Ohne Verbindung, aber mit gespeichertem Stand sagt das Offline-Banner schon alles
       meldung(e.meldung + (Z.daten ? ' Gezeigt wird der gespeicherte Stand.' : ''));
     }
     S.renderAlle();
+  }
+
+  /**
+   * Wie der Neu-laden-Knopf (auch für „Ziehen zum Aktualisieren“): Übersicht und, im Lager, den Verlauf neu laden.
+   * Sagt danach für VoiceOver an, ob es geklappt hat. Rückgabe: Promise, erfüllt nach dem Laden.
+   */
+  S.aktualisieren = function () {
+    const sitzung = Z.sitzung;
+    const teile = [S.laden()];
+    if (Z.ansicht === 'lager') teile.push(S.verlaufLaden());
+    return Promise.all(teile).then(() => {
+      if (sitzung !== Z.sitzung || !Z.code) return;
+      if (!el('fehler').hidden) return S.ansagen(el('fehler').textContent);
+      if (Z.offline) return S.ansagen('Offline, gezeigt wird der gespeicherte Stand.');
+      if (Z.ansicht === 'lager' && Z.verlaufFehler) return S.ansagen('Aktualisiert, aber Verlauf nicht geladen: ' + Z.verlaufFehler);
+      S.ansagen('Aktualisiert.');
+    });
   };
 
   let verlaufNr = 0;
@@ -155,7 +222,7 @@
     abgemeldet = true;
     verlaufNr++;
     Object.assign(Z, { code: '', name: '', daten: null, frisch: false, laedt: false, verlauf: null, verlaufLaedt: false,
-      verlaufFehler: '', verlaufVeraltet: true, balken: null, sitzung: Z.sitzung + 1 });
+      verlaufFehler: '', verlaufVeraltet: true, balken: null, offline: false, ladenNachholen: false, sitzung: Z.sitzung + 1 });
     meldung('');
     S.frageSchliessen();
     S.meldenSchliessen();
@@ -201,10 +268,7 @@
     anmelden(H.codeBereinigen(eingabe.value));
   });
 
-  el('neu-laden').addEventListener('click', () => {
-    S.laden();
-    if (Z.ansicht === 'lager') S.verlaufLaden();
-  });
+  el('neu-laden').addEventListener('click', () => { S.aktualisieren(); });
 
   el('abmelden').addEventListener('click', async () => {
     if (!(await S.frage('Abmelden? Danach brauchst du deinen Zugangscode wieder.', 'Abmelden', 'Abbrechen'))) return;
@@ -226,6 +290,17 @@
     el('reiter-' + ANSICHTEN[i]).focus();
   });
 
+  // Stand-Zeit läuft mit, beim Zurückkehren in die App sofort auffrischen
+  setInterval(() => { if (Z.daten && !document.hidden) standZeigen(); }, 60000);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden && Z.daten) standZeigen(); });
+
+  // Verbindung: Banner sofort zeigen; kommt das Netz wieder, gleich neu laden (Erfolg blendet das Banner aus)
+  window.addEventListener('offline', () => S.offlineZeigen());
+  window.addEventListener('online', () => {
+    S.offlineZeigen();
+    if (Z.code && !el('app').hidden) S.laden();
+  });
+
   // Start: gespeicherten Stand sofort zeigen, dann frisch laden ------------------------------------------------
   const gespeichert = aktuellerCode();
   if (gespeichert) {
@@ -241,11 +316,5 @@
   } else {
     angemeldetZeigen(false);
     S.renderAlle();
-  }
-
-  if ('serviceWorker' in navigator) {
-    window.addEventListener('load', () => {
-      navigator.serviceWorker.register('sw.js').catch(() => { /* ohne Offline-Hülle geht die App trotzdem */ });
-    });
   }
 })();

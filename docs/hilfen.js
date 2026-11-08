@@ -300,12 +300,114 @@
     return isNaN(tb) || ta >= tb;
   }
 
+  // Relative Zeit („Aktualisiert vor 5 Min.“) ---------------------------------------------------------------
+
+  /**
+   * Abstand von `iso` bis `jetzt` in Worten: „gerade eben“ (unter 1 Minute, auch bei leicht vorgehender Uhr),
+   * „vor 5 Min.“, „vor 2 Std.“ (unter 24 Stunden), sonst „am 6. Nov 2026, 14:05 Uhr“. Ungültig → ''.
+   */
+  function relativZeit(iso, jetzt) {
+    const t = new Date(iso).getTime();
+    if (!iso || isNaN(t)) return '';
+    const ms = (jetzt instanceof Date ? jetzt.getTime() : (typeof jetzt === 'number' ? jetzt : Date.now())) - t;
+    if (ms < 60000 && ms > -5 * 60000) return 'gerade eben';
+    if (ms > 0 && ms < 3600000) return 'vor ' + Math.floor(ms / 60000) + ' Min.';
+    if (ms > 0 && ms < 86400000) return 'vor ' + Math.floor(ms / 3600000) + ' Std.';
+    const d = new Date(t);
+    const tag = heuteBerlin(d);
+    const uhr = new Intl.DateTimeFormat('de-DE', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Berlin' }).format(d);
+    return 'am ' + datumText(tag) + ', ' + uhr + ' Uhr';
+  }
+
+  // Trends (Verkäufe: Vormonat, Vorjahresmonat) ---------------------------------------------------------------
+
+  /** `JJJJ-MM` plus n Monate. Ungültig → ''. */
+  function monatPlus(m, n) {
+    if (monatFormat(m) === '–') return '';
+    const i = Number(m.slice(0, 4)) * 12 + Number(m.slice(5, 7)) - 1 + n;
+    const j = Math.floor(i / 12);
+    const mo = i - j * 12 + 1;
+    return j + '-' + (mo < 10 ? '0' : '') + mo;
+  }
+
+  /** Veränderung von `vergleich` zu `wert` in ganzen Prozent. Nur wenn `vergleich` > 0 und `wert` eine Zahl ist, sonst null. */
+  function veraenderung(wert, vergleich) {
+    if (!istZahl(wert) || !istZahl(vergleich) || vergleich <= 0) return null;
+    const p = Math.round(((wert - vergleich) / vergleich) * 100);
+    return p === 0 ? 0 : p; // kein -0
+  }
+
+  /** Prozent mit Vorzeichen deutsch: 12 → „+12 %“, -5 → „−5 %“ (echtes Minus), 0 → „±0 %“, 1234 → „+1.234 %“. */
+  function prozentText(p) {
+    if (!istZahl(p)) return '';
+    return (p > 0 ? '+' : p < 0 ? '−' : '±') + zahlFormat(Math.abs(p), 0) + ' %';
+  }
+
+  /** Richtung für Pfeil und Farbe: 'hoch' | 'runter' | 'gleich' ('' ohne Zahl). */
+  function richtung(p) {
+    if (!istZahl(p)) return '';
+    return p > 0 ? 'hoch' : p < 0 ? 'runter' : 'gleich';
+  }
+
+  /**
+   * Trends für den Monat an Stelle `i` von `monate` ([{monat, flaschen, umsatz}], der letzte läuft noch).
+   * `groesse` = 'flaschen' | 'umsatz'. Rückgabe { monat, wert, laufend, vormonat, vorjahr }; vormonat/vorjahr sind
+   * { monat, wert, prozent } oder null (Vergleichsmonat fehlt in den Daten oder ist ≤ 0). Der laufende Monat wird nicht
+   * verglichen (er ist erst „bis heute“ gezählt, der Vergleich wäre unfair), dort sind beide null. Ungültig → null.
+   */
+  function monatsTrend(monate, i, groesse) {
+    if (!Array.isArray(monate) || !(i >= 0 && i < monate.length) || !monate[i]) return null;
+    const g = groesse === 'umsatz' ? 'umsatz' : 'flaschen';
+    const m = monate[i];
+    const laufend = i === monate.length - 1;
+    const vergleich = (monat) => {
+      if (laufend || !monat) return null;
+      const v = monate.find((x) => x && x.monat === monat);
+      const p = v ? veraenderung(m[g], v[g]) : null;
+      return p === null ? null : { monat: monat, wert: v[g], prozent: p };
+    };
+    return { monat: m.monat, wert: m[g], laufend: laufend, vormonat: vergleich(monatPlus(m.monat, -1)), vorjahr: vergleich(monatPlus(m.monat, -12)) };
+  }
+
+  // Gesten (Wischen zwischen Reitern, Ziehen zum Aktualisieren) ----------------------------------------------
+
+  const WISCH_MIN_PX = 60;
+  const WISCH_VERHAELTNIS = 1.5;
+  const WISCH_MAX_MS = 700;
+
+  /**
+   * Wischgeste auswerten. `g` = { dx, dy, ms, breite }. Rückgabe: +1 = zum nächsten Reiter (nach links gewischt),
+   * -1 = zum vorigen, 0 = kein Wischen. Nur klar waagerecht (|dx| > 60 px und > 1,5 × |dy|) und entweder schnell
+   * (unter 700 ms) oder weit (über 40 % der Breite).
+   */
+  function wischRichtung(g) {
+    const ax = Math.abs(g.dx);
+    if (!(ax > WISCH_MIN_PX) || !(ax > WISCH_VERHAELTNIS * Math.abs(g.dy))) return 0;
+    if (!(g.ms < WISCH_MAX_MS) && !(g.breite > 0 && ax > 0.4 * g.breite)) return 0;
+    return g.dx < 0 ? 1 : -1;
+  }
+
+  /** Nachbar in `liste` (Reihenfolge der Tab-Bar) in `schritt`-Richtung; am Rand null. */
+  function nachbar(liste, aktuell, schritt) {
+    const i = liste.indexOf(aktuell);
+    const j = i + schritt;
+    return i < 0 || !schritt || j < 0 || j >= liste.length ? null : liste[j];
+  }
+
+  /** Gummiband beim Ziehen: folgt erst fast 1:1, dann immer zäher, nie über `max` (Standard 200 px). */
+  function gummiband(weg, max) {
+    const m = max > 0 ? max : 200;
+    if (!(weg > 0)) return 0;
+    return Math.round((m * weg / (weg + m)) * 10) / 10;
+  }
+
   const hilfen = {
     CODE_LAENGE, ARTEN, MAX_KOMMENTAR, codeBereinigen, codePruefen, apiUrlGueltig, zahlFormat, euroFormat, kistenFormat,
     zeitFormat, datumGueltig, datumFormat, datumText, monatFormat, zeitraumFormat, heuteBerlin, tagePlus, tageZwischen, bestellStufe,
     reichweiteBalken,
     ganzeZahlEingabe, flaschenAusEingabe, kistenText, kistenTeilen, buchungPruefen, buchungText, anfrageIdAus, achse, diagrammMasse,
     achsenText, antwortDeuten, uebersichtGueltig, neuer,
+    relativZeit, monatPlus, veraenderung, prozentText, richtung, monatsTrend, wischRichtung, nachbar, gummiband,
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = hilfen;
   else wurzel.SATE_HILFEN = hilfen;

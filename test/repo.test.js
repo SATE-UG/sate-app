@@ -168,7 +168,8 @@ test('PWA: Service Worker cacht alle Hüllen-Dateien, Version im Cache-Namen', (
 });
 
 test('PWA: keine fremden Skripte, Code nie in URLs', () => {
-  const skripte = ['docs/app.js', 'docs/kern.js', 'docs/ansichten.js', 'docs/eintragen.js', 'docs/hilfen.js', 'docs/sw.js', 'docs/config.js'];
+  const skripte = ['docs/app.js', 'docs/kern.js', 'docs/ansichten.js', 'docs/eintragen.js', 'docs/hilfen.js', 'docs/sw.js', 'docs/config.js',
+    'docs/gesten.js', 'docs/update.js'];
   for (const d of ['docs/index.html'].concat(skripte)) {
     const t = lies(d);
     const urls = t.match(/https?:\/\/[^\s"'`)\\]+/g) || [];
@@ -189,4 +190,36 @@ test('PWA: keine fremden Skripte, Code nie in URLs', () => {
   // Platzhalter oder echte Web-App-URL (die ist nicht geheim, geschützt wird über den Zugangscode)
   assert.match(lies('docs/config.js'),
     /apiUrl: '(HIER_WEB_APP_URL_EINTRAGEN|https:\/\/script\.google\.com\/(macros|a\/macros\/[\w.-]+)\/s\/[\w-]+\/exec)'/);
+});
+
+test('PWA: Gesten blockieren nie das Scrollen, Tipp-Rückmeldung und kein Gummiband der Seite', () => {
+  const gesten = lies('docs/gesten.js');
+  const touch = gesten.match(/addEventListener\('touch\w+',[\s\S]*?\}, \{ passive: true \}\)|addEventListener\('touch\w+', \w+, \{ passive: true \}\)/g) || [];
+  const alle = gesten.match(/addEventListener\('touch\w+'/g) || [];
+  assert.strictEqual(alle.length, 4, 'touchstart, touchmove, touchend, touchcancel');
+  assert.strictEqual(touch.length, alle.length, 'alle Touch-Listener passiv');
+  assert.doesNotMatch(gesten, /preventDefault/, 'nie das Scrollen verhindern');
+  assert.match(gesten, /RAND_PX = 20/, 'iOS-Zurück-Geste am linken Rand frei');
+  assert.match(gesten, /\.diagramm/, 'nicht auf dem Diagramm');
+  const css = lies('docs/style.css');
+  assert.match(css, /-webkit-tap-highlight-color: transparent;\n  overscroll-behavior: none;/);
+  assert.match(css, /touch-action: pan-y pinch-zoom;/, 'Zoomen bleibt möglich');
+  assert.match(css, /user-select: none;/);
+  for (const sel of ['.knopf:active', '.rund:active', '.leiste button:active', '.art:active .art-kachel', '.segment button:active']) {
+    assert.ok(css.includes(sel + ' {'), sel);
+  }
+  assert.match(css, /\.ansicht\.rein-von-rechts/);
+});
+
+test('PWA: automatisches Update – Service Worker nennt seine Version, App sucht beim Start und Zurückkehren', () => {
+  const sw = lies('docs/sw.js');
+  assert.match(sw, /addEventListener\('message'[\s\S]*?ev\.data === 'version'[\s\S]*?postMessage\(VERSION\)/);
+  assert.match(sw, /self\.skipWaiting\(\)/);
+  assert.match(sw, /self\.clients\.claim\(\)/);
+  const up = lies('docs/update.js');
+  assert.match(up, /'controllerchange'/);
+  assert.match(up, /'visibilitychange'/);
+  assert.match(up, /\.update\(\)/);
+  assert.match(lies('docs/index.html'), /<button id="update" type="button" class="banner update-banner" hidden>/);
+  assert.doesNotMatch(lies('docs/app.js'), /serviceWorker/, 'Registrierung nur noch in update.js');
 });

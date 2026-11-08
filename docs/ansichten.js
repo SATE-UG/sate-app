@@ -83,6 +83,31 @@
       })));
   }
 
+  // Trends ------------------------------------------------------------------------------------------------------
+
+  /**
+   * Kleiner Trend-Chip: Pfeil ↑/↓ (für Vorleseprogramme versteckt, das Vorzeichen sagt es schon), „+12 %“ und wozu.
+   * Farbe dezent: Grün hoch, Rot runter, sonst grau (Kontraste in style.css).
+   */
+  function trendChip(v, wozu) {
+    const r = H.richtung(v.prozent);
+    return h('span', { class: 'trend trend-' + r },
+      h('span', { class: 'trend-pfeil', 'aria-hidden': 'true', text: r === 'hoch' ? '↑' : r === 'runter' ? '↓' : '→' }),
+      h('span', { class: 'trend-zahl', text: H.prozentText(v.prozent) }),
+      h('span', { class: 'trend-wozu', text: ' ' + wozu }));
+  }
+
+  /** Trend-Zeile für einen Monat (Vormonat, Vorjahresmonat). Laufender Monat: nur Hinweis, kein unfairer Vergleich. */
+  function trendZeile(t) {
+    if (!t) return null;
+    if (t.laufend) return h('p', { class: 'trend-zeile trend-hinweis', text: 'Bisher, Stand bis heute. Vergleich, sobald der Monat vorbei ist.' });
+    const chips = [];
+    if (t.vormonat) chips.push(trendChip(t.vormonat, 'zum Vormonat (' + H.monatFormat(t.vormonat.monat) + ')'));
+    if (t.vorjahr) chips.push(trendChip(t.vorjahr, 'zum Vorjahresmonat'));
+    if (!chips.length) return h('p', { class: 'trend-zeile trend-hinweis', text: 'Kein Vergleich möglich (Vergleichsmonat ohne Verkäufe oder nicht in den Daten).' });
+    return h('p', { class: 'trend-zeile' }, chips);
+  }
+
   // Übersicht ---------------------------------------------------------------------------------------------------
 
   /** Balken „Reichweite“ (0–12 Monate) mit Strich bei Vorlauf + Puffer. */
@@ -97,6 +122,26 @@
         prozent(h('div', { class: 'fortschritt-fuell' }), w.fuell),
         prozent(h('div', { class: 'fortschritt-grenze' }), w.grenze, 'left')),
       h('div', { class: 'reichweite-skala', 'aria-hidden': 'true' }, h('span', { text: 'heute' }), h('span', { text: '12 Monate' })));
+  }
+
+  /** Karte „Letzter voller Monat: N Flaschen, ±x % …“; antippen öffnet Verkäufe mit diesem Monat. */
+  function letzterMonatKarte(monate) {
+    if (monate.length < 2) return null;
+    const i = monate.length - 2;
+    const t = H.monatsTrend(monate, i, 'flaschen');
+    if (!t) return null;
+    const vergleich = t.vorjahr || t.vormonat;
+    return h('button', {
+      type: 'button', class: 'karte trend-karte',
+      onclick: () => { Z.balken = i; Z.diagramm = 'flaschen'; S.ansichten.verkaeufe(); S.ansichtZeigen('verkaeufe'); },
+    },
+    h('span', { class: 'trend-karte-text' },
+      h('span', { class: 'kachel-label', text: 'Letzter voller Monat · ' + H.monatFormat(t.monat, true) }),
+      h('span', { class: 'trend-karte-wert' }, H.zahlFormat(t.wert, 0), h('span', { class: 'einheit', text: t.wert === 1 ? ' Flasche' : ' Flaschen' })),
+      vergleich
+        ? h('span', { class: 'trend-zeile' }, trendChip(vergleich, t.vorjahr ? 'zum Vorjahresmonat' : 'zum Vormonat'))
+        : h('span', { class: 'trend-zeile trend-hinweis', text: 'Kein Vergleich möglich.' })),
+    h('span', { class: 'chevron', 'aria-hidden': 'true', text: '›' }));
   }
 
   S.ansichten.uebersicht = function () {
@@ -134,6 +179,7 @@
           typeof k.mindestbestand === 'number' && k.mindestbestand > 0 ? 'bis zum Mindestbestand' : 'ab heute'),
         kachel('Ø pro Monat', H.zahlFormat(k.abverkaufProMonat, 0), 'Flaschen',
           typeof k.abverkaufProMonat === 'number' ? H.zeitraumFormat(k.abverkaufVon, k.abverkaufBis) : 'noch unbekannt')),
+      letzterMonatKarte(u.verkaeufe.monate),
       ueberschrift('h2', 'Standorte'),
       h('div', { class: 'karte liste-karte' }, h('ul', { class: 'liste', role: 'list' }, u.lager.map((l) => h('li', { class: 'standort-zeile' },
         h('div', { class: 'zeile' }, h('span', { class: 'zeile-name', text: l.standort }),
@@ -162,15 +208,18 @@
     return H.achsenText(Math.round(z)) + (wert === 'umsatz' ? ' €' : '');
   }
 
-  /** Kopf der Diagramm-Karte: Monat, große Zahl, die andere Größe klein. */
-  function infoFuellen(info, m, laufend, wert) {
+  /** Kopf der Diagramm-Karte: Monat, große Zahl, die andere Größe klein, darunter die Trends zur gezeigten Größe. */
+  function infoFuellen(info, monate, i, wert) {
+    const m = monate[i];
+    const laufend = i === monate.length - 1;
     const fl = [H.zahlFormat(m.flaschen, 0), m.flaschen === 1 ? 'Flasche' : 'Flaschen'];
     const eu = [H.zahlFormat(m.umsatz, 0), '€'];
     const [gross, klein] = wert === 'umsatz' ? [eu, fl] : [fl, eu];
     info.replaceChildren(
-      h('p', { class: 'kachel-label' }, H.monatFormat(m.monat, true), laufend ? h('span', { class: 'badge klein-badge', text: 'läuft noch' }) : null),
+      h('p', { class: 'kachel-label' }, H.monatFormat(m.monat, true), laufend ? h('span', { class: 'badge klein-badge', text: 'bisher' }) : null),
       h('p', { class: 'info-wert' }, gross[0], h('span', { class: 'einheit', text: ' ' + gross[1] })),
-      h('p', { class: 'kachel-zusatz', text: klein.join(' ') }));
+      h('p', { class: 'kachel-zusatz', text: klein.join(' ') }),
+      trendZeile(H.monatsTrend(monate, i, wert)));
   }
 
   /** Balkendiagramm als SVG (13 Monate). Antippen eines Monats zeigt seine Zahlen oben in der Karte. */
@@ -206,7 +255,7 @@
       });
       const waehlen = () => {
         Z.balken = i;
-        infoFuellen(info, m, laufend, wert);
+        infoFuellen(info, monate, i, wert);
         gruppen.forEach((x, j) => {
           x.classList.toggle('gewaehlt', j === i);
           const l = x.querySelector('.wert-label');
@@ -245,7 +294,7 @@
     if (Z.balken === null || Z.balken < 0 || Z.balken >= monate.length) Z.balken = Math.max(monate.length - 2, 0);
     const wert = Z.diagramm === 'umsatz' ? 'umsatz' : 'flaschen';
     const info = h('div', { class: 'balken-info', 'aria-live': 'polite' });
-    infoFuellen(info, monate[Z.balken], Z.balken === monate.length - 1, wert);
+    infoFuellen(info, monate, Z.balken, wert);
     if (Z.zeitraum !== 'vorjahr' && Z.zeitraum !== 'gesamt') Z.zeitraum = 'jahr';
     const z = u.verkaeufe[Z.zeitraum];
     ziel.append(
