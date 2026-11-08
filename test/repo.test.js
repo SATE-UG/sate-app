@@ -110,7 +110,7 @@ test('PWA: iOS-Kopfzeilen in index.html', () => {
   assert.match(h, /<link rel="apple-touch-icon" sizes="180x180" href="icons\/apple-touch-icon.png">/);
   assert.match(h, /<link rel="manifest" href="manifest.webmanifest">/);
   assert.match(lies('docs/style.css'), /env\(safe-area-inset-bottom\)/);
-  assert.match(lies('docs/style.css'), /env\(safe-area-inset-top\)/, 'black-translucent braucht Abstand oben');
+  assert.match(lies('docs/style.css'), /env\(safe-area-inset-top\)/, 'Abstand oben (Notch im Querformat, ältere Installationen)');
 });
 
 test('PWA: SATE-Look (schwarz, Systemschrift, Courier New als Akzent, eine Akzentfarbe, Icons deckend)', () => {
@@ -120,7 +120,8 @@ test('PWA: SATE-Look (schwarz, Systemschrift, Courier New als Akzent, eine Akzen
   assert.strictEqual(m.theme_color, '#000000');
   assert.strictEqual(m.background_color, '#000000');
   assert.match(h, /<meta name="theme-color" content="#000000">/);
-  assert.match(h, /<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">/);
+  // deckend schwarz: black-translucent lässt unter iOS 26 unten einen Streifen frei (Mark 2026-11-08)
+  assert.match(h, /<meta name="apple-mobile-web-app-status-bar-style" content="black">/);
   assert.match(css, /font-family: "Courier New", Courier, monospace;/, 'Courier New bleibt für die Überschriften');
   const body = /\nbody \{([^}]*)\}/.exec(css)[1];
   assert.match(body, /font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;/, 'Fließtext in Systemschrift');

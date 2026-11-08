@@ -132,7 +132,7 @@ Stand 2026-11-08: Web-App bereitgestellt (URL in `docs/config.js`), Repo `SATE-U
   - **Stand-Zeit relativ** („Aktualisiert gerade eben / vor 5 Min. / vor 2 Std.“, sonst Datum, `H.relativZeit`), läuft jede Minute mit; bewusst keine Live-Region (VoiceOver bekommt nach dem Neuladen „Aktualisiert.“ angesagt).
   - **Tipp-Rückmeldung:** Knöpfe, Art-Kacheln, Tabs, Segmente leicht kleiner/heller beim Tippen (100 ms), kein grauer Tipp-Kasten, keine Textauswahl auf Bedienelementen.
 - Keine fremden Bibliotheken, kein CDN. Content-Security-Policy erlaubt nur eigene Dateien und Verbindungen zu `script.google.com`/`script.googleusercontent.com`.
-- Abstände für Notch und Home-Leiste (`viewport-fit=cover`, `env(safe-area-inset-*)`, Statusleiste `black-translucent`).
+- Abstände für Notch und Home-Leiste (`viewport-fit=cover`, `env(safe-area-inset-*)`, Statusleiste deckend `black`: mit `black-translucent` macht iOS 26 das Fenster einer Home-Bildschirm-App zu kurz, unten bleibt ein schwarzer Streifen. iOS liest die Einstellung nur beim Hinzufügen zum Home-Bildschirm – nach einer Änderung App entfernen und neu hinzufügen).
 
 ## Branding (seit 2026-11-08, überarbeitet 2026-11-08 in Task 14)
 Ziel (Mark): professionell und aufgeräumt wie eine iOS-Finanz-App, aber klar SATE.
