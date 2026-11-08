@@ -1,4 +1,5 @@
 // Ansichten Übersicht, Verkäufe und Lager: bauen ihren Inhalt bei jeder neuen Antwort komplett neu (nur DOM-Knoten, kein HTML-Text).
+// Aufbau als Karten (dunkelgraue Flächen), Kennzahl-Kacheln und Listen; Breiten von Balken per CSSOM (mit der CSP erlaubt).
 (function () {
   'use strict';
 
@@ -10,6 +11,8 @@
 
   const flaschen = (z) => H.zahlFormat(z, 0) + (z === 1 ? ' Flasche' : ' Flaschen');
   const standorte = () => (Z.daten ? Z.daten.lager.map((l) => l.standort) : []);
+  const ART_ICON = { Inventur: 'inventur', Umlagerung: 'umlagerung', Promo: 'promo', Eigenverbrauch: 'eigenverbrauch', Bruch: 'bruch',
+    'Abfüllung': 'abfuellung', Storno: 'storno' };
 
   /** Inhalt eines Bereichs leeren und zurückgeben. */
   function leeren(id) {
@@ -18,22 +21,57 @@
     return e;
   }
 
-  /** Ohne Daten: „Lädt …“ bzw. Bitte um Neu laden. */
-  function platzhalter(ziel) {
-    ziel.append(h('p', { class: 'leer', text: Z.laedt ? 'Lädt …' : 'Noch keine Daten. Bitte oben „Neu laden“ tippen.' }));
+  /** Breite (bzw. `left`) in Prozent setzen, auf 0–100 begrenzt. */
+  function prozent(e, wert, eigenschaft) {
+    e.style[eigenschaft || 'width'] = Math.max(0, Math.min(100, wert || 0)) + '%';
+    return e;
   }
 
-  /** Kennzahl mit Flasche davor: Titel, große Zahl mit Einheit, kleiner Zusatz. */
-  function zahl(titel, wert, einheit, zusatz) {
-    return h('div', { class: 'zahl' },
-      h('dt', { text: titel }),
-      h('dd', {}, wert, einheit ? ' ' : null, einheit ? h('span', { class: 'einheit', text: einheit }) : null),
-      zusatz ? h('dd', { class: 'zusatz', text: zusatz }) : null);
+  /** Kleiner Balken (z. B. Anteil eines Standorts oder Kanals). */
+  function anteil(wert) {
+    return h('div', { class: 'anteil', 'aria-hidden': 'true' }, prozent(h('div', { class: 'anteil-fuell' }), wert));
   }
 
-  /** Zwei Knöpfe nebeneinander, gewählter invertiert. `wahl` = [[wert, text], …]. */
+  /** Freundlicher leerer Zustand als Karte, optional mit Knopf. */
+  function leerKarte(titel, text, knopfText, beiKlick) {
+    return h('div', { class: 'karte leer-karte' },
+      S.icon('info', 'leer-icon'),
+      h('p', { class: 'leer-titel', text: titel }),
+      text ? h('p', { class: 'leer', text: text }) : null,
+      knopfText ? h('button', { type: 'button', class: 'knopf klein', text: knopfText, onclick: beiKlick }) : null);
+  }
+
+  /** Graue Platzhalter-Flächen, solange geladen wird (Skeleton). `formen` z. B. ['gross', 'reihe', 'zeile']. */
+  function skelett(formen) {
+    return h('div', { class: 'skelett-gruppe' },
+      h('p', { class: 'nur-vorlesen', text: 'Lädt …' }),
+      formen.map((f) => h('div', { class: 'skelett skelett-' + f, 'aria-hidden': 'true' })));
+  }
+
+  /** Ohne Daten: beim Laden Skeleton, sonst Hinweis mit Knopf zum Laden. */
+  function platzhalter(ziel, formen) {
+    if (Z.laedt) return ziel.append(skelett(formen || ['gross', 'reihe', 'zeile']));
+    ziel.append(leerKarte('Noch keine Daten da', 'Sobald die App Verbindung hat, steht hier alles. Probier es gleich nochmal.',
+      'Jetzt laden', () => S.laden()));
+  }
+
+  /** Kennzahl-Kachel: kleines Label, große Zahl, darunter Einheit und Zusatz in einer Zeile („Flaschen · rechnerisch“). */
+  function kachel(label, wert, einheit, zusatz, icon) {
+    const unten = [einheit, zusatz].filter(Boolean).join(' · ');
+    return h('div', { class: 'kachel' },
+      h('p', { class: 'kachel-label' }, icon ? S.icon(icon, 'label-icon') : null, label),
+      h('p', { class: 'kachel-wert', text: wert }),
+      unten ? h('p', { class: 'kachel-zusatz', text: unten }) : null);
+  }
+
+  /** Überschrift im Slide-Stil: erstes Wort fett, Rest normal (z. B. „**Top 10** Kunden“). */
+  function ueberschrift(tag, fett, rest) {
+    return h(tag, {}, h('strong', { text: fett }), rest ? ' ' + rest : null);
+  }
+
+  /** Segmented Control (iOS): zwei oder drei Knöpfe in einer Pille, gewählter hell. `wahl` = [[wert, text], …]. */
   function umschalter(gruppe, wahl, aktuell, beiWahl) {
-    return h('div', { class: 'umschalter', role: 'group', 'aria-label': gruppe },
+    return h('div', { class: 'segment', role: 'group', 'aria-label': gruppe },
       wahl.map(([wert, text]) => h('button', {
         type: 'button', 'aria-pressed': wert === aktuell ? 'true' : 'false', 'data-gruppe': gruppe, 'data-wert': wert, text: text,
         onclick: () => {
@@ -47,49 +85,92 @@
 
   // Übersicht ---------------------------------------------------------------------------------------------------
 
+  /** Balken „Reichweite“ (0–12 Monate) mit Strich bei Vorlauf + Puffer. */
+  function reichweiteLeiste(b, stufe) {
+    const w = H.reichweiteBalken(b.reichweite, b.vorlaufMonate, b.pufferWochen);
+    if (!w) return null;
+    return h('div', { class: 'reichweite' },
+      h('div', { class: 'reichweite-text' },
+        h('span', {}, 'Reichweite ', h('strong', { text: H.zahlFormat(b.reichweite, 1) + ' Monate' })),
+        h('span', { class: 'reichweite-legende' }, h('span', { class: 'grenze-zeichen', 'aria-hidden': 'true' }), 'Vorlauf + Puffer')),
+      h('div', { class: 'fortschritt stufe-' + (stufe || 'leer'), 'aria-hidden': 'true' },
+        prozent(h('div', { class: 'fortschritt-fuell' }), w.fuell),
+        prozent(h('div', { class: 'fortschritt-grenze' }), w.grenze, 'left')),
+      h('div', { class: 'reichweite-skala', 'aria-hidden': 'true' }, h('span', { text: 'heute' }), h('span', { text: '12 Monate' })));
+  }
+
   S.ansichten.uebersicht = function () {
     S.el('name').textContent = Z.name || '';
     const ziel = leeren('uebersicht-inhalt');
     const u = Z.daten;
-    if (!u) return platzhalter(ziel);
+    if (!u) return platzhalter(ziel, ['gross', 'reihe', 'reihe', 'zeile']);
     const k = u.kennzahlen;
     const b = u.bestellung;
     const st = H.bestellStufe(b.status);
-    const quelle = k.gesamtQuelle === 'inventur' ? 'aus Inventur' : 'rechnerisch';
-    const kisten = typeof k.kisten === 'number' ? '≈ ' + H.kistenFormat(k.kisten) + ' Kisten · ' : '';
-    const ab = typeof k.abverkaufProMonat === 'number'
-      ? 'Ø ' + H.zahlFormat(k.abverkaufProMonat, 0) + ' Flaschen pro Monat (' + H.zeitraumFormat(k.abverkaufVon, k.abverkaufBis) + ')'
-      : 'Ø-Abverkauf noch unbekannt';
+    const stufe = st.stufe || 'leer';
+    const proKiste = typeof k.flaschenProKiste === 'number' && k.flaschenProKiste > 0 ? k.flaschenProKiste : null;
+    const summe = u.lager.reduce((x, l) => x + (typeof l.bestand === 'number' && l.bestand > 0 ? l.bestand : 0), 0);
 
     ziel.append(
-      h('div', { class: 'bestellung stufe-' + (st.stufe || 'leer') },
-        h('p', { class: 'status-text', text: st.text }),
+      h('section', { class: 'karte bestellung stufe-' + stufe, 'aria-label': 'Bestellstatus' },
+        h('div', { class: 'bestellung-kopf' },
+          h('span', { class: 'pill pill-' + stufe }, h('span', { class: 'punkt', 'aria-hidden': 'true' }), st.text),
+          b.leerAm ? h('span', { class: 'bestellung-leer-am', text: 'leer etwa am ' + H.datumText(b.leerAm) }) : null),
         b.spaetestensBestellen
-          ? h('p', {}, 'Spätestens bestellen bis ', h('strong', { text: H.datumFormat(b.spaetestensBestellen) }))
-          : h('p', { text: 'Dafür fehlen Bestand oder Verkäufe der letzten Monate.' }),
-        h('p', { class: 'klein', text: 'Rechnet mit ' + H.kistenFormat(b.vorlaufMonate) + ' Monaten Vorlauf beim Abfüller und ' +
+          ? [h('p', { class: 'kachel-label', text: 'Spätestens bestellen bis' }),
+            h('p', { class: 'bestellung-datum', text: H.datumText(b.spaetestensBestellen) })]
+          : h('p', { class: 'bestellung-fehlt', text: 'Dafür fehlen Bestand oder Verkäufe der letzten Monate.' }),
+        reichweiteLeiste(b, st.stufe),
+        h('p', { class: 'kachel-zusatz', text: 'Rechnet mit ' + H.kistenFormat(b.vorlaufMonate) + ' Monaten Vorlauf beim Abfüller und ' +
           H.kistenFormat(b.pufferWochen) + ' Wochen Puffer.' })),
-      h('dl', { class: 'zahlen' },
-        zahl('Gesamtbestand', H.zahlFormat(k.gesamtbestand, 0), 'Flaschen', kisten + quelle),
-        zahl('Reichweite', H.zahlFormat(b.reichweite, 1), 'Monate', ab),
-        zahl('Leer etwa am', H.datumFormat(b.leerAm), '', null)),
-      h('h2', { text: 'Standorte' }),
-      h('ul', { class: 'liste' }, u.lager.map((l) => h('li', {},
-        h('div', { class: 'zeile' }, h('span', { text: l.standort }),
-          h('span', { class: l.bestand === null ? 'leise' : '', text: l.bestand === null ? 'noch keine Inventur' : flaschen(l.bestand) }))))),
-      ...(u.hinweise.length ? [h('h2', { text: 'Hinweise' }), h('ul', { class: 'liste hinweise' }, u.hinweise.map((t) => h('li', { text: t })))] : []));
+      h('div', { class: 'kacheln' },
+        kachel('Bestand', H.zahlFormat(k.gesamtbestand, 0), 'Flaschen', k.gesamtQuelle === 'inventur' ? 'aus Inventur' : 'rechnerisch', 'flasche'),
+        kachel('Kisten', typeof k.kisten === 'number' ? '≈ ' + H.kistenFormat(k.kisten) : '–', '',
+          proKiste ? 'à ' + H.zahlFormat(proKiste, 0) + ' Flaschen' : null),
+        kachel('Reichweite', H.zahlFormat(b.reichweite, 1), 'Monate',
+          typeof k.mindestbestand === 'number' && k.mindestbestand > 0 ? 'bis zum Mindestbestand' : 'ab heute'),
+        kachel('Ø pro Monat', H.zahlFormat(k.abverkaufProMonat, 0), 'Flaschen',
+          typeof k.abverkaufProMonat === 'number' ? H.zeitraumFormat(k.abverkaufVon, k.abverkaufBis) : 'noch unbekannt')),
+      ueberschrift('h2', 'Standorte'),
+      h('div', { class: 'karte liste-karte' }, h('ul', { class: 'liste', role: 'list' }, u.lager.map((l) => h('li', { class: 'standort-zeile' },
+        h('div', { class: 'zeile' }, h('span', { class: 'zeile-name', text: l.standort }),
+          l.bestand === null ? h('span', { class: 'badge', text: 'noch keine Inventur' }) : h('span', { class: 'zeile-wert', text: flaschen(l.bestand) })),
+        l.bestand === null ? null : anteil(summe > 0 ? (Math.max(l.bestand, 0) / summe) * 100 : 0))))),
+      u.hinweise.length
+        ? h('div', { class: 'karte info-karte', role: 'note', 'aria-label': 'Hinweise' }, S.icon('info', 'info-icon'),
+          h('div', {}, h('p', { class: 'info-titel', text: 'Hinweise' }), h('ul', { class: 'hinweise', role: 'list' }, u.hinweise.map((t) => h('li', { text: t })))))
+        : null);
   };
 
   // Verkäufe ----------------------------------------------------------------------------------------------------
 
-  const MASSE = { breite: 340, hoehe: 200, links: 46, unten: 34, oben: 8, luecke: 6 };
+  // links 28: bei 390 px Breite ist jede Trefferfläche ≈ 24 px breit (WCAG 2.5.8)
+  const MASSE = { breite: 340, hoehe: 196, links: 28, unten: 32, oben: 22, luecke: 7 };
 
-  /** Text zum gewählten Balken, z. B. „Oktober 2026: 1.234 Flaschen · 2.345 €“. */
+  /** Text zum gewählten Balken (für Vorleseprogramme), z. B. „Oktober 2026: 1.234 Flaschen · 2.345 €“. */
   function balkenText(m, laufend) {
     return H.monatFormat(m.monat, true) + (laufend ? ' (läuft noch)' : '') + ': ' + flaschen(m.flaschen) + ' · ' + H.euroFormat(m.umsatz);
   }
 
-  /** Balkendiagramm als SVG (13 Monate). Antippen eines Monats zeigt seine Zahlen über dem Diagramm. */
+  /** Kurzer Wert über dem gewählten Balken. */
+  function kurzWert(m, wert) {
+    const z = m[wert];
+    if (typeof z !== 'number') return '–';
+    return H.achsenText(Math.round(z)) + (wert === 'umsatz' ? ' €' : '');
+  }
+
+  /** Kopf der Diagramm-Karte: Monat, große Zahl, die andere Größe klein. */
+  function infoFuellen(info, m, laufend, wert) {
+    const fl = [H.zahlFormat(m.flaschen, 0), m.flaschen === 1 ? 'Flasche' : 'Flaschen'];
+    const eu = [H.zahlFormat(m.umsatz, 0), '€'];
+    const [gross, klein] = wert === 'umsatz' ? [eu, fl] : [fl, eu];
+    info.replaceChildren(
+      h('p', { class: 'kachel-label' }, H.monatFormat(m.monat, true), laufend ? h('span', { class: 'badge klein-badge', text: 'läuft noch' }) : null),
+      h('p', { class: 'info-wert' }, gross[0], h('span', { class: 'einheit', text: ' ' + gross[1] })),
+      h('p', { class: 'kachel-zusatz', text: klein.join(' ') }));
+  }
+
+  /** Balkendiagramm als SVG (13 Monate). Antippen eines Monats zeigt seine Zahlen oben in der Karte. */
   function diagramm(monate, wert, info) {
     const d = H.diagrammMasse(monate.map((m) => m[wert]), MASSE);
     const svg = s('svg', {
@@ -97,105 +178,121 @@
       'aria-label': (wert === 'umsatz' ? 'Umsatz' : 'Flaschen') + ' pro Monat, ' + H.zeitraumFormat(monate[0].monat, monate[monate.length - 1].monat),
     });
     d.striche.forEach((t) => {
-      svg.append(s('line', { x1: MASSE.links - 4, x2: MASSE.breite, y1: t.y, y2: t.y, class: t.wert === 0 ? 'achse' : 'gitter' }));
-      svg.append(s('text', { x: MASSE.links - 8, y: t.y + 3, 'text-anchor': 'end', class: 'achsen-text', text: H.achsenText(t.wert) }));
+      svg.append(s('line', { x1: MASSE.links, x2: MASSE.breite, y1: t.y, y2: t.y, class: t.wert === 0 ? 'achse' : 'gitter' }));
+      svg.append(s('text', { x: MASSE.links - 6, y: t.y + 3, 'text-anchor': 'end', class: 'achsen-text', text: H.achsenText(t.wert) }));
     });
     const gruppen = [];
     d.balken.forEach((b, i) => {
       const m = monate[i];
       const laufend = i === monate.length - 1;
       const mitte = b.x + b.b / 2;
-      const g = s('g', { class: 'balken' + (laufend ? ' laufend' : '') + (i === Z.balken ? ' gewaehlt' : '') });
-      if (b.h > 0) g.append(s('rect', { x: b.x, y: b.y, width: b.b, height: b.h, class: 'balken-flaeche' }));
-      g.append(s('rect', { x: mitte - d.platz / 2 + 1, y: d.basis + 3, width: d.platz - 2, height: 14, class: 'marke', hidden: i !== Z.balken }));
-      g.append(s('text', { x: mitte, y: d.basis + 14, 'text-anchor': 'middle', class: 'monat', text: H.monatFormat(m.monat) }));
+      const gewaehlt = i === Z.balken;
+      const g = s('g', { class: 'balken' + (laufend ? ' laufend' : '') + (gewaehlt ? ' gewaehlt' : '') });
+      if (b.h > 0) g.append(s('rect', { x: b.x, y: b.y, width: b.b, height: b.h, rx: Math.min(4, b.b / 2, b.h / 2), class: 'balken-flaeche' }));
+      g.append(s('text', {
+        x: Math.max(MASSE.links + 12, Math.min(MASSE.breite - 12, mitte)), y: Math.max(b.y - 6, 10), 'text-anchor': 'middle',
+        class: 'wert-label', text: kurzWert(m, wert), hidden: !gewaehlt,
+      }));
+      g.append(s('text', { x: mitte, y: d.basis + 15, 'text-anchor': 'middle', class: 'monat', text: H.monatFormat(m.monat) }));
       if (i === 0 || m.monat.slice(5) === '01') {
         g.append(s('text', { x: mitte, y: d.basis + 28, 'text-anchor': 'middle', class: 'jahr', text: m.monat.slice(0, 4) }));
       }
+      const treffer = s('rect', {
+        x: MASSE.links + i * d.platz, y: 0, width: d.platz, height: MASSE.hoehe, class: 'treffer', tabindex: 0, role: 'button',
+        'aria-label': balkenText(m, laufend), 'aria-pressed': gewaehlt ? 'true' : 'false',
+      });
       const waehlen = () => {
         Z.balken = i;
-        info.textContent = balkenText(m, laufend);
+        infoFuellen(info, m, laufend, wert);
         gruppen.forEach((x, j) => {
           x.classList.toggle('gewaehlt', j === i);
-          const marke = x.querySelector('.marke');
-          if (j === i) marke.removeAttribute('hidden'); else marke.setAttribute('hidden', '');
+          const l = x.querySelector('.wert-label');
+          if (j === i) l.removeAttribute('hidden'); else l.setAttribute('hidden', '');
+          x.querySelector('.treffer').setAttribute('aria-pressed', j === i ? 'true' : 'false');
         });
       };
       // Unsichtbare Trefferfläche über die ganze Höhe, damit auch kleine Balken gut zu treffen sind
-      g.append(s('rect', {
-        x: MASSE.links + i * d.platz, y: 0, width: d.platz, height: MASSE.hoehe, class: 'treffer', tabindex: 0, role: 'button',
-        'aria-label': balkenText(m, laufend), onclick: waehlen,
-        onkeydown: (ev) => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); waehlen(); } },
-      }));
+      treffer.addEventListener('click', waehlen);
+      treffer.addEventListener('keydown', (ev) => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); waehlen(); } });
+      g.append(treffer);
       gruppen.push(g);
       svg.append(g);
     });
     return svg;
   }
 
-  /** Tabelle Name | Flaschen | Umsatz, optional mit Anteils-Balken unter dem Namen. */
-  function tabelle(zeilen, mitAnteil, nummeriert) {
-    if (!zeilen.length) return h('p', { class: 'leer', text: 'Keine Verkäufe in diesem Zeitraum.' });
+  /** Rangliste Name | Flaschen + Umsatz, optional mit Anteils-Balken (Kanäle) oder Platz-Nummer (Kunden). */
+  function rangliste(zeilen, mitAnteil, nummeriert) {
+    if (!zeilen.length) return h('div', { class: 'karte' }, h('p', { class: 'leer', text: 'Keine Verkäufe in diesem Zeitraum.' }));
     const max = Math.max.apply(null, zeilen.map((z) => z.flaschen).concat([1]));
-    const t = h('div', { class: 'tabelle' },
-      h('div', { class: 'kopfzeile', text: '' }), h('div', { class: 'kopfzeile zahl-zelle', text: 'Flaschen' }),
-      h('div', { class: 'kopfzeile zahl-zelle', text: 'Umsatz' }));
-    zeilen.forEach((z, i) => {
-      const name = h('div', { class: 'name-zelle' }, (nummeriert ? (i + 1) + '. ' : '') + z.name);
-      if (mitAnteil) {
-        const balken = h('div', { class: 'anteil', 'aria-hidden': 'true' });
-        balken.style.width = Math.max(0, Math.min(100, (z.flaschen / max) * 100)) + '%'; // CSSOM, mit der CSP erlaubt
-        name.append(balken);
-      }
-      t.append(name, h('div', { class: 'zahl-zelle', text: H.zahlFormat(z.flaschen, 0) }), h('div', { class: 'zahl-zelle', text: H.euroFormat(z.umsatz) }));
-    });
-    return t;
+    return h('div', { class: 'karte liste-karte' }, h(nummeriert ? 'ol' : 'ul', { class: 'liste rangliste', role: 'list' }, zeilen.map((z, i) => h('li', { class: 'rang-zeile' },
+      nummeriert ? h('span', { class: 'rang-nr' + (i < 3 ? ' vorne' : ''), text: String(i + 1) }) : null,
+      h('div', { class: 'rang-name' }, h('span', { class: 'rang-titel', text: z.name }), mitAnteil ? anteil((z.flaschen / max) * 100) : null),
+      h('div', { class: 'rang-zahlen' }, h('span', { class: 'rang-flaschen', text: flaschen(z.flaschen) }),
+        h('span', { class: 'rang-umsatz', text: H.euroFormat(z.umsatz) }))))));
   }
 
   S.ansichten.verkaeufe = function () {
     const ziel = leeren('verkaeufe-inhalt');
     const u = Z.daten;
-    if (!u) return platzhalter(ziel);
+    if (!u) return platzhalter(ziel, ['segment', 'diagramm', 'zeile']);
     const monate = u.verkaeufe.monate;
-    if (!monate.length) return ziel.append(h('p', { class: 'leer', text: 'Noch keine Verkäufe.' }));
-    if (Z.balken === null || Z.balken < 0 || Z.balken >= monate.length) Z.balken = monate.length - 1;
+    if (!monate.length) return ziel.append(leerKarte('Noch keine Verkäufe', 'Sobald Rechnungen im Sheet stehen, siehst du sie hier pro Monat.'));
+    // Vorauswahl: letzter voller Monat (der laufende ist noch unvollständig), bei nur einem Monat dieser
+    if (Z.balken === null || Z.balken < 0 || Z.balken >= monate.length) Z.balken = Math.max(monate.length - 2, 0);
     const wert = Z.diagramm === 'umsatz' ? 'umsatz' : 'flaschen';
-    const info = h('p', { class: 'balken-info', 'aria-live': 'polite', text: balkenText(monate[Z.balken], Z.balken === monate.length - 1) });
+    const info = h('div', { class: 'balken-info', 'aria-live': 'polite' });
+    infoFuellen(info, monate[Z.balken], Z.balken === monate.length - 1, wert);
     if (Z.zeitraum !== 'vorjahr' && Z.zeitraum !== 'gesamt') Z.zeitraum = 'jahr';
     const z = u.verkaeufe[Z.zeitraum];
     ziel.append(
       umschalter('Diagramm', [['flaschen', 'Flaschen'], ['umsatz', 'Umsatz']], wert, (w) => { Z.diagramm = w; S.ansichten.verkaeufe(); }),
-      info,
-      diagramm(monate, wert, info),
-      h('p', { class: 'legende', text: 'Monat antippen für die Zahlen. Gestrichelt: laufender Monat.' }),
-      h('h2', { text: 'Kanäle und Kunden' }),
+      h('div', { class: 'karte diagramm-karte' },
+        info,
+        diagramm(monate, wert, info),
+        h('div', { class: 'legende' },
+          h('span', {}, h('span', { class: 'zeichen zeichen-gewaehlt', 'aria-hidden': 'true' }), 'gewählt'),
+          h('span', {}, h('span', { class: 'zeichen zeichen-laufend', 'aria-hidden': 'true' }), 'läuft noch'),
+          h('span', { class: 'legende-tipp', text: 'Monat antippen' }))),
+      ueberschrift('h2', 'Kanäle', 'und Kunden'),
       umschalter('Zeitraum', [['jahr', 'Dieses Jahr'], ['vorjahr', 'Vorjahr'], ['gesamt', 'Gesamt']], Z.zeitraum,
         (w) => { Z.zeitraum = w; S.ansichten.verkaeufe(); }),
-      h('p', { class: 'summen' }, (Z.zeitraum === 'gesamt' ? 'Seit ' + H.monatFormat(z.von, true) : H.zeitraumFormat(z.von, z.bis)) + ': ', h('strong', { text: flaschen(z.flaschen) }), ' · ' + H.euroFormat(z.umsatz)),
+      h('p', { class: 'zeitraum-text', text: Z.zeitraum === 'gesamt' ? 'Seit ' + H.monatFormat(z.von, true) : H.zeitraumFormat(z.von, z.bis) }),
+      h('div', { class: 'kacheln' },
+        kachel('Verkauft', H.zahlFormat(z.flaschen, 0), z.flaschen === 1 ? 'Flasche' : 'Flaschen', null),
+        kachel('Umsatz', H.zahlFormat(z.umsatz, 0), 'Euro', null)),
       h('h3', { text: 'Kanäle' }),
-      tabelle(z.kanaele.map((x) => ({ name: x.kanal, flaschen: x.flaschen, umsatz: x.umsatz })), true, false),
+      rangliste(z.kanaele.map((x) => ({ name: x.kanal, flaschen: x.flaschen, umsatz: x.umsatz })), true, false),
       h('h3', { text: 'Top 10 Kunden' }),
-      tabelle(z.kunden.map((x) => ({ name: x.kunde, flaschen: x.flaschen, umsatz: x.umsatz })), false, true));
+      rangliste(z.kunden.map((x) => ({ name: x.kunde, flaschen: x.flaschen, umsatz: x.umsatz })), false, true));
   };
 
   // Lager -------------------------------------------------------------------------------------------------------
 
   function schwundText(l) {
     if (l.schwund === null) return 'Schwund: erst ab der zweiten Inventur';
-    if (l.schwund === 0) return 'Schwund seit der Inventur davor: keiner';
-    if (l.schwund < 0) return 'Seit der Inventur davor ' + flaschen(-l.schwund) + ' mehr gezählt als erwartet';
+    if (l.schwund === 0) return 'Kein Schwund seit der Inventur davor';
+    if (l.schwund < 0) return flaschen(-l.schwund) + ' mehr gezählt als erwartet';
     return 'Schwund seit der Inventur davor: ' + flaschen(l.schwund);
   }
 
   function lagerKarte(l) {
+    const kopf = h('div', { class: 'karte-kopf' }, h('h3', { text: l.standort }),
+      l.bestand === null ? h('span', { class: 'badge', text: 'noch keine Inventur' }) : null);
     if (l.bestand === null) {
-      return h('div', { class: 'karte ohne-inventur' }, h('h3', { text: l.standort }),
-        h('p', { text: 'Noch keine Inventur. Zähl die Flaschen und trag sie unter „Eintragen“ als Inventur ein, dann rechnet die App hier den Bestand.' }));
+      return h('div', { class: 'karte lager-karte ohne-inventur' }, kopf,
+        h('p', { class: 'kachel-zusatz', text: 'Zähl die Flaschen und trag sie unter „Eintragen“ als Inventur ein, dann rechnet die App hier den Bestand.' }));
     }
-    return h('div', { class: 'karte' }, h('h3', { text: l.standort }),
-      h('dl', { class: 'zahlen' },
-        zahl('Bestand', H.zahlFormat(l.bestand, 0), 'Flaschen', typeof l.kisten === 'number' ? '≈ ' + H.kistenFormat(l.kisten) + ' Kisten' : null),
-        zahl('Letzte Inventur', H.datumFormat(l.letzteInventur), '', schwundText(l))));
+    return h('div', { class: 'karte lager-karte' }, kopf,
+      h('div', { class: 'lager-werte' },
+        h('div', {},
+          h('p', { class: 'kachel-label', text: 'Bestand' }),
+          h('p', { class: 'kachel-wert', text: H.zahlFormat(l.bestand, 0) }),
+          h('p', { class: 'kachel-zusatz', text: 'Flaschen' + (typeof l.kisten === 'number' ? ' · ≈ ' + H.kistenFormat(l.kisten) + ' Kisten' : '') })),
+        h('div', {},
+          h('p', { class: 'kachel-label', text: 'Letzte Inventur' }),
+          h('p', { class: 'lager-datum', text: H.datumText(l.letzteInventur) }),
+          h('p', { class: 'kachel-zusatz', text: schwundText(l) }))));
   }
 
   /** Eine Zeile im Verlauf in Worten, z. B. „48 Flaschen: Lager Süd → Lager Nord“. */
@@ -226,25 +323,27 @@
   function verlaufZeigen() {
     const ziel = leeren('verlauf-inhalt');
     const v = Z.verlauf;
-    if (Z.verlaufLaedt) ziel.append(h('p', { class: 'leer', text: v ? 'Lädt neu …' : 'Lädt den Verlauf …' }));
-    if (Z.verlaufFehler) ziel.append(h('p', { class: 'leer', text: 'Verlauf nicht geladen: ' + Z.verlaufFehler }));
-    if (!v) {
-      if (!Z.verlaufLaedt) ziel.append(h('button', { type: 'button', class: 'knopf', text: 'Verlauf laden', onclick: () => S.verlaufLaden() }));
-      return;
-    }
-    if (!v.eintraege.length) return ziel.append(h('p', { class: 'leer', text: 'Noch keine Einträge im Lager-Log.' }));
+    if (Z.verlaufLaedt && !v) return ziel.append(skelett(['zeile', 'zeile', 'zeile']));
+    if (Z.verlaufLaedt) ziel.append(h('p', { class: 'status-zeile laedt', text: 'Lädt neu …' }));
+    if (Z.verlaufFehler) ziel.append(h('p', { class: 'fehler', text: 'Verlauf nicht geladen: ' + Z.verlaufFehler }));
+    if (!v) return ziel.append(h('button', { type: 'button', class: 'knopf', text: 'Verlauf laden', onclick: () => S.verlaufLaden() }));
+    if (!v.eintraege.length) return ziel.append(leerKarte('Noch nichts eingetragen', 'Sobald jemand etwas unter „Eintragen“ speichert, steht es hier.'));
     ziel.append(h('p', { class: 'hinweis', text: 'Die letzten ' + v.eintraege.length + ' Einträge, neueste zuerst.' }));
-    ziel.append(h('ul', { class: 'liste verlauf' }, v.eintraege.map((e) => h('li', { class: e.storniert ? 'storniert' : '' },
-      h('div', { class: 'zeile' },
-        h('strong', {}, e.art || '?', e.storniert ? h('span', { class: 'marke-text', text: 'storniert' }) : null),
-        h('span', { text: H.datumFormat(e.datum) })),
-      h('div', { class: 'eintrag-text', text: verlaufText(e) }),
-      h('div', { class: 'eintrag-fuss' },
-        h('span', { class: 'nebenzeile', text: (e.wer ? 'von ' + e.wer : '') + (e.kommentar && e.art !== 'Storno' ? ' · „' + e.kommentar + '“' : '') }),
-        e.stornierbar && e.id ? h('button', {
-          type: 'button', class: 'knopf klein', text: 'Storno', 'aria-label': 'Storno: ' + e.art + ' ' + verlaufText(e),
-          onclick: (ev) => stornieren(e, ev.currentTarget),
-        }) : null)))));
+    ziel.append(h('div', { class: 'karte liste-karte' }, h('ul', { class: 'liste verlauf', role: 'list' }, v.eintraege.map((e) => h('li', {
+      class: 'verlauf-zeile' + (e.storniert ? ' storniert' : '') + (e.art === 'Storno' ? ' storno-zeile' : ''),
+    },
+      h('span', { class: 'verlauf-icon' }, S.icon(ART_ICON[e.art] || 'info')),
+      h('div', { class: 'verlauf-mitte' },
+        h('div', { class: 'zeile' },
+          h('strong', { class: 'verlauf-art' }, e.art || '?', e.storniert ? h('span', { class: 'badge badge-storno', text: 'storniert' }) : null),
+          h('span', { class: 'verlauf-datum', text: H.datumText(e.datum) })),
+        h('div', { class: 'eintrag-text', text: verlaufText(e) }),
+        h('div', { class: 'eintrag-fuss' },
+          h('span', { class: 'nebenzeile', text: (e.wer ? 'von ' + e.wer : '') + (e.kommentar && e.art !== 'Storno' ? ' · „' + e.kommentar + '“' : '') }),
+          e.stornierbar && e.id ? h('button', {
+            type: 'button', class: 'knopf klein storno-knopf', text: 'Storno', 'aria-label': 'Storno: ' + e.art + ' ' + verlaufText(e),
+            onclick: (ev) => stornieren(e, ev.currentTarget),
+          }) : null)))))));
   }
 
   async function zuordnen(r, standort, auswahl) {
@@ -262,10 +361,10 @@
   function zuordnenZeigen() {
     const ziel = leeren('zuordnen-inhalt');
     const u = Z.daten;
-    if (!u) return platzhalter(ziel);
-    if (!u.verkaufListe.length) return ziel.append(h('p', { class: 'leer', text: 'Keine Rechnungen in den letzten 60 Tagen.' }));
+    if (!u) return platzhalter(ziel, ['zeile', 'zeile']);
+    if (!u.verkaufListe.length) return ziel.append(leerKarte('Keine Rechnungen', 'In den letzten 60 Tagen gab es keine Rechnungen zum Zuordnen.'));
     const orte = standorte();
-    ziel.append(h('ul', { class: 'liste zuordnen' }, u.verkaufListe.map((r, i) => {
+    ziel.append(h('div', { class: 'karte liste-karte' }, h('ul', { class: 'liste zuordnen', role: 'list' }, u.verkaufListe.map((r, i) => {
       const gesetzt = r.standortGesetzt ? r.standort : '';
       const optionen = [h('option', { value: '', text: r.standortGesetzt ? 'Standard (zurücksetzen)' : 'Standard: ' + r.standort })]
         .concat(orte.concat(gesetzt && orte.indexOf(gesetzt) < 0 ? [gesetzt] : []).map((o) => h('option', { value: o, text: o })));
@@ -273,17 +372,17 @@
       auswahl.value = gesetzt;
       if (Z.schreibt) auswahl.disabled = true;
       return h('li', {},
-        h('div', { class: 'zeile' }, h('strong', { text: r.rechnung }), h('span', { text: H.datumFormat(r.datum) })),
+        h('div', { class: 'zeile' }, h('strong', { text: r.rechnung }), h('span', { class: 'verlauf-datum', text: H.datumText(r.datum) })),
         h('div', { class: 'nebenzeile', text: r.kunde + ' · ' + r.kanal + ' · ' + flaschen(r.flaschen) }),
-        r.gemischt ? h('div', { class: 'nebenzeile', text: 'Achtung: Teile dieser Rechnung zählen bei verschiedenen Standorten.' }) : null,
+        r.gemischt ? h('div', { class: 'nebenzeile warnung', text: 'Achtung: Teile dieser Rechnung zählen bei verschiedenen Standorten.' }) : null,
         // Beschriftung nur für Vorleseprogramme, sichtbar steht die Rechnung schon darüber
         h('label', { for: 'vk-' + i, class: 'nur-vorlesen', text: 'Standort für Rechnung ' + r.rechnung }), auswahl);
-    })));
+    }))));
   }
 
   S.ansichten.lager = function () {
     const ziel = leeren('lager-inhalt');
-    if (!Z.daten) platzhalter(ziel);
+    if (!Z.daten) platzhalter(ziel, ['gross', 'gross']);
     else ziel.append(...Z.daten.lager.map(lagerKarte));
     verlaufZeigen();
     zuordnenZeigen();

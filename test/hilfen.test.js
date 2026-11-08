@@ -81,10 +81,22 @@ test('Heute in Berlin, Tage rechnen', () => {
 });
 
 test('Bestellstatus als Stufe', () => {
-  assert.deepStrictEqual(H.bestellStufe('jetzt bestellen'), { stufe: 'jetzt', text: 'Jetzt bestellen!' });
-  assert.strictEqual(H.bestellStufe('bald').stufe, 'bald');
-  assert.strictEqual(H.bestellStufe('ok').stufe, 'ok');
+  assert.deepStrictEqual(H.bestellStufe('jetzt bestellen'), { stufe: 'jetzt', text: 'Jetzt bestellen' });
+  assert.deepStrictEqual(H.bestellStufe('bald'), { stufe: 'bald', text: 'Bald bestellen' });
+  assert.deepStrictEqual(H.bestellStufe('ok'), { stufe: 'ok', text: 'Alles gut' });
   assert.strictEqual(H.bestellStufe(null).stufe, '');
+});
+
+test('Datum lang und Reichweiten-Balken (Bestell-Karte)', () => {
+  assert.strictEqual(H.datumText('2027-01-26'), '26. Jan 2027');
+  assert.strictEqual(H.datumText('2026-03-05'), '5. Mär 2026');
+  assert.strictEqual(H.datumText('2026-02-30'), '–');
+  assert.strictEqual(H.datumText(null), '–');
+  assert.deepStrictEqual(H.reichweiteBalken(6, 3, 0), { fuell: 50, grenze: 25 });
+  assert.deepStrictEqual(H.reichweiteBalken(20, 2, 2), { fuell: 100, grenze: 20.5 }, 'über 12 Monate voll, 2 Wochen ≈ 0,46 Monate');
+  assert.deepStrictEqual(H.reichweiteBalken(-1, null, null), { fuell: 0, grenze: 0 });
+  assert.deepStrictEqual(H.reichweiteBalken(3, 1, 0, 6), { fuell: 50, grenze: 16.7 });
+  assert.strictEqual(H.reichweiteBalken(null, 2, 2), null);
 });
 
 test('Flaschen-Eingabe mit Kisten-Hilfe', () => {

@@ -113,7 +113,7 @@ test('PWA: iOS-Kopfzeilen in index.html', () => {
   assert.match(lies('docs/style.css'), /env\(safe-area-inset-top\)/, 'black-translucent braucht Abstand oben');
 });
 
-test('PWA: SATE-Look (immer schwarz, Courier New, Icons deckend)', () => {
+test('PWA: SATE-Look (schwarz, Systemschrift, Courier New als Akzent, eine Akzentfarbe, Icons deckend)', () => {
   const h = lies('docs/index.html');
   const css = lies('docs/style.css');
   const m = JSON.parse(lies('docs/manifest.webmanifest'));
@@ -121,7 +121,18 @@ test('PWA: SATE-Look (immer schwarz, Courier New, Icons deckend)', () => {
   assert.strictEqual(m.background_color, '#000000');
   assert.match(h, /<meta name="theme-color" content="#000000">/);
   assert.match(h, /<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">/);
-  assert.match(css, /font-family: "Courier New", Courier, monospace;/);
+  assert.match(css, /font-family: "Courier New", Courier, monospace;/, 'Courier New bleibt für die Überschriften');
+  const body = /\nbody \{([^}]*)\}/.exec(css)[1];
+  assert.match(body, /font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;/, 'Fließtext in Systemschrift');
+  assert.match(css, /--akzent: #E8C547;/);
+  assert.match(css, /font-variant-numeric: tabular-nums/);
+  assert.match(css, /backdrop-filter: saturate\(180%\) blur\(20px\)/, 'Reiterleiste durchscheinend');
+  assert.match(css, /@media \(prefers-reduced-motion: reduce\)/, 'Bewegung abschaltbar');
+  assert.doesNotMatch(css, /border: 2px solid var\(--weiss\)/, 'keine weiß umrandeten Kästen mehr');
+  // Reiter mit Symbol und Text
+  for (const r of ['uebersicht', 'verkaeufe', 'lager', 'eintragen']) {
+    assert.match(h, new RegExp('<button id="reiter-' + r + '"[^>]*>\\s*<svg class="icon"[^>]*aria-hidden="true"'), 'Symbol im Reiter ' + r);
+  }
   assert.match(css, /color-scheme: dark;/);
   assert.doesNotMatch(css, /prefers-color-scheme/, 'kein Hell-Modus mehr');
   // Eingaben ≥ 16 px, sonst zoomt iOS

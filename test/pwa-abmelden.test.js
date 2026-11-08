@@ -34,7 +34,7 @@ function laden() {
   const ids = [];
   let nr = 0;
   const S = {
-    H: H, el: el, h: () => element(), ansichten: {},
+    H: H, el: el, h: () => element(), icon: () => element(), ansichten: {},
     zustand: { daten: { lager: [{ standort: 'Lager Süd' }, { standort: 'Lager Nord' }], kennzahlen: { flaschenProKiste: 24 } },
       schreibt: false, sitzung: 0 },
     neueAnfrageId: () => 'entwurf-' + (++nr),

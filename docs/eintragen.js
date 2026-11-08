@@ -22,9 +22,13 @@
   // erneutes Tippen nach einer Zeitüberschreitung nicht doppelt im Lager-Log (der Server erkennt die ID wieder).
   let entwurfId = '';
 
+  // Art als Kacheln mit kleinem Symbol (Radio-Knöpfe, die Kachel ist die Beschriftung)
+  const ART_ICON = { Inventur: 'inventur', Umlagerung: 'umlagerung', Promo: 'promo', Eigenverbrauch: 'eigenverbrauch', Bruch: 'bruch',
+    'Abfüllung': 'abfuellung' };
   H.ARTEN.forEach((a, i) => {
     S.el('arten').append(h('label', { class: 'art', for: 'art-' + i },
-      h('input', { type: 'radio', name: 'art', value: a.art, id: 'art-' + i }), h('span', { text: a.art })));
+      h('input', { type: 'radio', name: 'art', value: a.art, id: 'art-' + i }),
+      h('span', { class: 'art-kachel' }, S.icon(ART_ICON[a.art]), h('span', { class: 'art-name', text: a.art }))));
   });
 
   const art = () => { const x = form.querySelector('input[name="art"]:checked'); return x ? x.value : ''; };
@@ -104,7 +108,7 @@
     ev.preventDefault();
     fehler('');
     if (Z.schreibt) return;
-    if (!Z.daten) return fehler('Noch keine Daten geladen. Bitte oben „Neu laden“ tippen.');
+    if (!Z.daten) return fehler('Noch keine Daten geladen. Bitte oben rechts „Neu laden“ (↻) tippen.');
     const r = H.flaschenAusEingabe(kisten.value, einzel.value, proKiste());
     if (r.fehler) return fehler(r.fehler);
     if (r.leer) return fehler('Bitte eintragen, wie viele Flaschen.');

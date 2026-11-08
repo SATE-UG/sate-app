@@ -58,6 +58,28 @@
   S.h = (tag, attrs, ...kinder) => knoten(null, tag, attrs, kinder);
   S.s = (tag, attrs, ...kinder) => knoten(SVG_NS, tag, attrs, kinder);
 
+  // Symbole (selbst gezeichnet, 24×24, nur Linien in currentColor; die Reiter-Symbole stehen fest in index.html) ----
+  const FLASCHE = 'M10 3h4v3.5l2.2 3.3c.5.7.8 1.6.8 2.5V20a1 1 0 0 1-1 1H8a1 1 0 0 1-1-1v-7.7c0-.9.3-1.8.8-2.5L10 6.5z';
+  S.ICONS = {
+    inventur: [['rect', { x: 5, y: 4.5, width: 14, height: 16.5, rx: 2 }], ['path', { d: 'M9 4.5V3h6v1.5' }], ['path', { d: 'M8.5 12.5l2.3 2.3 4.7-4.8' }]],
+    umlagerung: [['path', { d: 'M4 8h14.5' }], ['path', { d: 'M15 4.5 18.5 8 15 11.5' }], ['path', { d: 'M20 16H5.5' }], ['path', { d: 'M9 12.5 5.5 16 9 19.5' }]],
+    promo: [['rect', { x: 3.5, y: 8, width: 17, height: 4, rx: 1 }], ['path', { d: 'M5.5 12v8h13v-8' }], ['path', { d: 'M12 8v12' }],
+      ['path', { d: 'M12 8C10.5 4.5 7 4.3 7 6.4 7 8 9.5 8 12 8s5 0 5-1.6C17 4.3 13.5 4.5 12 8z' }]],
+    eigenverbrauch: [['path', { d: 'M8.5 3h7l-.6 6.4a2.9 2.9 0 0 1-5.8 0z' }], ['path', { d: 'M12 12.5V20' }], ['path', { d: 'M8.5 20.5h7' }]],
+    bruch: [['path', { d: FLASCHE }], ['path', { d: 'M7.2 14.2l3-1.4 1.5 2 2.2-1.6 3 1' }]],
+    abfuellung: [['path', { d: FLASCHE }], ['path', { d: 'M12 12.5v5M9.5 15h5' }]],
+    storno: [['path', { d: 'M9 14 4.5 9.5 9 5' }], ['path', { d: 'M4.5 9.5H14a5.5 5.5 0 0 1 0 11h-3' }]],
+    ok: [['circle', { cx: 12, cy: 12, r: 9 }], ['path', { d: 'M8 12.3l2.7 2.7L16 9.6' }]],
+    fehler: [['circle', { cx: 12, cy: 12, r: 9 }], ['path', { d: 'M12 7.5v5.5' }], ['path', { d: 'M12 16.4v.1' }]],
+    info: [['circle', { cx: 12, cy: 12, r: 9 }], ['path', { d: 'M12 11v5.5' }], ['path', { d: 'M12 7.6v.1' }]],
+    flasche: [['path', { d: FLASCHE }]],
+  };
+  /** Symbol als SVG-Knoten (für Vorleseprogramme versteckt). */
+  S.icon = function (name, klasse) {
+    return S.s('svg', { class: 'icon' + (klasse ? ' ' + klasse : ''), viewBox: '0 0 24 24', 'aria-hidden': 'true', focusable: 'false' },
+      (S.ICONS[name] || []).map(([tag, attrs]) => S.s(tag, attrs)));
+  };
+
   // Gerätespeicher (localStorage kann im privaten Modus fehlen oder werfen) ---------------------------------------
   S.speicher = {
     lesen(k) { try { return window.localStorage.getItem(k) || ''; } catch (e) { return ''; } },
@@ -177,10 +199,15 @@
   S.melden = function (text, fehler, zusatz) {
     const t = S.el('toast');
     clearTimeout(toastUhr);
-    t.replaceChildren(S.h('div', { text: text }), ...(zusatz || []).filter(Boolean).map((z) => S.h('div', { class: 'nebenzeile', text: z })));
+    t.replaceChildren(S.icon(fehler ? 'fehler' : 'ok', 'toast-icon'),
+      S.h('div', { class: 'toast-text' }, S.h('div', { text: text }),
+        ...(zusatz || []).filter(Boolean).map((z) => S.h('div', { class: 'nebenzeile', text: z }))));
     t.classList.toggle('fehler-toast', !!fehler);
-    t.setAttribute('role', fehler ? 'alert' : 'status');
     t.hidden = false;
+    // Für Vorleseprogramme: erst leeren, dann kurz danach füllen, damit auch eine gleiche Meldung erneut angesagt wird
+    const ansage = S.el('ansage');
+    ansage.textContent = '';
+    setTimeout(() => { ansage.textContent = (fehler ? 'Fehler: ' : '') + [text].concat((zusatz || []).filter(Boolean)).join('. '); }, 60);
     toastUhr = setTimeout(() => { t.hidden = true; }, fehler || (zusatz && zusatz.length) ? 9000 : 4500);
   };
   S.meldenSchliessen = function () { clearTimeout(toastUhr); S.el('toast').hidden = true; };

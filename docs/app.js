@@ -48,6 +48,7 @@
     if (Z.daten) t = (Z.frisch ? 'Stand: ' : 'Gespeicherter Stand von ') + H.zeitFormat(Z.daten.stand);
     if (Z.laedt) t += (t ? ' – ' : '') + 'lädt neu …';
     el('stand').textContent = t;
+    el('stand').classList.toggle('laedt', Z.laedt); // kleiner Kreisel vor dem Text (CSS)
     el('neu-laden').disabled = Z.laedt;
   }
 

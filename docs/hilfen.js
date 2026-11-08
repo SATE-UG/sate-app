@@ -81,6 +81,11 @@
     return datumGueltig(t) ? t.slice(8, 10) + '.' + t.slice(5, 7) + '.' + t.slice(0, 4) : '–';
   }
 
+  /** `JJJJ-MM-TT` → „26. Jan 2027“ (für große Anzeigen). Ungültig → „–“. */
+  function datumText(t) {
+    return datumGueltig(t) ? Number(t.slice(8, 10)) + '. ' + MONATE_KURZ[Number(t.slice(5, 7)) - 1] + ' ' + t.slice(0, 4) : '–';
+  }
+
   /** `JJJJ-MM` → „Nov“ bzw. mit `lang` „November 2026“. Ungültig → „–“. */
   function monatFormat(m, lang) {
     if (typeof m !== 'string' || !/^\d{4}-(0[1-9]|1[0-2])$/.test(m)) return '–';
@@ -117,10 +122,22 @@
 
   /** Bestellstatus der Schnittstelle → { stufe: 'ok' | 'bald' | 'jetzt' | '', text }. */
   function bestellStufe(status) {
-    if (status === 'jetzt bestellen') return { stufe: 'jetzt', text: 'Jetzt bestellen!' };
+    if (status === 'jetzt bestellen') return { stufe: 'jetzt', text: 'Jetzt bestellen' };
     if (status === 'bald') return { stufe: 'bald', text: 'Bald bestellen' };
-    if (status === 'ok') return { stufe: 'ok', text: 'Alles ok' };
+    if (status === 'ok') return { stufe: 'ok', text: 'Alles gut' };
     return { stufe: '', text: 'Noch nicht berechenbar' };
+  }
+
+  /**
+   * Balken „Reichweite“ in der Bestell-Karte, Skala 0 bis `skala` Monate (Standard 12): `fuell` = Reichweite,
+   * `grenze` = Vorlauf + Puffer (ab da muss bestellt sein), beide in Prozent 0–100. Fehlt die Reichweite: null.
+   */
+  function reichweiteBalken(reichweite, vorlaufMonate, pufferWochen, skala) {
+    if (!istZahl(reichweite)) return null;
+    const max = skala > 0 ? skala : 12;
+    const pct = (m) => Math.round(Math.max(0, Math.min(m / max, 1)) * 1000) / 10;
+    const grenze = (istZahl(vorlaufMonate) ? vorlaufMonate : 0) + (istZahl(pufferWochen) ? pufferWochen * 7 / (365.25 / 12) : 0);
+    return { fuell: pct(reichweite), grenze: pct(grenze) };
   }
 
   // Eingaben ---------------------------------------------------------------------------------------------------
@@ -278,7 +295,8 @@
 
   const hilfen = {
     CODE_LAENGE, ARTEN, MAX_KOMMENTAR, codeBereinigen, codePruefen, apiUrlGueltig, zahlFormat, euroFormat, kistenFormat,
-    zeitFormat, datumGueltig, datumFormat, monatFormat, zeitraumFormat, heuteBerlin, tagePlus, tageZwischen, bestellStufe,
+    zeitFormat, datumGueltig, datumFormat, datumText, monatFormat, zeitraumFormat, heuteBerlin, tagePlus, tageZwischen, bestellStufe,
+    reichweiteBalken,
     ganzeZahlEingabe, flaschenAusEingabe, kistenText, buchungPruefen, buchungText, anfrageIdAus, achse, diagrammMasse,
     achsenText, antwortDeuten, uebersichtGueltig, neuer,
   };
