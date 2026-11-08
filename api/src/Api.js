@@ -6,10 +6,10 @@
  *   codeAnlegen(name)   neuer Zugangscode für eine Person (ersetzt einen alten), steht einmal im Log
  *   codeSperren(name)   Code einer Person sperren
  *   codesAnzeigen()     Namen und Status (keine Codes, keine Hashes)
- *   lagerTabSchreiben() Bestand pro Standort nach Lager!B2:F5
+ *   lagerTabSchreiben() Bestand pro Standort nach Lager!B2:F… (bis zur Zeile „Summe“)
  *   triggerEinrichten() täglicher Trigger für taeglich() (7–8 Uhr), braucht den Scope script.scriptapp
  * Die Web-App schreibt (Task 5) nur über schreibAktion() (SchreibLogik.js): Zeilen ans Lager-Log und an Abfüllungen
- * anhängen, Verkäufe Spalte L, danach Lager!B2:F5.
+ * anhängen, Verkäufe Spalte L, danach Lager!B2:F… .
  * Codes nie loggen (außer einmal beim Anlegen), nie in URLs.
  */
 
@@ -39,8 +39,8 @@ function einrichten() {
 }
 
 /**
- * Schreibt den Bestand pro Standort nach Lager!B2:F5 (nur diese Zellen; Datumswerte als Datum, Stand = jetzt).
- * Die Zeilen ordnet Spalte A2:A5 zu (Standortnamen und „Summe“).
+ * Schreibt den Bestand pro Standort nach Lager!B2:F<Zeile von „Summe“> (nur diese Zellen; Datumswerte als Datum,
+ * Stand = jetzt). Die Zeilen ordnet Spalte A ab Zeile 2 zu (Standortnamen und „Summe“).
  */
 function lagerTabSchreiben() {
   const lock = LockService.getScriptLock();
@@ -58,14 +58,15 @@ function lagerTabSchreiben() {
 function lagerTabAusUebersicht_(ss, u, jetzt) {
   const tab = ss.getSheetByName(LAGER_TAB);
   if (!tab) throw new Error('Tab „' + LAGER_TAB + '“ fehlt');
-  const namen = tab.getRange(LAGER_NAMEN_BEREICH).getValues().map((z) => z[0]);
+  const namen = lagerNamenBisSumme(tab.getRange(LAGER_NAMEN_BEREICH).getValues().map((z) => z[0]));
+  if (!namen) throw new Error('Tab „' + LAGER_TAB + '“: Zeile „' + LAGER_SUMME + '“ in Spalte A fehlt');
   const aus = lagerTabWerte(namen, u.lager, u.kennzahlen.flaschenProKiste, jetzt);
   // Inventurdatum `JJJJ-MM-TT` → Datum (Mitternacht in der Zeitzone des Skripts, Europe/Berlin)
   const werte = aus.werte.map((z) => z.map((w) => (typeof w === 'string' && datumGueltig(w) ? datumZelle_(w) : w)));
-  const bereich = tab.getRange(LAGER_BEREICH);
+  const bereich = tab.getRange(LAGER_ERSTE_ZEILE, 2, werte.length, LAGER_FORMATE.length);
   bereich.setValues(werte);
   bereich.setNumberFormats(werte.map(() => LAGER_FORMATE.slice()));
-  Logger.log('Lager!' + LAGER_BEREICH + ' geschrieben: ' + u.lager.map((s) => s.standort + ' ' +
+  Logger.log('Lager!' + bereich.getA1Notation() + ' geschrieben: ' + u.lager.map((s) => s.standort + ' ' +
     (s.bestand === null ? 'noch keine Inventur' : s.bestand)).join(', ') +
     (aus.fehlen.length ? '. Ohne Zeile im Tab Lager: ' + aus.fehlen.join(', ') : ''));
 }

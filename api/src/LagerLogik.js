@@ -151,6 +151,7 @@ function einstellungenLesen(zeilen) {
         w = String(roh).trim() || null;
       }
     }
+    if (w === null && d.leerErlaubt) w = d.standard;
     if (w === null) {
       e.hinweise.push('Einstellung „' + d.text + '“ fehlt oder ist unlesbar, nehme ' + d.standard + '.');
       w = d.standard;
@@ -162,16 +163,47 @@ function einstellungenLesen(zeilen) {
   ['standortVerkaeufe', 'standortBerlin'].forEach((k) => {
     if (e.standorte.indexOf(e[k]) < 0) e.hinweise.push('Einstellung: Standort „' + e[k] + '“ steht nicht in „Standorte“.');
   });
+  e.kundenStandorte = kundenStandorteLesen(e.kundenStandorte, e.standorte, e.hinweise);
   e.hauptlager = e.standorte[0] || null;
   return e;
 }
 
+/**
+ * „Standort nach Kunde“: Einträge `Kundenteil=Standort`, mit Semikolon getrennt (z. B. „Tinto=Jan Berlin“).
+ * Ein Verkauf, dessen Kunde den Teil enthält (Groß/klein egal), geht von diesem Standort ab. Unbekannte Standorte
+ * und kaputte Einträge fallen mit Hinweis weg.
+ */
+function kundenStandorteLesen(text, standorte, hinweise) {
+  const aus = [];
+  String(text || '').split(';').map((t) => t.trim()).filter(Boolean).forEach((t) => {
+    const i = t.indexOf('=');
+    const teil = i > 0 ? t.slice(0, i).trim().toLowerCase() : '';
+    const ort = i > 0 ? t.slice(i + 1).trim() : '';
+    if (!teil || !ort) { hinweise.push('Einstellung „Standort nach Kunde“: „' + t + '“ hat nicht die Form Kunde=Standort.'); return; }
+    if (standorte.indexOf(ort) < 0) { hinweise.push('Einstellung „Standort nach Kunde“: Standort „' + ort + '“ steht nicht in „Standorte“.'); return; }
+    aus.push({ teil: teil, standort: ort });
+  });
+  return aus;
+}
+
 // Verkäufe im Lager ----------------------------------------------------------------------------------------
 
-/** Regel 1: Spalte L, sonst Kanal Berlin → „Standort für Kanal Berlin“, sonst „Standort für Verkäufe“. */
+/**
+ * Regel 1: Spalte L, sonst „Standort nach Kunde“ (erster passender Eintrag), sonst Kanal Berlin → „Standort für
+ * Kanal Berlin“, sonst „Standort für Verkäufe“.
+ */
 function verkaufStandort(v, e) {
   if (v.standort) return v.standort;
+  const kunde = String(v.kunde || '').toLowerCase();
+  const treffer = kunde ? (e.kundenStandorte || []).find((k) => kunde.indexOf(k.teil) >= 0) : null;
+  if (treffer) return treffer.standort;
   return v.kanal === 'Berlin' ? e.standortBerlin : e.standortVerkaeufe;
+}
+
+/** Tab Lager, Spalte A ab Zeile 2: Namen bis einschließlich „Summe“. Ohne „Summe“ → null. */
+function lagerNamenBisSumme(namen) {
+  const i = namen.findIndex((n) => String(n || '').trim() === LAGER_SUMME);
+  return i < 0 ? null : namen.slice(0, i + 1);
 }
 
 /**
@@ -370,7 +402,7 @@ function bestellStatus(gesamt, abverkauf, e, heute) {
 // Tab Lager ------------------------------------------------------------------------------------------------
 
 /**
- * Werte für Lager!B2:F5. `namen`: Spalte A2:A5 (Standorte und „Summe“), `standorte` aus lagerBerechnen.
+ * Werte für Lager!B2:F… `namen`: Spalte A ab Zeile 2 bis „Summe“ (Standorte und „Summe“), `standorte` aus lagerBerechnen.
  * Pro Zeile [Bestand, Kisten, Letzte Inventur (`JJJJ-MM-TT` oder „noch keine“), Schwund, jetzt]. Unbekannte Namen
  * bleiben leer. Summe: Summe der bekannten Bestände, ohne vollständige Inventur steht in D der Hinweis.
  * Rückgabe { werte, fehlen } (fehlen = Standorte ohne Zeile im Tab).

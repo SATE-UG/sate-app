@@ -309,3 +309,25 @@ test('Codex 2026-11-08: Storno mit Datum nach heute hebt das Original noch nicht
   const ab = k.lagerLogLesen(zeilen, berlin, e, '2026-11-09');
   assert.strictEqual(k.lagerBerechnen(ab.buchungen, [], e, '2026-11-09').standorte[0].bestand, 100, 'ab dem Storno-Tag aufgehoben');
 });
+
+test('Standort nach Kunde: Kundenteil=Standort, vor Kanal Berlin, Spalte L gewinnt', () => {
+  const zeilen = einstellungen().concat([['Standort nach Kunde', ' cafe zwei = Lager Ost ; kaputt; x=Unbekannt ']]);
+  const e = k.einstellungenLesen(zeilen);
+  assert.deepStrictEqual(roh(e.kundenStandorte), [{ teil: 'cafe zwei', standort: 'Lager Ost' }]);
+  assert.ok(e.hinweise.some((h) => /kaputt/.test(h)), 'kaputter Eintrag wird gemeldet');
+  assert.ok(e.hinweise.some((h) => /Unbekannt/.test(h)), 'unbekannter Standort wird gemeldet');
+  assert.strictEqual(k.verkaufStandort({ kunde: 'Café Zwei', kanal: 'Berlin' }, e), 'Lager Nord', 'é ≠ e: kein Treffer');
+  assert.strictEqual(k.verkaufStandort({ kunde: 'Bar CAFE ZWEI Mitte', kanal: 'Berlin' }, e), 'Lager Ost');
+  assert.strictEqual(k.verkaufStandort({ kunde: 'Cafe Zwei', kanal: 'Karlsruhe', standort: 'Lager Süd' }, e), 'Lager Süd');
+  assert.strictEqual(k.verkaufStandort({ kunde: 'Andere', kanal: 'Berlin' }, e), 'Lager Nord');
+  assert.strictEqual(k.verkaufStandort({ kunde: '', kanal: 'Karlsruhe' }, e), 'Lager Süd');
+  const ohne = k.einstellungenLesen(einstellungen());
+  assert.deepStrictEqual(roh(ohne.kundenStandorte), []);
+  assert.ok(!ohne.hinweise.some((h) => /nach Kunde/.test(h)), 'fehlende Zeile ist kein Problem');
+});
+
+test('Tab Lager: Namen bis einschließlich „Summe“', () => {
+  assert.deepStrictEqual(roh(k.lagerNamenBisSumme(['A', 'B', 'C', 'D', 'Summe', '', 'Hinweis'])), ['A', 'B', 'C', 'D', 'Summe']);
+  assert.deepStrictEqual(roh(k.lagerNamenBisSumme([' Summe '])), [' Summe ']);
+  assert.strictEqual(k.lagerNamenBisSumme(['A', 'B', '']), null);
+});

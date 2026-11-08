@@ -48,11 +48,14 @@ const EINSTELLUNGEN_TAB = 'App-Einstellungen';
 const ABFUELLUNGEN_TAB = 'Abfüllungen';
 /** Übersicht!B8:B13: Abgefüllt, Verkauft, Bestand rechnerisch, Kisten, Ø 12 Monate, Reichweite (nur lesen). */
 const BEREICH_UEBERSICHT = 'B8:B13';
-/** Tab Lager: Namen in A2:A5 (drei Standorte + „Summe“), das Skript schreibt nur B2:F5. */
-const LAGER_NAMEN_BEREICH = 'A2:A5';
-const LAGER_BEREICH = 'B2:F5';
+/**
+ * Tab Lager: ab A2 je Standort eine Zeile, danach „Summe“. Das Skript liest A2:A21, schreibt nur B2:F<Zeile von Summe>.
+ * Neuer Standort: Zeile über „Summe“ einfügen (Name wie in App-Einstellungen → Standorte).
+ */
+const LAGER_NAMEN_BEREICH = 'A2:A21';
+const LAGER_ERSTE_ZEILE = 2;
 const LAGER_SUMME = 'Summe';
-/** Zahlenformate für B2:F5: Bestand, Kisten, Letzte Inventur, Schwund, Stand. */
+/** Zahlenformate für Lager B–F: Bestand, Kisten, Letzte Inventur, Schwund, Stand. */
 const LAGER_FORMATE = ['#,##0', '#,##0.0', 'dd.MM.yyyy', '#,##0', 'dd.MM.yyyy HH:mm'];
 /** Täglicher Trigger: Funktion und Stunde (Apps Script startet ihn irgendwann zwischen 7 und 8 Uhr). */
 const TRIGGER_FUNKTION = 'taeglich';
@@ -83,6 +86,7 @@ const EINSTELLUNGEN = [
   { text: 'Standorte', schluessel: 'standorte', standard: 'Dörflinger Karlsruhe;Dave Berlin;Mark Berlin' },
   { text: 'Standort für Verkäufe', schluessel: 'standortVerkaeufe', standard: 'Dörflinger Karlsruhe' },
   { text: 'Standort für Kanal Berlin', schluessel: 'standortBerlin', standard: 'Dave Berlin' },
+  { text: 'Standort nach Kunde', schluessel: 'kundenStandorte', standard: '', leerErlaubt: true },
   { text: 'Vorlaufzeit Abfüller (Monate)', schluessel: 'vorlaufMonate', standard: 2, zahl: true, ganz: true },
   { text: 'Puffer (Wochen)', schluessel: 'pufferWochen', standard: 2, zahl: true },
   { text: 'Mindestbestand (Flaschen)', schluessel: 'mindestbestand', standard: 0, zahl: true },
