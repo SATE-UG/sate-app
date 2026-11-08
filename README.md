@@ -35,7 +35,7 @@ Entschieden (Mark, 2026-11-08):
 - Zufall: SHA-256 über `Utilities.getUuid()` (zufällige UUIDs), gleichverteilt aufs Alphabet abgebildet.
 
 So legt Mark einen Code an (Apps-Script-Editor, `clasp open-script` oder script.google.com):
-1. Im Editor eine neue Skriptdatei, z. B. `Aufruf`, mit `function aufruf() { codeAnlegen('Jonas'); }` anlegen (der Editor kann Funktionen nicht mit Argument starten).
+1. Für das Team gibt es fertige Knöpfe in `Api.js`: `codeAnlegenMark`, `codeAnlegenJonas`, `codeAnlegenDave`, `codeAnlegenJan`, `codeAnlegenPaul` (oben im Editor auswählen, „Ausführen“). Für andere Namen eine Hilfsfunktion wie `function aufruf() { codeAnlegen('Laura'); }` in `Api.js` ergänzen und pushen (Dateien, die nur im Editor angelegt werden, überschreibt `clasp push`).
 2. `aufruf` auswählen und ausführen. Im Ausführungsprotokoll steht einmal `Zugangscode für Jonas: ABCD-EFGH-JKMN`. Code persönlich weitergeben, nicht in Gruppen posten.
 3. Datei `Aufruf` wieder löschen (der nächste `clasp push --force` entfernt sie sonst ohnehin).
 

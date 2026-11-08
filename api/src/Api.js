@@ -141,3 +141,11 @@ function zufallsBytes_(n) {
   }
   return aus.slice(0, n);
 }
+
+// Knöpfe für den Editor (der Editor startet Funktionen ohne Argument) -------------------------------------
+// Auswählen und „Ausführen“: der neue Code steht danach einmal im Ausführungsprotokoll.
+function codeAnlegenMark() { codeAnlegen('Mark'); }
+function codeAnlegenJonas() { codeAnlegen('Jonas'); }
+function codeAnlegenDave() { codeAnlegen('Dave'); }
+function codeAnlegenJan() { codeAnlegen('Jan'); }
+function codeAnlegenPaul() { codeAnlegen('Paul'); }
