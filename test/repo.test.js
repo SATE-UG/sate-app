@@ -11,12 +11,13 @@ const { execFileSync } = require('node:child_process');
 const WURZEL = path.join(__dirname, '..');
 const lies = (p) => fs.readFileSync(path.join(WURZEL, p), 'utf8');
 
-test('Apps-Script-Manifest: Berlin, V8, Web-App, nur Sheet lesen', () => {
+test('Apps-Script-Manifest: Berlin, V8, Web-App, Sheet und Trigger', () => {
   const m = JSON.parse(lies('api/src/appsscript.json'));
   assert.strictEqual(m.timeZone, 'Europe/Berlin');
   assert.strictEqual(m.runtimeVersion, 'V8');
   assert.deepStrictEqual(m.webapp, { executeAs: 'USER_DEPLOYING', access: 'ANYONE_ANONYMOUS' });
-  assert.deepStrictEqual(m.oauthScopes, ['https://www.googleapis.com/auth/spreadsheets']);
+  assert.deepStrictEqual(m.oauthScopes,
+    ['https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/script.scriptapp']);
 });
 
 test('clasp: rootDir api/src, Lokal.js wird gepusht, aber nie committet', () => {

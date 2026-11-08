@@ -1,8 +1,9 @@
 'use strict';
 
 // Attrappen für die Google-Dienste (PropertiesService, SpreadsheetApp, Utilities, ContentService, LockService,
-// Logger, console), damit Api.js unter Node läuft. Alles liegt im Speicher (`welt`).
-// Das Sheet ist nur lesbar: jeder schreibende Aufruf wirft und landet in `welt.sheetSchreiben`.
+// Logger, console, ScriptApp), damit Api.js unter Node läuft. Alles liegt im Speicher (`welt`).
+// Das Sheet ist nur lesbar, außer Lager!B2:F5: jeder andere schreibende Aufruf wirft. Alle Schreibversuche landen
+// in `welt.sheetSchreiben`. Die übrigen Tabs (`welt.tabs`) sind 2D-Arrays wie von getValues().
 
 const crypto = require('node:crypto');
 
@@ -17,9 +18,13 @@ function neueWelt() {
     sheetSchreiben: [],
     sheetIds: [],
     // Übersicht!B10 und B13 wie im echten Sheet (Zahlen)
-    zellen: { B10: 8041, B11: 335, B12: 1103, B13: 7.3 },
+    zellen: { B8: 3000, B9: 0, B10: 8041, B11: 335, B12: 1103, B13: 7.3 },
     tabFehlt: false,
     uuids: 0,
+    tabs: {},
+    formate: {},
+    trigger: [],
+    triggerNr: 0,
   };
 
   function bereich(a1) {
@@ -39,6 +44,47 @@ function neueWelt() {
 
   const tab = { getRange: bereich, appendRow: () => { welt.sheetSchreiben.push('appendRow'); throw new Error('nur lesbar'); } };
 
+  /** A1 → [zeile0, spalte0, zeilen, spalten], z. B. 'B2:F5' → [1, 1, 4, 5]. */
+  function a1(text) {
+    const m = /^([A-Z])(\d+)(?::([A-Z])(\d+))?$/.exec(text);
+    if (!m) throw new Error('unbekannter Bereich ' + text);
+    const sp = (c) => c.charCodeAt(0) - 65;
+    const z1 = Number(m[2]) - 1;
+    const s1 = sp(m[1]);
+    return [z1, s1, Number(m[4] || m[2]) - z1, sp(m[3] || m[1]) - s1 + 1];
+  }
+
+  /** Tab aus `welt.tabs[name]` (2D-Array). Schreiben nur in Lager!B2:F5. */
+  function gitterTab(name) {
+    const daten = welt.tabs[name];
+    const range = (z, sp, nz, ns, text) => ({
+      getValues: () => {
+        welt.sheetLesen.push(name + '!' + text);
+        const aus = [];
+        for (let r = 0; r < nz; r++) {
+          const zeile = [];
+          for (let c = 0; c < ns; c++) zeile.push(daten[z + r] && daten[z + r][sp + c] !== undefined ? daten[z + r][sp + c] : '');
+          aus.push(zeile);
+        }
+        return aus;
+      },
+      setValues: (w) => {
+        welt.sheetSchreiben.push(name + '!' + text);
+        if (name !== 'Lager' || text !== 'B2:F5') throw new Error('Schreiben nur in Lager!B2:F5 erlaubt');
+        if (w.length !== nz || w.some((x) => x.length !== ns)) throw new Error('Größe passt nicht');
+        w.forEach((x, r) => { daten[z + r] = daten[z + r] || []; x.forEach((v, c) => { daten[z + r][sp + c] = v; }); });
+      },
+      setNumberFormats: (f) => {
+        if (name !== 'Lager' || text !== 'B2:F5') throw new Error('Formate nur in Lager!B2:F5');
+        welt.formate[name + '!' + text] = f;
+      },
+    });
+    return {
+      getDataRange: () => range(0, 0, daten.length, Math.max(0, ...daten.map((x) => x.length)), 'alles'),
+      getRange: (text) => { const [z, sp, nz, ns] = a1(text); return range(z, sp, nz, ns, text); },
+    };
+  }
+
   const globals = {
     Utilities: {
       DigestAlgorithm: { SHA_256: 'sha256' },
@@ -48,6 +94,28 @@ function neueWelt() {
         return vorzeichen(crypto.createHash(alg).update(wert, 'utf8').digest());
       },
       getUuid: () => { welt.uuids++; return crypto.randomUUID(); },
+      formatDate: (d, zone, muster) => {
+        if (muster !== 'yyyy-MM-dd') throw new Error('nur yyyy-MM-dd');
+        return new Intl.DateTimeFormat('sv-SE', { timeZone: zone, year: 'numeric', month: '2-digit', day: '2-digit' }).format(d);
+      },
+    },
+    ScriptApp: {
+      newTrigger: (fn) => {
+        const t = { fn: fn };
+        const bauer = {
+          timeBased: () => bauer, everyDays: (n) => { t.tage = n; return bauer; }, atHour: (h) => { t.stunde = h; return bauer; },
+          inTimezone: (z) => { t.zone = z; return bauer; },
+          create: () => {
+            const id = 'trigger-' + (++welt.triggerNr);
+            const obj = { getHandlerFunction: () => fn, getUniqueId: () => id, daten: t };
+            welt.trigger.push(obj);
+            return obj;
+          },
+        };
+        return bauer;
+      },
+      getProjectTriggers: () => welt.trigger.slice(),
+      deleteTrigger: (t) => { welt.trigger = welt.trigger.filter((x) => x !== t); },
     },
     PropertiesService: {
       getScriptProperties: () => ({
@@ -60,7 +128,13 @@ function neueWelt() {
     SpreadsheetApp: {
       openById: (id) => {
         welt.sheetIds.push(id);
-        return { getSheetByName: (n) => (n === 'Übersicht' && !welt.tabFehlt ? tab : null) };
+        return {
+          getSpreadsheetTimeZone: () => 'Europe/Berlin',
+          getSheetByName: (n) => {
+            if (n === 'Übersicht') return welt.tabFehlt ? null : tab;
+            return welt.tabs[n] ? gitterTab(n) : null;
+          },
+        };
       },
     },
     ContentService: {

@@ -6,6 +6,8 @@
  *   codeAnlegen(name)   neuer Zugangscode für eine Person (ersetzt einen alten), steht einmal im Log
  *   codeSperren(name)   Code einer Person sperren
  *   codesAnzeigen()     Namen und Status (keine Codes, keine Hashes)
+ *   lagerTabSchreiben() Bestand pro Standort nach Lager!B2:F5 (sonst schreibt das Skript nirgends ins Sheet)
+ *   triggerEinrichten() täglicher Trigger für taeglich() (7–8 Uhr), braucht den Scope script.scriptapp
  * Codes nie loggen (außer einmal beim Anlegen), nie in URLs.
  */
 
@@ -32,6 +34,55 @@ function doPost(e) {
 function einrichten() {
   const wert = tab_().getRange(ZELLE_BESTAND).getValue();
   Logger.log(UEBERSICHT_TAB + '!' + ZELLE_BESTAND + ' (Bestand Flaschen) = ' + wert);
+}
+
+/**
+ * Schreibt den Bestand pro Standort nach Lager!B2:F5 (nur diese Zellen; Datumswerte als Datum, Stand = jetzt).
+ * Die Zeilen ordnet Spalte A2:A5 zu (Standortnamen und „Summe“).
+ */
+function lagerTabSchreiben() {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    const ss = blatt_();
+    const tab = ss.getSheetByName(LAGER_TAB);
+    if (!tab) throw new Error('Tab „' + LAGER_TAB + '“ fehlt');
+    const jetzt = new Date();
+    const datumText = datumTextFunktion_(ss);
+    const u = uebersichtBauen(tabellenLesen_(ss), datumText, jetzt);
+    const namen = tab.getRange(LAGER_NAMEN_BEREICH).getValues().map((z) => z[0]);
+    const aus = lagerTabWerte(namen, u.lager, u.kennzahlen.flaschenProKiste, jetzt);
+    // Inventurdatum `JJJJ-MM-TT` → Datum (Mitternacht in der Zeitzone des Skripts, Europe/Berlin)
+    const werte = aus.werte.map((z) => z.map((w) => (typeof w === 'string' && datumGueltig(w)
+      ? new Date(Number(w.slice(0, 4)), Number(w.slice(5, 7)) - 1, Number(w.slice(8, 10))) : w)));
+    const bereich = tab.getRange(LAGER_BEREICH);
+    bereich.setValues(werte);
+    bereich.setNumberFormats(werte.map(() => LAGER_FORMATE.slice()));
+    Logger.log('Lager!' + LAGER_BEREICH + ' geschrieben: ' + u.lager.map((s) => s.standort + ' ' +
+      (s.bestand === null ? 'noch keine Inventur' : s.bestand)).join(', ') +
+      (aus.fehlen.length ? '. Ohne Zeile im Tab Lager: ' + aus.fehlen.join(', ') : ''));
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/** Täglich per Trigger (triggerEinrichten): Tab Lager aktualisieren. */
+function taeglich() {
+  lagerTabSchreiben();
+}
+
+/** Legt den täglichen Trigger für taeglich() an (7–8 Uhr Berlin) und löscht danach ältere gleichnamige. */
+function triggerEinrichten() {
+  const neu = ScriptApp.newTrigger(TRIGGER_FUNKTION).timeBased().everyDays(1).atHour(TRIGGER_STUNDE).inTimezone(ZEITZONE).create();
+  let geloescht = 0;
+  ScriptApp.getProjectTriggers().forEach((t) => {
+    if (t.getHandlerFunction() === TRIGGER_FUNKTION && t.getUniqueId() !== neu.getUniqueId()) {
+      ScriptApp.deleteTrigger(t);
+      geloescht++;
+    }
+  });
+  Logger.log('Trigger für ' + TRIGGER_FUNKTION + '() täglich ' + TRIGGER_STUNDE + '–' + (TRIGGER_STUNDE + 1) + ' Uhr angelegt' +
+    (geloescht ? ', ' + geloescht + ' alte gelöscht.' : '.'));
 }
 
 /**
@@ -104,6 +155,7 @@ function codesAnzeigen() {
 /** Google-Anbindung für bearbeiten() (Logik.js). Skripteigenschaften nur einmal pro Anfrage lesen. */
 function umgebung_() {
   let alle = null;
+  let blatt = null;
   const holen = () => (alle = alle || PropertiesService.getScriptProperties().getProperties());
   return {
     salz: () => holen()[SALZ_EIGENSCHAFT] || null,
@@ -114,17 +166,47 @@ function umgebung_() {
       return { bestand: w[0][0], reichweite: w[3][0] };
     },
     jetzt: () => new Date(),
+    tabellen: () => tabellenLesen_(holenBlatt()),
+    datumText: (d) => datumTextFunktion_(holenBlatt())(d),
   };
+  function holenBlatt() { return (blatt = blatt || blatt_()); }
 }
 
-/** Tab „Übersicht“ im Sheet „SATE Verkäufe“ (ID aus Lokal.js). */
-function tab_() {
+/** Sheet „SATE Verkäufe“ (ID aus Lokal.js). */
+function blatt_() {
   if (typeof LOKAL_SHEET_ID === 'undefined' || !LOKAL_SHEET_ID || LOKAL_SHEET_ID === 'HIER_SHEET_ID_EINTRAGEN') {
     throw new Error('LOKAL_SHEET_ID fehlt: api/src/Lokal.js aus api/Lokal.example.js anlegen und pushen');
   }
-  const tab = SpreadsheetApp.openById(LOKAL_SHEET_ID).getSheetByName(UEBERSICHT_TAB);
+  return SpreadsheetApp.openById(LOKAL_SHEET_ID);
+}
+
+/** Tab „Übersicht“. */
+function tab_() {
+  const tab = blatt_().getSheetByName(UEBERSICHT_TAB);
   if (!tab) throw new Error('Tab „' + UEBERSICHT_TAB + '“ fehlt');
   return tab;
+}
+
+/** Datum → `JJJJ-MM-TT` in der Zeitzone des Sheets (Datumszellen meinen dessen Kalendertag), sonst Europe/Berlin. */
+function datumTextFunktion_(ss) {
+  const zone = (ss.getSpreadsheetTimeZone && ss.getSpreadsheetTimeZone()) || ZEITZONE;
+  return (d) => Utilities.formatDate(d, zone, 'yyyy-MM-dd');
+}
+
+/** Alle Tabs für uebersichtBauen(), je ein getValues() pro Tab. */
+function tabellenLesen_(ss) {
+  const tab = (name) => {
+    const t = ss.getSheetByName(name);
+    if (!t) throw new Error('Tab „' + name + '“ fehlt');
+    return t;
+  };
+  return {
+    verkaeufe: tab(VERKAEUFE_TAB).getDataRange().getValues(),
+    lagerLog: tab(LAGER_LOG_TAB).getDataRange().getValues(),
+    einstellungen: tab(EINSTELLUNGEN_TAB).getDataRange().getValues(),
+    abfuellungen: tab(ABFUELLUNGEN_TAB).getDataRange().getValues(),
+    uebersicht: tab(UEBERSICHT_TAB).getRange(BEREICH_UEBERSICHT).getValues(),
+  };
 }
 
 function sha256Hex_(text) {

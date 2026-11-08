@@ -123,7 +123,8 @@ function pingAntwort(name, bestandRoh, reichweiteRoh, jetzt) {
 /**
  * Eine Anfrage bearbeiten. `umgebung` liefert:
  *   salz() → Text oder null, eintraege() → Liste (eintraegeLesen), sha256Hex(text),
- *   kennzahlen() → { bestand, reichweite } (Rohwerte aus dem Sheet), jetzt() → Date.
+ *   kennzahlen() → { bestand, reichweite } (Rohwerte aus dem Sheet), jetzt() → Date,
+ *   tabellen() → Rohwerte der Tabs für uebersichtBauen(), datumText(date) → `JJJJ-MM-TT` in Europe/Berlin.
  * Das Sheet wird erst nach gültigem Code gelesen.
  */
 function bearbeiten(text, umgebung) {
@@ -137,6 +138,9 @@ function bearbeiten(text, umgebung) {
   if (a.aktion === 'ping') {
     const k = umgebung.kennzahlen();
     return pingAntwort(name, k.bestand, k.reichweite, umgebung.jetzt());
+  }
+  if (a.aktion === 'uebersicht') {
+    return Object.assign({ ok: true, name: name }, uebersichtBauen(umgebung.tabellen(), umgebung.datumText, umgebung.jetzt()));
   }
   return { ok: false, fehler: FEHLER_AKTION };
 }
