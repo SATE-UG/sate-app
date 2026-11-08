@@ -59,9 +59,11 @@ const TRIGGER_FUNKTION = 'taeglich';
 const TRIGGER_STUNDE = 7;
 
 /** Spalten im Tab Verkäufe (0 = A). Die Belege-Kette schreibt A–K, hier wird nur gelesen. */
-const VK = { MONAT: 0, DATUM: 1, QUELLE: 2, KANAL: 3, KUNDE: 4, FLASCHEN: 5, UMSATZ: 8, STANDORT: 11 };
+const VK = { MONAT: 0, DATUM: 1, QUELLE: 2, KANAL: 3, KUNDE: 4, FLASCHEN: 5, UMSATZ: 8, RECHNUNG: 9, STANDORT: 11 };
 /** Erwartete Spaltenköpfe (Schutz gegen verschobene Spalten). */
-const VK_KOPF = { 0: 'Monat', 1: 'Datum', 3: 'Kanal', 4: 'Kunde', 5: 'Flaschen', 8: 'Umsatz netto inkl. Pfand (€)', 11: 'Standort' };
+const VK_KOPF = {
+  0: 'Monat', 1: 'Datum', 3: 'Kanal', 4: 'Kunde', 5: 'Flaschen', 8: 'Umsatz netto inkl. Pfand (€)', 9: 'Rechnung', 11: 'Standort',
+};
 /** Kanäle wie im Tab Übersicht; Leeres oder Unbekanntes zählt als „Sonstiges“. */
 const KANAELE = ['Karlsruhe', 'Berlin', 'Heilbronn', 'München', 'Ape', 'Aktion', 'Sonstiges'];
 const KANAL_UNBEKANNT = 'Sonstiges';
@@ -95,3 +97,49 @@ const TAGE_PRO_MONAT = 365.25 / 12;
 const MAX_HINWEISE = 20;
 /** Top-Kunden in der Auswertung. */
 const TOP_KUNDEN = 10;
+
+// Schreib-Logik (Task 5) ----------------------------------------------------------------------------------
+
+/** Arten, die die App buchen darf (Storno nur über die Aktion `stornieren`). */
+const BUCHBARE_ARTEN = ['Inventur', 'Abfüllung', 'Umlagerung', 'Promo', 'Eigenverbrauch', 'Bruch'];
+/** Höchstens so viele Flaschen pro Buchung (Inventur darf 0 sein, alles andere ab 1). */
+const MAX_FLASCHEN = 50000;
+/** Längster Kommentar (Zeichen). */
+const MAX_KOMMENTAR = 200;
+/** Buchungsdatum: höchstens so viele Tage in der Zukunft bzw. zurück (Kalendertage in Europe/Berlin). */
+const MAX_TAGE_ZUKUNFT = 1;
+const MAX_TAGE_ZURUECK = 400;
+/** So lange wartet eine Schreib-Anfrage auf die Sperre, dann kommt FEHLER_BESCHAEFTIGT. */
+const SPERRE_MS = 10000;
+/** Doppelklick-Schutz: gleiche anfrageId innerhalb dieser Zeit wird nicht doppelt geschrieben (CacheService). */
+const ANFRAGE_CACHE_SEKUNDEN = 600;
+const ANFRAGE_ID_MUSTER = /^[A-Za-z0-9_-]{8,64}$/;
+/** Aktion verlauf: so viele Einträge (neueste zuerst). */
+const VERLAUF_ANZAHL = 30;
+/** uebersicht.verkaufListe: Rechnungen der letzten so vielen Tage, höchstens so viele. */
+const VERKAUF_LISTE_TAGE = 60;
+const MAX_VERKAUF_LISTE = 100;
+/** Zahlenformate beim Anhängen (Spalte 1 = A). */
+const LL_SPALTEN = 10;
+const LL_FORMATE = { 1: 'dd.MM.yyyy', 8: 'dd.MM.yyyy HH:mm:ss' };
+/** Tab Abfüllungen: A Abfüllung, B Monat, C Flaschen, D Quelle. */
+const AB = { NAME: 0, MONAT: 1, FLASCHEN: 2, QUELLE: 3 };
+const AB_KOPF = { 0: 'Abfüllung', 1: 'Monat', 2: 'Flaschen' };
+const AB_FORMATE = { 2: 'MM.yyyy', 3: '#,##0' };
+
+/** Fehlertexte beim Eintragen (die App zeigt sie so an). */
+const FEHLER_BESCHAEFTIGT = 'Gerade trägt jemand anderes ein, bitte gleich nochmal versuchen';
+const FEHLER_ART = 'Bitte eine gültige Art wählen';
+const FEHLER_STANDORT = 'Standort unbekannt';
+const FEHLER_NACH = 'Nach-Standort fehlt, ist unbekannt oder gleich dem Standort';
+const FEHLER_FLASCHEN = 'Flaschen: bitte eine ganze Zahl von 1 bis 50.000';
+const FEHLER_FLASCHEN_INVENTUR = 'Flaschen: bitte eine ganze Zahl von 0 bis 50.000';
+const FEHLER_DATUM = 'Datum ungültig';
+const FEHLER_DATUM_ZUKUNFT = 'Datum liegt zu weit in der Zukunft (höchstens morgen)';
+const FEHLER_DATUM_ALT = 'Datum liegt mehr als 400 Tage zurück';
+const FEHLER_KOMMENTAR = 'Kommentar zu lang (höchstens 200 Zeichen)';
+const FEHLER_STORNO_FEHLT = 'Eintrag nicht gefunden';
+const FEHLER_STORNO_STORNO = 'Ein Storno kann man nicht stornieren';
+const FEHLER_STORNO_DOPPELT = 'Eintrag ist schon storniert';
+const FEHLER_STORNO_MEHRFACH = 'Diese ID steht mehrfach im Lager-Log, bitte Mark Bescheid geben';
+const FEHLER_RECHNUNG = 'Rechnung nicht gefunden';

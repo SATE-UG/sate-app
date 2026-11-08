@@ -32,7 +32,7 @@ test('Verkäufe lesen: Monat aus Seriennummer, Datum oder Text; Kanal; Hinweise'
   assert.strictEqual(r.verkaeufe.length, 9);
   const erste = roh(r.verkaeufe[0]);
   assert.deepStrictEqual(erste, { zeile: 2, monat: '2026-11', datum: '2026-11-03', kanal: 'Karlsruhe', kunde: 'Bar Eins',
-    flaschen: 48, umsatz: 60, standort: '' });
+    flaschen: 48, umsatz: 60, standort: '', rechnung: 'RE1' });
   assert.strictEqual(r.verkaeufe[1].monat, '2025-10');
   assert.strictEqual(r.verkaeufe[1].datum, null);
   assert.strictEqual(r.verkaeufe[2].kanal, 'Karlsruhe');

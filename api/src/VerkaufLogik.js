@@ -15,7 +15,7 @@ function kundeSchluessel(kunde) {
 }
 
 /**
- * Tab Verkäufe (Zeilen A–L, erste Zeile Kopf) → [{zeile, monat, datum, kanal, kunde, flaschen, umsatz, standort}].
+ * Tab Verkäufe (Zeilen A–L, erste Zeile Kopf) → [{zeile, monat, datum, kanal, kunde, flaschen, umsatz, standort, rechnung}].
  * monat = Rechnungsmonat aus A (sonst aus B), datum = B oder null (Altliste). Gutschriften bleiben negativ.
  * Zeilen ohne Flaschen fallen still weg, Zeilen ohne lesbaren Monat mit Hinweis.
  */
@@ -41,6 +41,7 @@ function verkaeufeLesen(zeilen, formatieren) {
     verkaeufe.push({
       zeile: i + 1, monat: monat, datum: datum, kanal: kanalName(z[VK.KANAL]), kunde: String(z[VK.KUNDE] || '').trim(),
       flaschen: flaschen, umsatz: betragLesen(z[VK.UMSATZ]) || 0, standort: String(z[VK.STANDORT] || '').trim(),
+      rechnung: String(z[VK.RECHNUNG] === undefined || z[VK.RECHNUNG] === null ? '' : z[VK.RECHNUNG]).trim(),
     });
   }
   return { verkaeufe: verkaeufe, hinweise: hinweise };

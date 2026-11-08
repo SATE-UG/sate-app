@@ -78,7 +78,8 @@ test('Einträge lesen: nur CODE:-Schlüssel, kaputte fallen weg, sortiert', () =
 
 test('Anfrage lesen', () => {
   const k = lade();
-  assert.deepStrictEqual(roh(k.anfrageLesen('{"code":"X","aktion":"ping"}')), { code: 'X', aktion: 'ping' });
+  assert.deepStrictEqual(roh(k.anfrageLesen('{"code":"X","aktion":"ping"}')),
+    { code: 'X', aktion: 'ping', daten: { code: 'X', aktion: 'ping' } });
   for (const t of ['', 'kein json', '[]', 'null', '{"code":1,"aktion":"ping"}', '{"code":"X"}', 'x'.repeat(2001), undefined]) {
     assert.deepStrictEqual(roh(k.anfrageLesen(t)), { fehler: 'Ungültige Anfrage' }, String(t).slice(0, 20));
   }

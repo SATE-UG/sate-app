@@ -194,6 +194,14 @@ function lagerArt(wert) {
   return Object.keys(LAGER_ARTEN).find((a) => a.toLowerCase() === t) || null;
 }
 
+/** Schutz gegen verschobene Spalten: wirft, wenn ein erwarteter Spaltenkopf im Lager-Log fehlt. */
+function lagerLogKopfPruefen(zeilen) {
+  const kopf = (zeilen && zeilen[0]) || [];
+  Object.keys(LL_KOPF).forEach((i) => {
+    if (String(kopf[i] || '').trim() !== LL_KOPF[i]) throw new Error('Tab ' + LAGER_LOG_TAB + ': Spaltenkopf ' + LL_KOPF[i] + ' fehlt');
+  });
+}
+
 /**
  * Tab Lager-Log (Zeilen A–J, erste Zeile Kopf) → gültige Buchungen ohne stornierte Zeilen (Regel 4).
  * Rückgabe { buchungen: [{zeile, datum, standort, art, flaschen, nach, id, erfasst}], hinweise }.
@@ -201,10 +209,7 @@ function lagerArt(wert) {
  */
 function lagerLogLesen(zeilen, formatieren, e) {
   const hinweise = [];
-  const kopf = (zeilen && zeilen[0]) || [];
-  Object.keys(LL_KOPF).forEach((i) => {
-    if (String(kopf[i] || '').trim() !== LL_KOPF[i]) throw new Error('Tab ' + LAGER_LOG_TAB + ': Spaltenkopf ' + LL_KOPF[i] + ' fehlt');
-  });
+  lagerLogKopfPruefen(zeilen);
   const alle = [];
   const ids = Object.create(null); // ohne Prototyp: IDs wie „constructor“ sind normale Schlüssel
   for (let i = 1; i < zeilen.length; i++) {

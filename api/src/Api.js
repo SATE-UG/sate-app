@@ -6,8 +6,10 @@
  *   codeAnlegen(name)   neuer Zugangscode für eine Person (ersetzt einen alten), steht einmal im Log
  *   codeSperren(name)   Code einer Person sperren
  *   codesAnzeigen()     Namen und Status (keine Codes, keine Hashes)
- *   lagerTabSchreiben() Bestand pro Standort nach Lager!B2:F5 (sonst schreibt das Skript nirgends ins Sheet)
+ *   lagerTabSchreiben() Bestand pro Standort nach Lager!B2:F5
  *   triggerEinrichten() täglicher Trigger für taeglich() (7–8 Uhr), braucht den Scope script.scriptapp
+ * Die Web-App schreibt (Task 5) nur über schreibAktion() (SchreibLogik.js): Zeilen ans Lager-Log und an Abfüllungen
+ * anhängen, Verkäufe Spalte L, danach Lager!B2:F5.
  * Codes nie loggen (außer einmal beim Anlegen), nie in URLs.
  */
 
@@ -16,7 +18,7 @@ function doGet() {
   return ContentService.createTextOutput('SATE-App-Schnittstelle. Bitte die App benutzen.');
 }
 
-/** Body: JSON { code, aktion } als text/plain (kein CORS-Preflight). Antwort immer JSON. */
+/** Body: JSON { code, aktion, ... } als text/plain (kein CORS-Preflight). Antwort immer JSON. */
 function doPost(e) {
   let antwort;
   try {
@@ -45,25 +47,27 @@ function lagerTabSchreiben() {
   lock.waitLock(30000);
   try {
     const ss = blatt_();
-    const tab = ss.getSheetByName(LAGER_TAB);
-    if (!tab) throw new Error('Tab „' + LAGER_TAB + '“ fehlt');
     const jetzt = new Date();
-    const datumText = datumTextFunktion_(ss);
-    const u = uebersichtBauen(tabellenLesen_(ss), datumText, jetzt);
-    const namen = tab.getRange(LAGER_NAMEN_BEREICH).getValues().map((z) => z[0]);
-    const aus = lagerTabWerte(namen, u.lager, u.kennzahlen.flaschenProKiste, jetzt);
-    // Inventurdatum `JJJJ-MM-TT` → Datum (Mitternacht in der Zeitzone des Skripts, Europe/Berlin)
-    const werte = aus.werte.map((z) => z.map((w) => (typeof w === 'string' && datumGueltig(w)
-      ? new Date(Number(w.slice(0, 4)), Number(w.slice(5, 7)) - 1, Number(w.slice(8, 10))) : w)));
-    const bereich = tab.getRange(LAGER_BEREICH);
-    bereich.setValues(werte);
-    bereich.setNumberFormats(werte.map(() => LAGER_FORMATE.slice()));
-    Logger.log('Lager!' + LAGER_BEREICH + ' geschrieben: ' + u.lager.map((s) => s.standort + ' ' +
-      (s.bestand === null ? 'noch keine Inventur' : s.bestand)).join(', ') +
-      (aus.fehlen.length ? '. Ohne Zeile im Tab Lager: ' + aus.fehlen.join(', ') : ''));
+    lagerTabAusUebersicht_(ss, uebersichtBauen(tabellenLesen_(ss), datumTextFunktion_(ss), jetzt), jetzt);
   } finally {
     lock.releaseLock();
   }
+}
+
+/** Lager!B2:F5 aus einer fertigen Übersicht (uebersichtBauen) schreiben. Ohne eigene Sperre. */
+function lagerTabAusUebersicht_(ss, u, jetzt) {
+  const tab = ss.getSheetByName(LAGER_TAB);
+  if (!tab) throw new Error('Tab „' + LAGER_TAB + '“ fehlt');
+  const namen = tab.getRange(LAGER_NAMEN_BEREICH).getValues().map((z) => z[0]);
+  const aus = lagerTabWerte(namen, u.lager, u.kennzahlen.flaschenProKiste, jetzt);
+  // Inventurdatum `JJJJ-MM-TT` → Datum (Mitternacht in der Zeitzone des Skripts, Europe/Berlin)
+  const werte = aus.werte.map((z) => z.map((w) => (typeof w === 'string' && datumGueltig(w) ? datumZelle_(w) : w)));
+  const bereich = tab.getRange(LAGER_BEREICH);
+  bereich.setValues(werte);
+  bereich.setNumberFormats(werte.map(() => LAGER_FORMATE.slice()));
+  Logger.log('Lager!' + LAGER_BEREICH + ' geschrieben: ' + u.lager.map((s) => s.standort + ' ' +
+    (s.bestand === null ? 'noch keine Inventur' : s.bestand)).join(', ') +
+    (aus.fehlen.length ? '. Ohne Zeile im Tab Lager: ' + aus.fehlen.join(', ') : ''));
 }
 
 /** Täglich per Trigger (triggerEinrichten): Tab Lager aktualisieren. */
@@ -167,7 +171,29 @@ function umgebung_() {
     },
     jetzt: () => new Date(),
     tabellen: () => tabellenLesen_(holenBlatt()),
+    tabWerte: (name) => tabHolen_(holenBlatt(), name).getDataRange().getValues(),
     datumText: (d) => datumTextFunktion_(holenBlatt())(d),
+    // Schreiben (Task 5), nur aus schreibAktion() unter der Sperre
+    mitSperre: (fn) => {
+      const lock = LockService.getScriptLock();
+      if (!lock.tryLock(SPERRE_MS)) return { gesperrt: true };
+      try {
+        return { wert: fn() };
+      } finally {
+        lock.releaseLock();
+      }
+    },
+    cacheLesen: (k) => CacheService.getScriptCache().get(k),
+    cacheSchreiben: (k, v) => CacheService.getScriptCache().put(k, v, ANFRAGE_CACHE_SEKUNDEN),
+    uebersichtLesen: () => {
+      SpreadsheetApp.flush();
+      return tabHolen_(holenBlatt(), UEBERSICHT_TAB).getRange(BEREICH_UEBERSICHT).getValues();
+    },
+    datumZelle: datumZelle_,
+    zufall: () => Utilities.getUuid(),
+    zeileSchreiben: (name, nr, zellen, formate) => zeileSchreiben_(holenBlatt(), name, nr, zellen, formate),
+    zelleSchreiben: (name, nr, spalte, wert) => tabHolen_(holenBlatt(), name).getRange(nr, spalte).setValue(wert),
+    lagerTabSchreiben: (u, jetzt) => lagerTabAusUebersicht_(holenBlatt(), u, jetzt),
   };
   function holenBlatt() { return (blatt = blatt || blatt_()); }
 }
@@ -193,13 +219,40 @@ function datumTextFunktion_(ss) {
   return (d) => Utilities.formatDate(d, zone, 'yyyy-MM-dd');
 }
 
+/** Tab nach Namen, fehlt er → Fehler. */
+function tabHolen_(ss, name) {
+  const t = ss.getSheetByName(name);
+  if (!t) throw new Error('Tab „' + name + '“ fehlt');
+  return t;
+}
+
+/** `JJJJ-MM-TT` → Datum um Mitternacht in der Zeitzone des Skripts (Europe/Berlin, siehe appsscript.json). */
+function datumZelle_(text) {
+  return new Date(Number(text.slice(0, 4)), Number(text.slice(5, 7)) - 1, Number(text.slice(8, 10)));
+}
+
+/**
+ * Eine Zeile `nr` (1-basiert) ab Spalte A mit einem setValues schreiben. Vorher die Zahlenformate einzelner Spalten
+ * (`formate`: {Spalte 1-basiert: Muster}), damit setValues der letzte Schritt ist (scheitert etwas, steht noch nichts
+ * da). Reicht das Blatt nicht, kommen Zeilen unten dazu. Steht in der Zielzeile schon etwas (auch eine Formel, die
+ * "" ergibt), wird nichts geschrieben.
+ */
+function zeileSchreiben_(ss, name, nr, zellen, formate) {
+  const tab = tabHolen_(ss, name);
+  const max = tab.getMaxRows();
+  if (nr > max) tab.insertRowsAfter(max, nr - max);
+  const ziel = tab.getRange(nr, 1, 1, zellen.length);
+  const belegt = (z) => z.some((w) => w !== '' && w !== null);
+  if (belegt(ziel.getFormulas()[0]) || belegt(ziel.getValues()[0].map((w) => (typeof w === 'string' ? w.trim() : w)))) {
+    throw new Error('Zielzeile ' + name + '!' + nr + ' nicht leer');
+  }
+  Object.keys(formate || {}).forEach((sp) => tab.getRange(nr, Number(sp)).setNumberFormat(formate[sp]));
+  ziel.setValues([zellen]);
+}
+
 /** Alle Tabs für uebersichtBauen(), je ein getValues() pro Tab. */
 function tabellenLesen_(ss) {
-  const tab = (name) => {
-    const t = ss.getSheetByName(name);
-    if (!t) throw new Error('Tab „' + name + '“ fehlt');
-    return t;
-  };
+  const tab = (name) => tabHolen_(ss, name);
   return {
     verkaeufe: tab(VERKAEUFE_TAB).getDataRange().getValues(),
     lagerLog: tab(LAGER_LOG_TAB).getDataRange().getValues(),

@@ -15,9 +15,10 @@ const KONSTANTEN = [
   'UEBERSICHT_TAB', 'ZELLE_BESTAND', 'ZELLE_REICHWEITE', 'BEREICH_KENNZAHLEN', 'CODE_ALPHABET', 'CODE_LAENGE',
   'CODE_PRAEFIX', 'SALZ_EIGENSCHAFT', 'HASH_VERSION', 'MAX_NAME_ZEICHEN', 'MAX_ANFRAGE_ZEICHEN',
   'FEHLER_CODE', 'FEHLER_ANFRAGE', 'FEHLER_AKTION', 'FEHLER_SERVER', 'LAGER_FORMATE', 'TRIGGER_FUNKTION',
+  'FEHLER_BESCHAEFTIGT', 'LL_FORMATE', 'AB_FORMATE', 'MAX_KOMMENTAR',
 ];
 
-const REIN = ['Konfig.js', 'Logik.js', 'LagerLogik.js', 'VerkaufLogik.js', 'UebersichtLogik.js'];
+const REIN = ['Konfig.js', 'Logik.js', 'LagerLogik.js', 'VerkaufLogik.js', 'UebersichtLogik.js', 'SchreibLogik.js'];
 const ALLE = REIN.concat(['Api.js']);
 
 function lade(globals, dateien, zusatz) {

@@ -12,7 +12,7 @@ function abfuellungenLesen(zeilen, formatieren) {
 /**
  * `roh`: { verkaeufe, lagerLog, einstellungen, abfuellungen } (2D-Arrays ganzer Tabs) und `uebersicht`
  * (Übersicht!B8:B13 als 6×1). `formatieren(date)` → `JJJJ-MM-TT` in Europe/Berlin, `jetzt` = Date.
- * Antwort ohne ok/name: { stand, heute, kennzahlen, bestellung, lager, verkaeufe, abfuellungen, hinweise }.
+ * Antwort ohne ok/name: { stand, heute, kennzahlen, bestellung, lager, verkaeufe, abfuellungen, verkaufListe, hinweise }.
  */
 function uebersichtBauen(roh, formatieren, jetzt) {
   const heute = formatieren(jetzt);
@@ -52,6 +52,7 @@ function uebersichtBauen(roh, formatieren, jetzt) {
     })),
     verkaeufe: verkaeufeAuswerten(vk.verkaeufe, heute),
     abfuellungen: abfuellungenLesen(roh.abfuellungen, formatieren),
+    verkaufListe: verkaufListeBauen(vk.verkaeufe, e, heute),
     hinweise: hinweise.length > MAX_HINWEISE
       ? hinweise.slice(0, MAX_HINWEISE - 1).concat(['… und ' + (hinweise.length - MAX_HINWEISE + 1) + ' weitere Hinweise.'])
       : hinweise,

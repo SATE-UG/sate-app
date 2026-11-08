@@ -91,14 +91,14 @@ function nameZumHash(eintraege, hash) {
   return treffer;
 }
 
-/** Anfrage-Text (JSON `{code, aktion}`) prüfen. Rückgabe { code, aktion } oder { fehler }. */
+/** Anfrage-Text (JSON `{code, aktion, ...}`) prüfen. Rückgabe { code, aktion, daten } (daten = ganzes Objekt) oder { fehler }. */
 function anfrageLesen(text) {
   if (typeof text !== 'string' || !text || text.length > MAX_ANFRAGE_ZEICHEN) return { fehler: FEHLER_ANFRAGE };
   let o;
   try { o = JSON.parse(text); } catch (err) { return { fehler: FEHLER_ANFRAGE }; }
   if (!o || typeof o !== 'object' || Array.isArray(o)) return { fehler: FEHLER_ANFRAGE };
   if (typeof o.code !== 'string' || typeof o.aktion !== 'string') return { fehler: FEHLER_ANFRAGE };
-  return { code: o.code, aktion: o.aktion };
+  return { code: o.code, aktion: o.aktion, daten: o };
 }
 
 /**
@@ -124,7 +124,8 @@ function pingAntwort(name, bestandRoh, reichweiteRoh, jetzt) {
  * Eine Anfrage bearbeiten. `umgebung` liefert:
  *   salz() → Text oder null, eintraege() → Liste (eintraegeLesen), sha256Hex(text),
  *   kennzahlen() → { bestand, reichweite } (Rohwerte aus dem Sheet), jetzt() → Date,
- *   tabellen() → Rohwerte der Tabs für uebersichtBauen(), datumText(date) → `JJJJ-MM-TT` in Europe/Berlin.
+ *   tabellen() → Rohwerte der Tabs für uebersichtBauen(), datumText(date) → `JJJJ-MM-TT` in Europe/Berlin,
+ *   tabWerte(name) → ein Tab als 2D-Array; für die Schreib-Aktionen zusätzlich die Funktionen aus schreibAktion().
  * Das Sheet wird erst nach gültigem Code gelesen.
  */
 function bearbeiten(text, umgebung) {
@@ -141,6 +142,13 @@ function bearbeiten(text, umgebung) {
   }
   if (a.aktion === 'uebersicht') {
     return Object.assign({ ok: true, name: name }, uebersichtBauen(umgebung.tabellen(), umgebung.datumText, umgebung.jetzt()));
+  }
+  if (a.aktion === 'verlauf') {
+    return { ok: true, name: name, eintraege: verlaufBauen(umgebung.tabWerte(LAGER_LOG_TAB), umgebung.datumText, VERLAUF_ANZAHL) };
+  }
+  if (a.aktion === 'buchen' || a.aktion === 'stornieren' || a.aktion === 'verkaufStandort') {
+    const r = schreibAktion(a.aktion, a.daten, name, umgebung);
+    return r.ok ? Object.assign({ ok: true, name: name }, r) : r;
   }
   return { ok: false, fehler: FEHLER_AKTION };
 }
