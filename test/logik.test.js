@@ -88,7 +88,7 @@ test('Zahlen lesen (Zahl oder deutscher Text)', () => {
   const k = lade();
   const faelle = [[8041, 8041], [7.3, 7.3], ['8.041', 8041], ['7,3', 7.3], ['22.193', 22193], ['1.234.567,8', 1234567.8],
     ['335', 335], ['-2,5', -2.5], [' 8 041 ', 8041], ['', null], ['abc', null], ['1.5', null], [true, null], [null, null],
-    [NaN, null], [Infinity, null], [new Date(), null], ['-', null], ['1,2,3', null]];
+    [NaN, null], [Infinity, null], [new Date(), null], ['-', null], ['1,2,3', null], ['1.2345', null], ['12.34567', null], ['1.234.5678', null]];
   for (const [ein, aus] of faelle) assert.strictEqual(k.zahlLesen(ein), aus, JSON.stringify(ein));
 });
 

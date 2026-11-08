@@ -109,7 +109,7 @@ function zahlLesen(wert) {
   if (typeof wert === 'number') return isFinite(wert) ? wert : null;
   if (typeof wert !== 'string') return null;
   let s = wert.replace(/[\s  ]/g, '');
-  if (!/^-?(\d|\d{1,3}(\.\d{3})+)\d*(,\d+)?$/.test(s)) return null;
+  if (!/^-?(\d+|\d{1,3}(\.\d{3})+)(,\d+)?$/.test(s)) return null;
   s = s.replace(/\./g, '').replace(',', '.');
   const z = Number(s);
   return isFinite(z) ? z : null;

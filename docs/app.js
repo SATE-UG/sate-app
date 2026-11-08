@@ -21,10 +21,18 @@
   const speicher = {
     lesen() { try { return window.localStorage.getItem(SPEICHER_SCHLUESSEL) || ''; } catch (e) { return ''; } },
     schreiben(code) { try { window.localStorage.setItem(SPEICHER_SCHLUESSEL, code); return true; } catch (e) { return false; } },
-    loeschen() { try { window.localStorage.removeItem(SPEICHER_SCHLUESSEL); } catch (e) { /* egal */ } },
+    // true, wenn danach wirklich kein Code mehr gespeichert ist.
+    loeschen() {
+      try { window.localStorage.removeItem(SPEICHER_SCHLUESSEL); } catch (e) { /* unten prüfen */ }
+      if (!this.lesen()) return true;
+      try { window.localStorage.setItem(SPEICHER_SCHLUESSEL, ''); } catch (e) { /* unten prüfen */ }
+      return !this.lesen();
+    },
   };
   // Falls localStorage nicht geht: Code nur für diese Sitzung im Speicher halten.
   let codeImSpeicher = '';
+  // Nach „Abmelden“ in dieser Sitzung nie auf einen alten gespeicherten Code zurückfallen.
+  let abgemeldet = false;
 
   // Anzeige -------------------------------------------------------------------------------------------------
   function zeige(bereich) {
@@ -85,6 +93,7 @@
     if (e.art === 'ok') {
       if (neu) {
         codeImSpeicher = code;
+        abgemeldet = false;
         if (!speicher.schreiben(code)) meldung('Hinweis: Der Code kann auf diesem Gerät nicht gespeichert werden (privater Modus?).');
         eingabe.value = '';
       }
@@ -104,7 +113,7 @@
 
   /** Code dieser Sitzung zuerst (falls Speichern/Löschen in localStorage scheitert), sonst der gespeicherte. */
   function aktuellerCode() {
-    return codeImSpeicher || speicher.lesen();
+    return codeImSpeicher || (abgemeldet ? '' : speicher.lesen());
   }
 
   // Ereignisse ----------------------------------------------------------------------------------------------
@@ -120,9 +129,11 @@
     else zeige('anmelden');
   });
   el('abmelden').addEventListener('click', () => {
-    speicher.loeschen();
+    const geloescht = speicher.loeschen();
     codeImSpeicher = '';
-    meldung('');
+    abgemeldet = true;
+    meldung(geloescht ? '' : 'Abgemeldet, aber der Code ließ sich auf diesem Gerät nicht löschen. ' +
+      'Beim nächsten Start bist du wieder angemeldet. Abhilfe: in den iPhone-Einstellungen die Websitedaten löschen.');
     zeige('anmelden');
   });
 
