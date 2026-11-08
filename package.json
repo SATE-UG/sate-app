@@ -1,0 +1,9 @@
+{
+  "name": "sate-app",
+  "version": "0.1.0",
+  "private": true,
+  "description": "SATE-Team-App: PWA (docs/) und Apps-Script-Web-App (api/) auf dem Sheet „SATE Verkäufe“",
+  "scripts": {
+    "test": "node --test test/"
+  }
+}

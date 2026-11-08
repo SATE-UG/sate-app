@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self'; manifest-src 'self'; connect-src https://script.google.com https://script.googleusercontent.com; base-uri 'none'; form-action 'none'">
+  <meta name="referrer" content="no-referrer">
+  <title>SATE</title>
+  <meta name="description" content="SATE-Team-App">
+  <meta name="theme-color" content="#f4f4f1" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#1c1c1e" media="(prefers-color-scheme: dark)">
+  <meta name="color-scheme" content="light dark">
+  <!-- iOS: als App vom Home-Bildschirm starten -->
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="SATE">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <link rel="apple-touch-icon" sizes="180x180" href="icons/apple-touch-icon.png">
+  <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main class="seite">
+    <header class="kopf">
+      <h1>SATE</h1>
+    </header>
+
+    <!-- Anmeldung -->
+    <section id="anmelden" class="karte" hidden>
+      <form id="code-form" novalidate>
+        <label for="code">Dein Zugangscode</label>
+        <input id="code" name="code" type="text" inputmode="text" autocapitalize="characters" autocomplete="off"
+               autocorrect="off" spellcheck="false" maxlength="24" placeholder="ABCD-EFGH-JKMN" enterkeyhint="go">
+        <p class="hinweis">Den Code bekommst du von Mark. Er bleibt auf diesem Gerät gespeichert.</p>
+        <button id="code-senden" type="submit" class="knopf haupt">Anmelden</button>
+      </form>
+    </section>
+
+    <!-- Übersicht -->
+    <section id="uebersicht" class="karte" hidden>
+      <h2 id="gruss">Hallo</h2>
+      <dl class="zahlen">
+        <div class="zahl">
+          <dt>Bestand</dt>
+          <dd><span id="bestand">–</span> <span class="einheit">Flaschen</span></dd>
+        </div>
+        <div class="zahl">
+          <dt>Reichweite</dt>
+          <dd><span id="reichweite">–</span> <span class="einheit">Monate</span></dd>
+        </div>
+      </dl>
+      <p class="stand">Stand: <span id="zeit">–</span></p>
+      <div class="knoepfe">
+        <button id="neu-laden" type="button" class="knopf haupt">Neu laden</button>
+        <button id="abmelden" type="button" class="knopf">Abmelden</button>
+      </div>
+    </section>
+
+    <p id="laden" class="status" role="status" aria-live="polite" hidden>Lädt …</p>
+    <p id="fehler" class="fehler" role="alert" hidden></p>
+  </main>
+
+  <script src="config.js"></script>
+  <script src="hilfen.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

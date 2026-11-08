@@ -1,0 +1,7 @@
+# Lokale Einstellungen mit Sheet-ID (wird per clasp push hochgeladen, aber nie ins Git)
+api/src/Lokal.js
+node_modules/
+.clasprc.json
+.env*
+*.log
+.DS_Store

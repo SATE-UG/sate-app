@@ -1,0 +1,113 @@
+/* SATE-App: schlicht, hell/dunkel nach Systemeinstellung, Abstände für Notch und Home-Leiste (Safe Area). */
+:root {
+  --hintergrund: #f4f4f1;
+  --karte: #ffffff;
+  --text: #1c1c1e;
+  --text-leise: #5f5f63;
+  --rand: #dcdcd6;
+  --haupt: #1c1c1e;
+  --haupt-text: #ffffff;
+  --fehler: #b3261e;
+  --fehler-grund: #fdecea;
+  color-scheme: light dark;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --hintergrund: #1c1c1e;
+    --karte: #2c2c2e;
+    --text: #f2f2f2;
+    --text-leise: #a1a1a6;
+    --rand: #3a3a3c;
+    --haupt: #f2f2f2;
+    --haupt-text: #1c1c1e;
+    --fehler: #ff8a80;
+    --fehler-grund: #3b1f1d;
+  }
+}
+
+* { box-sizing: border-box; }
+
+html { -webkit-text-size-adjust: 100%; }
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  min-height: 100dvh;
+  background: var(--hintergrund);
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif;
+  font-size: 17px;
+  line-height: 1.4;
+  padding: calc(16px + env(safe-area-inset-top)) calc(16px + env(safe-area-inset-right))
+           calc(16px + env(safe-area-inset-bottom)) calc(16px + env(safe-area-inset-left));
+}
+
+[hidden] { display: none !important; }
+
+.seite { max-width: 480px; margin: 0 auto; }
+
+.kopf h1 { font-size: 28px; letter-spacing: 0.08em; margin: 8px 0 20px; }
+
+.karte {
+  background: var(--karte);
+  border: 1px solid var(--rand);
+  border-radius: 16px;
+  padding: 20px;
+}
+
+label { display: block; font-weight: 600; margin-bottom: 8px; }
+
+input {
+  width: 100%;
+  font: inherit;
+  font-size: 20px; /* ≥ 16px, sonst zoomt iOS beim Tippen */
+  letter-spacing: 0.08em;
+  padding: 12px 14px;
+  border: 1px solid var(--rand);
+  border-radius: 12px;
+  background: var(--hintergrund);
+  color: var(--text);
+}
+
+input:focus { outline: 2px solid var(--haupt); outline-offset: 1px; }
+
+.hinweis, .stand { color: var(--text-leise); font-size: 15px; }
+
+h2 { font-size: 22px; margin: 0 0 16px; }
+
+.zahlen { margin: 0; display: grid; gap: 12px; }
+.zahl { border-top: 1px solid var(--rand); padding-top: 12px; }
+.zahl:first-child { border-top: 0; padding-top: 0; }
+dt { color: var(--text-leise); font-size: 15px; }
+dd { margin: 2px 0 0; font-size: 34px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.einheit { font-size: 17px; font-weight: 400; color: var(--text-leise); }
+
+.knoepfe { display: grid; gap: 10px; margin-top: 16px; }
+
+.knopf {
+  width: 100%;
+  min-height: 48px;
+  font: inherit;
+  font-weight: 600;
+  border-radius: 12px;
+  border: 1px solid var(--rand);
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.knopf.haupt { background: var(--haupt); color: var(--haupt-text); border-color: var(--haupt); }
+.knopf:disabled { opacity: 0.5; }
+form .knopf { margin-top: 8px; }
+
+.status { text-align: center; color: var(--text-leise); }
+
+.fehler {
+  margin-top: 16px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: var(--fehler-grund);
+  color: var(--fehler);
+}
