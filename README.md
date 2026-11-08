@@ -36,8 +36,7 @@ Entschieden (Mark, 2026-11-08):
 
 So legt Mark einen Code an (Apps-Script-Editor, `clasp open-script` oder script.google.com):
 1. Für das Team gibt es fertige Knöpfe in `Api.js`: `codeAnlegenMark`, `codeAnlegenJonas`, `codeAnlegenDave`, `codeAnlegenJan`, `codeAnlegenPaul` (oben im Editor auswählen, „Ausführen“). Für andere Namen eine Hilfsfunktion wie `function aufruf() { codeAnlegen('Laura'); }` in `Api.js` ergänzen und pushen (Dateien, die nur im Editor angelegt werden, überschreibt `clasp push`).
-2. `aufruf` auswählen und ausführen. Im Ausführungsprotokoll steht einmal `Zugangscode für Jonas: ABCD-EFGH-JKMN`. Code persönlich weitergeben, nicht in Gruppen posten.
-3. Datei `Aufruf` wieder löschen (der nächste `clasp push --force` entfernt sie sonst ohnehin).
+2. Nach dem Ausführen steht im Ausführungsprotokoll einmal `Zugangscode für Jonas: ABCD-EFGH-JKMN`. Code persönlich weitergeben, nicht in Gruppen posten.
 
 - **Neuer Code** für dieselbe Person: wieder `codeAnlegen('Jonas')`, der alte gilt sofort nicht mehr.
 - **Sperren:** `codeSperren('Jonas')`. Die App meldet beim nächsten Laden „Code gilt nicht“ und meldet ab.
