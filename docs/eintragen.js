@@ -140,7 +140,7 @@
     if (e.art === 'ok') {
       S.melden((e.daten.wiederholt ? 'War schon gespeichert: ' : 'Gespeichert: ') + H.buchungText(b) + '.', false, e.daten.hinweise);
       leeren();
-      window.scrollTo(0, 0);
+      S.nachOben('eintragen');
     } else if (e.art === 'abgebrochen') {
       fehler('Nicht gespeichert.');
     } else if (e.art === 'fehler') {

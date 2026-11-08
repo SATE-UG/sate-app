@@ -11,6 +11,7 @@
 
   const el = S.el;
   const eingabe = el('code');
+  const leiste = el('ansichten'); // waagerecht scrollende Leiste mit den vier Ansichten (CSS Scroll Snap)
 
   // Falls localStorage nicht geht: Code nur für diese Sitzung im Speicher halten.
   let codeImSpeicher = '';
@@ -75,37 +76,122 @@
 
   S.ANSICHTEN = ANSICHTEN;
 
+  // Reiter und Ansichten ---------------------------------------------------------------------------------------
+  // Die vier Ansichten liegen nebeneinander in #ansichten (natives waagerechtes Scrollen mit Einrasten). Wischen macht
+  // allein der Browser; hier wird nur verfolgt, welche Ansicht gerade steht, und die Tab-Bar scrollt per scrollTo.
+
+  const ruhig = () => !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+  let zielAnsicht = null; // läuft gerade ein Scrollen per Tab-Tipp: dorthin (Tab-Bar springt solange nicht mit)
+  let breite = 0;          // zuletzt gemessene Breite der Leiste (für Drehen/Größenänderung)
+
+  /** Gewählten Reiter in der Tab-Bar markieren (nur Anzeige). */
+  function reiterMarkieren(a) {
+    ANSICHTEN.forEach((n) => {
+      const r = el('reiter-' + n);
+      const ja = n === a;
+      if (r.getAttribute('aria-selected') !== String(ja)) r.setAttribute('aria-selected', ja ? 'true' : 'false');
+      r.tabIndex = ja ? 0 : -1;
+    });
+  }
+
   /**
-   * Reiter wechseln (Tab-Bar, Pfeiltasten, Wischen). `wie` = { gewischt: +1 | -1 } lässt die neue Ansicht von der Seite
-   * hereingleiten und sagt sie für VoiceOver an. Steht der Fokus in der alten (jetzt versteckten) Ansicht, geht er
-   * auf den neuen Reiter, damit er nicht im Nichts landet.
+   * Ansicht `a` als aktuelle übernehmen: merken, die anderen Ansichten `inert` (nicht fokussierbar, für VoiceOver weg),
+   * im Lager den Verlauf laden. `ansagen` = für VoiceOver ansagen (nur nach Wischen; beim Tippen sagt der Reiter es
+   * selbst). Steht der Fokus in der alten Ansicht, geht er auf den neuen Reiter, damit er nicht im Nichts landet.
    */
-  function ansichtZeigen(name, wie) {
-    const a = ANSICHTEN.indexOf(name) >= 0 ? name : 'uebersicht';
+  function ansichtUebernehmen(a, ansagen) {
     const wechsel = a !== Z.ansicht;
     const alt = el('ansicht-' + Z.ansicht);
     const fokusWeg = wechsel && alt && alt.contains(document.activeElement);
     Z.ansicht = a;
-    ANSICHTEN.forEach((n) => {
-      const sek = el('ansicht-' + n);
-      sek.hidden = n !== a;
-      sek.classList.remove('rein-von-rechts', 'rein-von-links');
-      sek.style.transform = '';
-      sek.style.opacity = '';
-      el('reiter-' + n).setAttribute('aria-selected', n === a ? 'true' : 'false');
-      el('reiter-' + n).tabIndex = n === a ? 0 : -1;
-    });
+    reiterMarkieren(a);
+    ANSICHTEN.forEach((n) => { el('ansicht-' + n).inert = n !== a; });
     S.speicher.schreiben(K.ansicht, a);
-    if (wechsel) window.scrollTo(0, 0);
-    if (wechsel && wie && wie.gewischt) {
-      el('ansicht-' + a).classList.add(wie.gewischt > 0 ? 'rein-von-rechts' : 'rein-von-links');
-      const r = el('reiter-' + a);
-      S.ansagen(r.textContent.trim() + ', Reiter ' + (ANSICHTEN.indexOf(a) + 1) + ' von ' + ANSICHTEN.length);
-    }
     if (fokusWeg) el('reiter-' + a).focus({ preventScroll: true });
+    if (wechsel && ansagen) {
+      S.ansagen(el('reiter-' + a).textContent.trim() + ', Reiter ' + (ANSICHTEN.indexOf(a) + 1) + ' von ' + ANSICHTEN.length);
+    }
     if (a === 'lager' && (Z.verlaufVeraltet || !Z.verlauf) && !Z.verlaufLaedt) S.verlaufLaden();
   }
+
+  /**
+   * Zu einer Ansicht wechseln (Tab-Bar, Pfeiltasten, Karte „Letzter voller Monat“). Standard: weich hinscrollen
+   * (bei „Bewegung reduzieren“ springen). `wie.sofort`: ohne Animation (Start, Anmelden), damit nichts sichtbar durchrutscht.
+   */
+  function ansichtZeigen(name, wie) {
+    const a = ANSICHTEN.indexOf(name) >= 0 ? name : 'uebersicht';
+    const sofort = !!(wie && wie.sofort) || ruhig();
+    const links = ANSICHTEN.indexOf(a) * leiste.clientWidth;
+    ansichtUebernehmen(a, false);
+    if (sofort || Math.abs(leiste.scrollLeft - links) < 1) {
+      zielAnsicht = null;
+      leiste.scrollTo({ left: links, behavior: 'auto' });
+    } else {
+      zielAnsicht = a;
+      leiste.scrollTo({ left: links, behavior: 'smooth' });
+    }
+    breite = leiste.clientWidth;
+  }
   S.ansichtZeigen = ansichtZeigen;
+
+  /** Aktuelle Ansicht nach oben scrollen (erneutes Tippen auf den gewählten Reiter, nach dem Speichern). */
+  S.nachOben = function (name) {
+    const sek = el('ansicht-' + (name || Z.ansicht));
+    if (sek) sek.scrollTo({ top: 0, behavior: ruhig() ? 'auto' : 'smooth' });
+  };
+
+  /** Steht die Leiste auf einer Ansicht (Finger los, Einrasten fertig)? Dann diese übernehmen. */
+  function leisteSteht() {
+    clearTimeout(ruheUhr);
+    if (finger > 0) return; // Finger liegt noch (auch wenn er gerade genau auf einer Ansicht pausiert): erst nach Loslassen
+    const p = H.reiterPosition(leiste.scrollLeft, leiste.clientWidth, ANSICHTEN.length);
+    if (!p || !p.eingerastet || el('app').hidden) return; // noch unterwegs oder Finger liegt noch: abwarten
+    const a = ANSICHTEN[p.index];
+    zielAnsicht = null;
+    // Anders als gemerkt = gewischt (oder ein Tipp-Scrollen wurde vom Finger unterbrochen): übernehmen und ansagen
+    if (a !== Z.ansicht) ansichtUebernehmen(a, true);
+    else reiterMarkieren(a);
+  }
+
+  // Während des Scrollens markiert die Tab-Bar schon die Ansicht, die gerade überwiegend zu sehen ist (einmal pro Frame).
+  // Übernommen wird sie erst, wenn sie steht und kein Finger mehr aufliegt: `scrollend`, sonst (Browser ohne scrollend)
+  // 150 ms nach dem letzten Scroll-Ereignis bzw. nach dem Loslassen.
+  let ruheUhr = null;
+  let rahmen = 0;
+  let finger = 0; // aufliegende Finger auf der Leiste (passive Listener, nur gezählt)
+  const fingerZaehlen = (ev) => {
+    finger = ev.touches ? ev.touches.length : 0;
+    if (!finger) { clearTimeout(ruheUhr); ruheUhr = setTimeout(leisteSteht, 150); }
+  };
+  ['touchstart', 'touchend', 'touchcancel'].forEach((art) => leiste.addEventListener(art, fingerZaehlen, { passive: true }));
+  leiste.addEventListener('scroll', () => {
+    if (!rahmen) {
+      rahmen = window.requestAnimationFrame(() => {
+        rahmen = 0;
+        const p = H.reiterPosition(leiste.scrollLeft, leiste.clientWidth, ANSICHTEN.length);
+        if (p && zielAnsicht === null) reiterMarkieren(ANSICHTEN[p.index]);
+      });
+    }
+    clearTimeout(ruheUhr);
+    ruheUhr = setTimeout(leisteSteht, 150);
+  }, { passive: true });
+  leiste.addEventListener('scrollend', leisteSteht);
+
+  // Drehen oder andere Breite: ohne Animation wieder genau auf die aktuelle Ansicht (nur wenn sich die Breite ändert,
+  // nicht wenn oben ein Banner die Höhe ändert, sonst würde ein laufendes Wischen abgebrochen)
+  function breiteGeaendert() {
+    const b = leiste.clientWidth;
+    if (!b || b === breite || el('app').hidden) return;
+    breite = b;
+    zielAnsicht = null;
+    leiste.scrollTo({ left: ANSICHTEN.indexOf(Z.ansicht) * b, behavior: 'auto' });
+  }
+  if (typeof window.ResizeObserver === 'function') new window.ResizeObserver(breiteGeaendert).observe(leiste);
+  else window.addEventListener('resize', breiteGeaendert);
+
+  // Fußzeile „Trink SATE!“ ans Ende jeder Ansicht (die der Seite ist angemeldet ausgeblendet)
+  const fuss = document.querySelector('.seite > .fuss');
+  ANSICHTEN.forEach((n) => el('ansicht-' + n).append(fuss.cloneNode(true)));
 
   // Daten -------------------------------------------------------------------------------------------------------
 
@@ -256,7 +342,7 @@
     angemeldetZeigen(true);
     if (!S.speicher.schreiben(K.code, code)) meldung('Hinweis: Der Code kann auf diesem Gerät nicht gespeichert werden (privater Modus?).');
     if (!S.datenSetzen(e.daten, e.daten.name)) meldung('Die Antwort der Schnittstelle ist unvollständig. Bitte Mark Bescheid geben.');
-    ansichtZeigen('uebersicht');
+    ansichtZeigen('uebersicht', { sofort: true });
   }
 
   // Ereignisse --------------------------------------------------------------------------------------------------
@@ -278,10 +364,14 @@
       'Beim nächsten Start bist du wieder angemeldet. Abhilfe: in den iPhone-Einstellungen die Websitedaten löschen.');
   });
 
-  // Reiter: Tippen, dazu Pfeiltasten wie bei Tabs üblich
+  // Reiter: Tippen (auf den schon gewählten: nach oben scrollen wie bei iOS), dazu Pfeiltasten wie bei Tabs üblich
   el('leiste').addEventListener('click', (ev) => {
     const knopf = ev.target.closest('button[data-ansicht]');
-    if (knopf) ansichtZeigen(knopf.dataset.ansicht);
+    if (!knopf) return;
+    const p = H.reiterPosition(leiste.scrollLeft, leiste.clientWidth, ANSICHTEN.length);
+    const stehtDa = p && p.eingerastet && ANSICHTEN[p.index] === knopf.dataset.ansicht;
+    if (knopf.dataset.ansicht === Z.ansicht && stehtDa && zielAnsicht === null) S.nachOben();
+    else ansichtZeigen(knopf.dataset.ansicht);
   });
   el('leiste').addEventListener('keydown', (ev) => {
     if (ev.key !== 'ArrowLeft' && ev.key !== 'ArrowRight') return;
@@ -311,7 +401,7 @@
     } catch (e) { /* kaputter Speicher: einfach frisch laden */ }
     angemeldetZeigen(true);
     S.renderAlle();
-    ansichtZeigen(S.speicher.lesen(K.ansicht));
+    ansichtZeigen(S.speicher.lesen(K.ansicht), { sofort: true });
     S.laden();
   } else {
     angemeldetZeigen(false);

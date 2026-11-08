@@ -21,6 +21,9 @@
   --radius: 16px;
   --radius-klein: 12px;
   --leiste: 58px;   /* Höhe der unteren Leiste ohne Safe Area */
+  /* Seitenränder angemeldet: mindestens 16 px plus Safe Area, auf breiten Bildschirmen Inhalt mittig mit höchstens 520 px */
+  --rand-l: max(calc(16px + env(safe-area-inset-left)), calc(50vw - 260px));
+  --rand-r: max(calc(16px + env(safe-area-inset-right)), calc(50vw - 260px));
   --schrift: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
   --marke: "Courier New", Courier, monospace;
   color-scheme: dark;
@@ -28,14 +31,15 @@
 
 * { box-sizing: border-box; }
 
-/* Kein Gummiband der ganzen Seite (sonst zieht iOS die Tab-Bar mit; „Ziehen zum Aktualisieren“ macht gesten.js),
-   kein grauer Tipp-Kasten, nie waagerecht scrollen (beim Wischen folgt der Inhalt kurz dem Finger) */
+/* Kein Gummiband der ganzen Seite (sonst zieht iOS Kopf und Tab-Bar mit; angemeldet scrollen nur die Ansichten selbst),
+   kein grauer Tipp-Kasten, die Seite selbst scrollt nie waagerecht (das macht nur die Ansichten-Leiste) */
 html {
   -webkit-text-size-adjust: 100%;
   background: var(--grund);
   -webkit-tap-highlight-color: transparent;
   overscroll-behavior: none;
   overflow-x: hidden;
+  touch-action: pan-x pan-y; /* kein Zoomen (Zwei Finger, Doppeltipp), Scrollen frei; Mark 2026-11-08 */
 }
 
 body {
@@ -50,11 +54,22 @@ body {
   line-height: 1.4;
   -webkit-font-smoothing: antialiased;
   overscroll-behavior: none;
+  touch-action: pan-x pan-y;
   padding: calc(10px + env(safe-area-inset-top)) calc(16px + env(safe-area-inset-right))
            calc(16px + env(safe-area-inset-bottom)) calc(16px + env(safe-area-inset-left));
 }
-/* Mit Leiste: unten Platz lassen, damit nichts dahinter verschwindet */
-body.mit-leiste { padding-bottom: calc(24px + var(--leiste) + env(safe-area-inset-bottom)); }
+/* Angemeldet: feste Hülle in Bildschirmhöhe, die Seite selbst scrollt nicht. Kopf und Stand-Zeile stehen oben, die
+   Tab-Bar unten (fixed); dazwischen die vier Ansichten nebeneinander (siehe „Ansichten“ unten). */
+body.mit-leiste {
+  position: relative; /* absolut gesetzte Elemente (z. B. .nur-vorlesen) machen die Seite sonst doch scrollbar */
+  height: 100vh;
+  height: 100dvh;
+  overflow: hidden;
+  padding: 0;
+}
+body.mit-leiste .seite { max-width: none; min-height: 0; }
+body.mit-leiste .seite > .fuss { display: none; } /* steht als Kopie am Ende jeder Ansicht (app.js) */
+body.mit-leiste .update-banner { flex: none; width: auto; margin: 0 var(--rand-r) 12px var(--rand-l); }
 
 [hidden] { display: none !important; }
 
@@ -67,11 +82,11 @@ p { margin: 0; }
   margin: 0 auto;
   display: flex;
   flex-direction: column;
-  touch-action: pan-y pinch-zoom; /* senkrecht scrollen und zoomen macht der Browser, waagerecht wischen gesten.js */
 }
 
 /* Bedienelemente: keine Textauswahl und kein Lupen-Menü beim langen Drücken, kurze Rückmeldung beim Tippen */
 button, .leiste, .segment, .art-kachel, .banner, .ziehen {
+  touch-action: manipulation; /* kein Doppeltipp-Zoom, schnelles Tippen */
   -webkit-user-select: none;
   user-select: none;
   -webkit-touch-callout: none;
@@ -89,7 +104,16 @@ button, .leiste, .segment, .art-kachel, .banner, .ziehen {
 }
 
 /* Kopf: Logo (Männchen + SATE) links, rechts „Neu laden“ rund. Vor der Anmeldung zeigt die Anmeldeseite ihr großes Logo. */
-.kopf { min-height: 44px; margin: 0 0 6px; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.kopf {
+  flex: none;
+  min-height: 44px;
+  margin: 0 0 6px;
+  padding: calc(10px + env(safe-area-inset-top)) var(--rand-r) 0 var(--rand-l);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
 body:not(.mit-leiste) .kopf { display: none; }
 .logo { display: block; height: 28px; width: auto; }
 
@@ -114,7 +138,7 @@ body:not(.mit-leiste) .kopf { display: none; }
 .rund:disabled .icon { animation: drehen 0.9s linear infinite; }
 .rund:focus-visible { outline: 2px solid var(--akzent); outline-offset: 2px; }
 
-.stand { margin: 0 0 18px; font-size: 13px; color: var(--leise); min-height: 1.4em; font-variant-numeric: tabular-nums; }
+.stand { margin: 0 0 8px; font-size: 13px; color: var(--leise); min-height: 1.4em; font-variant-numeric: tabular-nums; }
 
 /* Überschriften im Slide-Stil: Courier New, erstes Wort fett („**Hallo** Mark“) – nur hier und in der Fußzeile */
 .titel {
@@ -539,6 +563,41 @@ form .fehler { margin: 16px 0; }
   min-height: 56px;
 }
 
+/* Ansichten: nebeneinander in einer waagerecht scrollenden Leiste mit Einrasten (natives Scrollen, kein JS beim Wischen).
+   Jede Ansicht scrollt senkrecht für sich (iOS-Momentum, eigenes Gummiband oben/unten) und läuft unter der
+   durchscheinenden Tab-Bar weiter; unten Platz, damit das Ende nicht dahinter verschwindet. */
+#app { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.app-kopf { flex: none; padding: 0 var(--rand-r) 0 var(--rand-l); }
+.ansichten {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
+  scroll-snap-type: x mandatory;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+  touch-action: pan-x pan-y; /* touch-action gilt nur bis zum nächsten Scroll-Container, deshalb hier nochmal */
+}
+.ansichten::-webkit-scrollbar { display: none; width: 0; height: 0; }
+.ansicht {
+  position: relative; /* Bezugsrahmen für absolut gesetzte Kinder, sonst ragen sie aus der Ansicht */
+  flex: 0 0 100%;
+  width: 100%;
+  min-width: 0;
+  height: 100%;
+  overflow-x: hidden;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-y: contain;
+  touch-action: pan-x pan-y; /* senkrecht selbst, waagerecht an die Leiste weiter; kein Zoomen */
+  scroll-snap-align: start;
+  scroll-snap-stop: always;
+  padding: 4px var(--rand-r) calc(24px + var(--leiste) + env(safe-area-inset-bottom)) var(--rand-l);
+}
+.ansicht > .fuss { padding-top: 32px; }
+
 /* Fußzeile wie auf den Slides */
 .fuss {
   margin-top: auto;
@@ -716,10 +775,12 @@ form .fehler { margin: 16px 0; }
 .trend-karte-wert { margin: 6px 0 0; font-size: 26px; font-weight: 700; line-height: 1.1; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
 .chevron { flex: none; font-size: 28px; line-height: 1; color: var(--leise); }
 
-/* Ziehen zum Aktualisieren: runder Knopf mit Pfeil (dreht sich bis zur Schwelle), beim Laden ein Kreisel */
+/* Ziehen zum Aktualisieren: runder Knopf mit Pfeil oben über der Ansicht (dreht sich bis zur Schwelle), beim Laden ein
+   Kreisel. Den Inhalt bewegt nur das native Gummiband von iOS, nicht wir. */
+.ziehen-platz { position: relative; height: 0; z-index: 5; }
 .ziehen {
-  position: fixed;
-  top: calc(env(safe-area-inset-top) + 4px);
+  position: absolute;
+  top: 0;
   left: 50%;
   z-index: 15;
   width: 36px;
@@ -746,15 +807,10 @@ form .fehler { margin: 16px 0; }
   animation: drehen 0.8s linear infinite;
 }
 
-/* Gesten: zurückfedern bzw. nach dem Wischen von der Seite hereingleiten */
+/* Ziehen: Zeiger federt zurück */
 .feder { transition: transform 0.28s cubic-bezier(0.2, 0.8, 0.2, 1), opacity 0.28s ease; }
 
 /* Sanfte Übergänge */
-.ansicht:not([hidden]) { animation: rein 0.22s ease-out; }
-.ansicht.rein-von-rechts:not([hidden]) { animation: von-rechts 0.26s cubic-bezier(0.2, 0.8, 0.2, 1); }
-.ansicht.rein-von-links:not([hidden]) { animation: von-links 0.26s cubic-bezier(0.2, 0.8, 0.2, 1); }
-@keyframes von-rechts { from { opacity: 0.4; transform: translateX(28%); } to { opacity: 1; transform: none; } }
-@keyframes von-links { from { opacity: 0.4; transform: translateX(-28%); } to { opacity: 1; transform: none; } }
 @keyframes rein { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
 @keyframes hoch { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
 @keyframes auf { from { opacity: 0; transform: scale(0.96); } to { opacity: 1; transform: none; } }

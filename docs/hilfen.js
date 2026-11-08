@@ -370,29 +370,23 @@
     return { monat: m.monat, wert: m[g], laufend: laufend, vormonat: vergleich(monatPlus(m.monat, -1)), vorjahr: vergleich(monatPlus(m.monat, -12)) };
   }
 
-  // Gesten (Wischen zwischen Reitern, Ziehen zum Aktualisieren) ----------------------------------------------
-
-  const WISCH_MIN_PX = 60;
-  const WISCH_VERHAELTNIS = 1.5;
-  const WISCH_MAX_MS = 700;
+  // Ansichten-Leiste und Ziehen zum Aktualisieren ---------------------------------------------------------
 
   /**
-   * Wischgeste auswerten. `g` = { dx, dy, ms, breite }. Rückgabe: +1 = zum nächsten Reiter (nach links gewischt),
-   * -1 = zum vorigen, 0 = kein Wischen. Nur klar waagerecht (|dx| > 60 px und > 1,5 × |dy|) und entweder schnell
-   * (unter 700 ms) oder weit (über 40 % der Breite).
+   * Welche Ansicht zeigt die waagerecht scrollende Leiste? `links` = scrollLeft, `breite` = Breite einer Ansicht,
+   * `anzahl` = Zahl der Ansichten. Rückgabe { index, eingerastet } (index = überwiegend sichtbare Ansicht, am Rand
+   * begrenzt; eingerastet = steht bis auf 2 px genau auf ihr) oder null, wenn nichts messbar ist (versteckt).
    */
-  function wischRichtung(g) {
-    const ax = Math.abs(g.dx);
-    if (!(ax > WISCH_MIN_PX) || !(ax > WISCH_VERHAELTNIS * Math.abs(g.dy))) return 0;
-    if (!(g.ms < WISCH_MAX_MS) && !(g.breite > 0 && ax > 0.4 * g.breite)) return 0;
-    return g.dx < 0 ? 1 : -1;
+  function reiterPosition(links, breite, anzahl) {
+    if (!(breite > 0) || !(anzahl > 0) || !Number.isFinite(links)) return null;
+    const index = Math.max(0, Math.min(anzahl - 1, Math.round(links / breite)));
+    return { index: index, eingerastet: Math.abs(links - index * breite) <= 2 };
   }
 
-  /** Nachbar in `liste` (Reihenfolge der Tab-Bar) in `schritt`-Richtung; am Rand null. */
-  function nachbar(liste, aktuell, schritt) {
-    const i = liste.indexOf(aktuell);
-    const j = i + schritt;
-    return i < 0 || !schritt || j < 0 || j >= liste.length ? null : liste[j];
+  /** Geste beim Ziehen: erst nach ~10 px entscheiden; „ziehen“ nur klar nach unten (dy > 0 und > 1,5 × |dx|). */
+  function ziehRichtung(dx, dy) {
+    if (!(Math.max(Math.abs(dx), Math.abs(dy)) >= 10)) return '';
+    return dy > 0 && dy > 1.5 * Math.abs(dx) ? 'ziehen' : 'aus';
   }
 
   /** Gummiband beim Ziehen: folgt erst fast 1:1, dann immer zäher, nie über `max` (Standard 200 px). */
@@ -408,7 +402,7 @@
     reichweiteBalken,
     ganzeZahlEingabe, flaschenAusEingabe, kistenText, kistenTeilen, buchungPruefen, buchungText, anfrageIdAus, achse, diagrammMasse,
     achsenText, antwortDeuten, uebersichtGueltig, neuer,
-    relativZeit, monatPlus, veraenderung, prozentText, richtung, monatsTrend, wischRichtung, nachbar, gummiband,
+    relativZeit, monatPlus, veraenderung, prozentText, richtung, monatsTrend, reiterPosition, ziehRichtung, gummiband,
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = hilfen;
   else wurzel.SATE_HILFEN = hilfen;

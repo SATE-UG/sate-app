@@ -2,7 +2,7 @@
 <html lang="de">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self'; manifest-src 'self'; connect-src https://script.google.com https://script.googleusercontent.com; base-uri 'none'; form-action 'none'">
   <meta name="referrer" content="no-referrer">
   <title>SATE</title>
@@ -56,96 +56,103 @@
       </form>
     </section>
 
-    <!-- App nach der Anmeldung: Stand-Zeile, Fehler, vier Ansichten (Reiter unten) -->
+    <!-- App nach der Anmeldung: oben fest Offline-Banner, Stand-Zeile, Fehler; darunter die vier Ansichten nebeneinander
+         (waagerecht natives Scrollen mit Einrasten, jede Ansicht scrollt senkrecht für sich; Reiter unten) -->
     <div id="app" hidden>
-      <p id="offline" class="banner offline-banner" role="status" hidden>
-        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M4 9.5a12 12 0 0 1 16 0"/><path d="M7 13a7.5 7.5 0 0 1 10 0"/><path d="M10 16.5a3 3 0 0 1 4 0"/><path d="M4 4l16 16"/></svg>
-        <span id="offline-text">Offline – zeigt gespeicherten Stand</span>
-      </p>
-      <!-- Stand-Zeit relativ („Aktualisiert vor 5 Min.“), bewusst ohne Live-Region (ändert sich jede Minute) -->
-      <p id="stand" class="stand"></p>
-      <p id="fehler" class="fehler" role="alert" hidden></p>
+      <div class="app-kopf">
+        <p id="offline" class="banner offline-banner" role="status" hidden>
+          <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M4 9.5a12 12 0 0 1 16 0"/><path d="M7 13a7.5 7.5 0 0 1 10 0"/><path d="M10 16.5a3 3 0 0 1 4 0"/><path d="M4 4l16 16"/></svg>
+          <span id="offline-text">Offline – zeigt gespeicherten Stand</span>
+        </p>
+        <!-- Stand-Zeit relativ („Aktualisiert vor 5 Min.“), bewusst ohne Live-Region (ändert sich jede Minute) -->
+        <p id="stand" class="stand"></p>
+        <p id="fehler" class="fehler" role="alert" hidden></p>
+      </div>
 
-      <section id="ansicht-uebersicht" class="ansicht" role="tabpanel" aria-labelledby="reiter-uebersicht" hidden>
-        <h1 class="titel"><strong>Hallo</strong> <span id="name"></span></h1>
-        <div id="uebersicht-inhalt"></div>
-        <div class="knoepfe">
-          <button id="abmelden" type="button" class="knopf">Abmelden</button>
+      <!-- Ziehen zum Aktualisieren: Pfeil, ab der Schwelle gedreht, beim Laden Kreisel (gesten.js) -->
+      <div class="ziehen-platz">
+        <div id="ziehen" class="ziehen" aria-hidden="true" hidden>
+          <svg class="icon" viewBox="0 0 24 24" focusable="false"><path d="M12 5v14"/><path d="M6.5 13.5 12 19l5.5-5.5"/></svg>
         </div>
-      </section>
+      </div>
 
-      <section id="ansicht-verkaeufe" class="ansicht" role="tabpanel" aria-labelledby="reiter-verkaeufe" hidden>
-        <h1 class="titel"><strong>Verkäufe</strong> pro Monat</h1>
-        <div id="verkaeufe-inhalt"></div>
-      </section>
+      <div id="ansichten" class="ansichten">
+        <section id="ansicht-uebersicht" class="ansicht" role="tabpanel" aria-labelledby="reiter-uebersicht">
+          <h1 class="titel"><strong>Hallo</strong> <span id="name"></span></h1>
+          <div id="uebersicht-inhalt"></div>
+          <div class="knoepfe">
+            <button id="abmelden" type="button" class="knopf">Abmelden</button>
+          </div>
+        </section>
 
-      <section id="ansicht-lager" class="ansicht" role="tabpanel" aria-labelledby="reiter-lager" hidden>
-        <h1 class="titel"><strong>Lager</strong> &amp; Verlauf</h1>
-        <div id="lager-inhalt" class="karten"></div>
-        <h2><strong>Verlauf</strong></h2>
-        <div id="verlauf-inhalt"></div>
-        <h2><strong>Verkäufe</strong> zuordnen</h2>
-        <p class="hinweis">Rechnungen der letzten 60 Tage. Kamen die Flaschen aus einem anderen Lager, hier den Standort ändern.</p>
-        <div id="zuordnen-inhalt"></div>
-      </section>
+        <section id="ansicht-verkaeufe" class="ansicht" role="tabpanel" aria-labelledby="reiter-verkaeufe">
+          <h1 class="titel"><strong>Verkäufe</strong> pro Monat</h1>
+          <div id="verkaeufe-inhalt"></div>
+        </section>
 
-      <section id="ansicht-eintragen" class="ansicht" role="tabpanel" aria-labelledby="reiter-eintragen" hidden>
-        <h1 class="titel"><strong>Neu</strong> eintragen</h1>
-        <form id="buchen-form" novalidate>
-          <fieldset class="feld">
-            <legend class="feld-label">Was ist passiert?</legend>
-            <div id="arten" class="arten"></div>
-            <p id="art-text" class="hinweis art-text" aria-live="polite">Bitte oben auswählen.</p>
-          </fieldset>
+        <section id="ansicht-lager" class="ansicht" role="tabpanel" aria-labelledby="reiter-lager">
+          <h1 class="titel"><strong>Lager</strong> &amp; Verlauf</h1>
+          <div id="lager-inhalt" class="karten"></div>
+          <h2><strong>Verlauf</strong></h2>
+          <div id="verlauf-inhalt"></div>
+          <h2><strong>Verkäufe</strong> zuordnen</h2>
+          <p class="hinweis">Rechnungen der letzten 60 Tage. Kamen die Flaschen aus einem anderen Lager, hier den Standort ändern.</p>
+          <div id="zuordnen-inhalt"></div>
+        </section>
 
-          <div class="karte formular-karte">
-            <div class="feld">
-              <label for="b-standort" id="b-standort-label" class="feld-label">Standort</label>
-              <select id="b-standort"></select>
-            </div>
-            <div class="feld" id="b-nach-feld" hidden>
-              <label for="b-nach" class="feld-label">Nach</label>
-              <select id="b-nach"></select>
-            </div>
-
+        <section id="ansicht-eintragen" class="ansicht" role="tabpanel" aria-labelledby="reiter-eintragen">
+          <h1 class="titel"><strong>Neu</strong> eintragen</h1>
+          <form id="buchen-form" novalidate>
             <fieldset class="feld">
-              <legend id="b-flaschen-legende" class="feld-label">Flaschen</legend>
-              <div class="zwei">
-                <div id="b-kisten-feld">
-                  <label for="b-kisten" class="klein" id="b-kisten-label">Kisten</label>
-                  <input id="b-kisten" type="text" inputmode="numeric" autocomplete="off" placeholder="0">
-                </div>
-                <div>
-                  <label for="b-flaschen" class="klein">einzelne Flaschen</label>
-                  <input id="b-flaschen" type="text" inputmode="numeric" autocomplete="off" placeholder="0">
-                </div>
-              </div>
-              <p id="b-summe" class="summe" aria-live="polite"></p>
+              <legend class="feld-label">Was ist passiert?</legend>
+              <div id="arten" class="arten"></div>
+              <p id="art-text" class="hinweis art-text" aria-live="polite">Bitte oben auswählen.</p>
             </fieldset>
 
-            <div class="feld">
-              <label for="b-datum" class="feld-label">Datum</label>
-              <input id="b-datum" type="date">
-            </div>
-            <div class="feld letztes">
-              <label for="b-kommentar" class="feld-label">Kommentar <span class="leise">(optional)</span></label>
-              <textarea id="b-kommentar" rows="2" autocomplete="off" placeholder="z. B. Sommerfest im Park"></textarea>
-            </div>
-          </div>
+            <div class="karte formular-karte">
+              <div class="feld">
+                <label for="b-standort" id="b-standort-label" class="feld-label">Standort</label>
+                <select id="b-standort"></select>
+              </div>
+              <div class="feld" id="b-nach-feld" hidden>
+                <label for="b-nach" class="feld-label">Nach</label>
+                <select id="b-nach"></select>
+              </div>
 
-          <p id="buchen-fehler" class="fehler" role="alert" hidden></p>
-          <button id="buchen-senden" type="submit" class="knopf haupt">Speichern</button>
-        </form>
-      </section>
+              <fieldset class="feld">
+                <legend id="b-flaschen-legende" class="feld-label">Flaschen</legend>
+                <div class="zwei">
+                  <div id="b-kisten-feld">
+                    <label for="b-kisten" class="klein" id="b-kisten-label">Kisten</label>
+                    <input id="b-kisten" type="text" inputmode="numeric" autocomplete="off" placeholder="0">
+                  </div>
+                  <div>
+                    <label for="b-flaschen" class="klein">einzelne Flaschen</label>
+                    <input id="b-flaschen" type="text" inputmode="numeric" autocomplete="off" placeholder="0">
+                  </div>
+                </div>
+                <p id="b-summe" class="summe" aria-live="polite"></p>
+              </fieldset>
+
+              <div class="feld">
+                <label for="b-datum" class="feld-label">Datum</label>
+                <input id="b-datum" type="date">
+              </div>
+              <div class="feld letztes">
+                <label for="b-kommentar" class="feld-label">Kommentar <span class="leise">(optional)</span></label>
+                <textarea id="b-kommentar" rows="2" autocomplete="off" placeholder="z. B. Sommerfest im Park"></textarea>
+              </div>
+            </div>
+
+            <p id="buchen-fehler" class="fehler" role="alert" hidden></p>
+            <button id="buchen-senden" type="submit" class="knopf haupt">Speichern</button>
+          </form>
+        </section>
+      </div>
     </div>
 
     <footer class="fuss">Trink SATE!<img class="herz" src="bilder/herz.png" alt="" width="20" height="20"></footer>
   </main>
-
-  <!-- Ziehen zum Aktualisieren: Pfeil, ab der Schwelle gedreht, beim Laden Kreisel (gesten.js) -->
-  <div id="ziehen" class="ziehen" aria-hidden="true" hidden>
-    <svg class="icon" viewBox="0 0 24 24" focusable="false"><path d="M12 5v14"/><path d="M6.5 13.5 12 19l5.5-5.5"/></svg>
-  </div>
 
   <!-- Untere Leiste mit den vier Ansichten (Symbol + Text, leicht durchscheinend) -->
   <nav id="leiste" class="leiste" role="tablist" aria-label="Ansichten" hidden>

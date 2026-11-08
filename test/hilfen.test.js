@@ -277,23 +277,24 @@ test('Trends: Vormonat und Vorjahresmonat aus den 13 Monaten', () => {
   assert.strictEqual(H.monatsTrend(null, 0, 'flaschen'), null);
 });
 
-test('Gesten: Wischen erkennen, Nachbar-Reiter, Gummiband', () => {
-  const w = (dx, dy, ms) => H.wischRichtung({ dx: dx, dy: dy, ms: ms === undefined ? 200 : ms, breite: 390 });
-  assert.strictEqual(w(-80, 10), 1, 'nach links gewischt: nächster Reiter');
-  assert.strictEqual(w(80, -10), -1, 'nach rechts: voriger');
-  assert.strictEqual(w(-60, 0), 0, 'genau 60 px reicht nicht');
-  assert.strictEqual(w(-90, 61), 0, 'zu schräg (90 < 1,5 × 61)');
-  assert.strictEqual(w(-90, 59), 1);
-  assert.strictEqual(w(-100, 0, 900), 0, 'zu langsam und zu kurz');
-  assert.strictEqual(w(-170, 0, 900), 1, 'langsam, aber weit (über 40 % der Breite)');
-  assert.strictEqual(w(NaN, 0), 0);
-  const liste = ['uebersicht', 'verkaeufe', 'lager', 'eintragen'];
-  assert.strictEqual(H.nachbar(liste, 'uebersicht', 1), 'verkaeufe');
-  assert.strictEqual(H.nachbar(liste, 'uebersicht', -1), null, 'am Rand nichts');
-  assert.strictEqual(H.nachbar(liste, 'eintragen', 1), null, 'am Rand nichts');
-  assert.strictEqual(H.nachbar(liste, 'lager', -1), 'verkaeufe');
-  assert.strictEqual(H.nachbar(liste, 'quatsch', 1), null);
-  assert.strictEqual(H.nachbar(liste, 'lager', 0), null);
+test('Ansichten-Leiste: aktive Ansicht und Einrasten, Ziehen-Richtung, Gummiband', () => {
+  const p = (links) => H.reiterPosition(links, 390, 4);
+  assert.deepStrictEqual(p(0), { index: 0, eingerastet: true });
+  assert.deepStrictEqual(p(390), { index: 1, eingerastet: true });
+  assert.deepStrictEqual(p(1170), { index: 3, eingerastet: true });
+  assert.deepStrictEqual(p(389.6667), { index: 1, eingerastet: true }, 'Bruchteile von Pixeln zählen als eingerastet');
+  assert.deepStrictEqual(p(194), { index: 0, eingerastet: false }, 'knapp unter der Hälfte: noch die erste');
+  assert.deepStrictEqual(p(196), { index: 1, eingerastet: false }, 'über der Hälfte: schon die zweite');
+  assert.deepStrictEqual(p(-40), { index: 0, eingerastet: false }, 'Gummiband am linken Rand');
+  assert.deepStrictEqual(p(1250), { index: 3, eingerastet: false }, 'Gummiband am rechten Rand');
+  assert.strictEqual(H.reiterPosition(100, 0, 4), null, 'versteckt (Breite 0)');
+  assert.strictEqual(H.reiterPosition(NaN, 390, 4), null);
+  assert.strictEqual(H.reiterPosition(0, 390, 0), null);
+  assert.strictEqual(H.ziehRichtung(2, 8), '', 'unter 10 px noch offen');
+  assert.strictEqual(H.ziehRichtung(3, 20), 'ziehen');
+  assert.strictEqual(H.ziehRichtung(14, 20), 'aus', 'zu schräg (20 < 1,5 × 14)');
+  assert.strictEqual(H.ziehRichtung(30, 5), 'aus', 'waagerecht: Wischen macht der Browser');
+  assert.strictEqual(H.ziehRichtung(0, -20), 'aus', 'nach oben: normales Scrollen');
   assert.strictEqual(H.gummiband(0), 0);
   assert.strictEqual(H.gummiband(-20), 0);
   assert.ok(H.gummiband(10) > 9 && H.gummiband(10) < 10, 'am Anfang fast 1:1');

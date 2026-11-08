@@ -192,23 +192,53 @@ test('PWA: keine fremden Skripte, Code nie in URLs', () => {
     /apiUrl: '(HIER_WEB_APP_URL_EINTRAGEN|https:\/\/script\.google\.com\/(macros|a\/macros\/[\w.-]+)\/s\/[\w-]+\/exec)'/);
 });
 
-test('PWA: Gesten blockieren nie das Scrollen, Tipp-Rückmeldung und kein Gummiband der Seite', () => {
+test('PWA: Reiter per nativem Scroll Snap, Ziehen blockiert nie das Scrollen, kein Zoomen', () => {
   const gesten = lies('docs/gesten.js');
   const touch = gesten.match(/addEventListener\('touch\w+',[\s\S]*?\}, \{ passive: true \}\)|addEventListener\('touch\w+', \w+, \{ passive: true \}\)/g) || [];
   const alle = gesten.match(/addEventListener\('touch\w+'/g) || [];
   assert.strictEqual(alle.length, 4, 'touchstart, touchmove, touchend, touchcancel');
   assert.strictEqual(touch.length, alle.length, 'alle Touch-Listener passiv');
-  assert.doesNotMatch(gesten, /preventDefault/, 'nie das Scrollen verhindern');
-  assert.match(gesten, /RAND_PX = 20/, 'iOS-Zurück-Geste am linken Rand frei');
-  assert.match(gesten, /\.diagramm/, 'nicht auf dem Diagramm');
+  // preventDefault nur für die Safari-Zoom-Gesten, nie für Touch-Ereignisse (Scrollen bleibt frei)
+  assert.strictEqual((gesten.match(/preventDefault/g) || []).length, 1);
+  assert.match(gesten, /\['gesturestart', 'gesturechange', 'gestureend'\][\s\S]*?ev\.preventDefault\(\), \{ passive: false \}/);
+  assert.doesNotMatch(gesten, /wischRichtung|wischenZeigen|ansichtZeigen|translate3d\(' \+ weg/, 'keine eigene Wischlogik mehr');
+
+  const html = lies('docs/index.html');
+  assert.match(html, /name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover"/);
+  assert.match(html, /<div id="ansichten" class="ansichten">/);
+  assert.doesNotMatch(html, /class="ansicht"[^>]*hidden/, 'alle Ansichten liegen sichtbar nebeneinander');
+
   const css = lies('docs/style.css');
-  assert.match(css, /-webkit-tap-highlight-color: transparent;\n  overscroll-behavior: none;/);
-  assert.match(css, /touch-action: pan-y pinch-zoom;/, 'Zoomen bleibt möglich');
+  const regel = (sel) => { const m = new RegExp('\\n' + sel.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ' \\{([^}]*)\\}').exec(css); assert.ok(m, sel); return m[1]; };
+  const leiste = regel('.ansichten');
+  for (const d of ['overflow-x: auto;', 'scroll-snap-type: x mandatory;', 'overscroll-behavior-x: contain;', 'scrollbar-width: none;', 'touch-action: pan-x pan-y;']) {
+    assert.ok(leiste.includes(d), '.ansichten: ' + d);
+  }
+  assert.match(css, /\.ansichten::-webkit-scrollbar \{ display: none;/);
+  const ansicht = regel('.ansicht');
+  for (const d of ['flex: 0 0 100%;', 'overflow-y: auto;', '-webkit-overflow-scrolling: touch;', 'scroll-snap-align: start;', 'scroll-snap-stop: always;',
+    'env(safe-area-inset-bottom)', 'touch-action: pan-x pan-y;']) {
+    assert.ok(ansicht.includes(d), '.ansicht: ' + d);
+  }
+  assert.doesNotMatch(css, /pan-y pinch-zoom|rein-von-rechts/, 'alte Wischlogik ist raus');
+  assert.match(regel('html'), /overscroll-behavior: none;[\s\S]*touch-action: pan-x pan-y;/);
+  assert.match(css, /\.diagramm \{[^}]*touch-action: manipulation;/, 'Diagramm: Tippen bleibt Tippen, waagerecht scrollt die Leiste');
   assert.match(css, /user-select: none;/);
   for (const sel of ['.knopf:active', '.rund:active', '.leiste button:active', '.art:active .art-kachel', '.segment button:active']) {
     assert.ok(css.includes(sel + ' {'), sel);
   }
-  assert.match(css, /\.ansicht\.rein-von-rechts/);
+  // Eingabefelder ≥ 16 px, sonst zoomt iOS beim Fokus trotzdem
+  for (const m of css.matchAll(/\n(input, select, textarea|\.zuordnen select|#code) \{([^}]*)\}/g)) {
+    const px = /font-size: (\d+)px/.exec(m[2]);
+    if (px) assert.ok(Number(px[1]) >= 16, m[1]);
+  }
+
+  const app = lies('docs/app.js');
+  assert.match(app, /scrollTo\(\{ left: links, behavior: 'smooth' \}\)/);
+  assert.match(app, /prefers-reduced-motion: reduce/);
+  assert.match(app, /'scrollend'/);
+  assert.match(app, /\.inert = n !== a/);
+  assert.doesNotMatch(app + lies('docs/eintragen.js'), /window\.scrollTo/, 'die Seite selbst scrollt nicht mehr');
 });
 
 test('PWA: automatisches Update – Service Worker nennt seine Version, App sucht beim Start und Zurückkehren', () => {
