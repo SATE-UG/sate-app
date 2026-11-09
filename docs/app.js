@@ -89,8 +89,8 @@
       const alt = Date.now() - Date.parse(Z.daten.stand) > STAND_ALT_MS;
       const rel = H.relativZeit(Z.daten.stand) || H.zeitFormat(Z.daten.stand);
       const offline = navigator.onLine === false || Z.offline;
-      if (!Z.frisch) t = 'Gespeicherter Stand · ' + rel;
-      else if (offline) t = 'Offline · Stand ' + rel;
+      if (!Z.frisch) t = 'Gespeicherter Stand, ' + rel;
+      else if (offline) t = 'Offline, Stand ' + rel;
       else if (alt) t = 'Aktualisiert ' + rel;
       el('stand').title = 'Stand: ' + H.zeitFormat(Z.daten.stand);
     }
@@ -103,7 +103,7 @@
   /** Schmales Banner „Offline – zeigt gespeicherten Stand“: kein Netz laut Gerät oder letzter Abruf ohne Verbindung. */
   S.offlineZeigen = function () {
     const offline = !!Z.code && (navigator.onLine === false || Z.offline);
-    el('offline-text').textContent = Z.daten ? 'Offline – zeigt gespeicherten Stand' : 'Offline – keine Verbindung';
+    el('offline-text').textContent = Z.daten ? 'Offline, du siehst den gespeicherten Stand' : 'Offline, keine Verbindung';
     el('offline').hidden = !offline;
   };
 
@@ -421,7 +421,7 @@
       }
       if (navigator.clipboard && navigator.clipboard.writeText) {
         await navigator.clipboard.writeText(text);
-        return S.melden('Stand kopiert – zum Einfügen z. B. in WhatsApp.');
+        return S.melden('Stand kopiert. Jetzt z. B. in WhatsApp einfügen.');
       }
       S.melden('Teilen geht auf diesem Gerät nicht.', true);
     } catch (e) {

@@ -38,6 +38,7 @@
       kundenKanal: '',   // Kunden: nur dieser Kanal ('' = alle)
       kundenSortierung: 'menge', // Kunden: 'menge' | 'zuletzt' | 'name'
       alleNachfassen: false,
+      rechenwegOffen: false, // Start: „So rechnet die App“ aufgeklappt?
       zuordnenOffen: false, // Lager: „Verkäufe zuordnen“ aufgeklappt?
       verlaufAlle: false,   // Lager: ganzen Verlauf statt der letzten 10 zeigen
     },
@@ -257,7 +258,7 @@
       b.showModal();
     }
     S.el('blatt-inhalt').scrollTop = 0;
-    S.el('blatt-zu').focus();
+    S.el('blatt-titel').focus(); // Titel statt ✕: Vorleseprogramme lesen den Namen, es erscheint kein Fokusring
     return true;
   };
   S.blattSchliessen = function () {

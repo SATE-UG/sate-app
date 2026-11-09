@@ -276,7 +276,7 @@
   function standText(u, jv, heute, prognose) {
     const z = [];
     const fl = (n) => zahlFormat(n, 0) + (n === 1 ? ' Flasche' : ' Flaschen');
-    z.push('SATE – Stand ' + datumText(heute));
+    z.push('SATE Stand vom ' + datumText(heute));
     const k = u && u.kennzahlen ? u.kennzahlen : {};
     if (istZahl(k.gesamtbestand)) z.push('Bestand: ' + fl(k.gesamtbestand) + (k.gesamtQuelle === 'inventur' ? ' (gezählt)' : ' (geschätzt)'));
     const b = prognose || (u && u.bestellung ? u.bestellung : {});
@@ -821,7 +821,7 @@
       const m = INVENTUR_FEHLT.exec(String(t));
       if (!m) return aus.andere.push(String(t));
       aus.bestand = (m[1] ? 'Noch nicht alle Lager gezählt' : 'Noch kein Lager gezählt') +
-        ' – der Bestand ist geschätzt (aus Abfüllungen minus Verkäufe). Nach der Inventur zeigt die App den echten Bestand.';
+        '. Der Bestand ist geschätzt (aus Abfüllungen minus Verkäufe). Nach der Inventur zeigt die App den echten Bestand.';
     });
     return aus;
   }

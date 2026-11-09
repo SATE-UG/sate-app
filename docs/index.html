@@ -41,7 +41,7 @@
     <!-- Neue Version bereit, aber im Formular steht noch etwas oder eine Rückfrage ist offen (update.js) -->
     <button id="update" type="button" class="banner update-banner" hidden>
       <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 4v11"/><path d="M7.5 10.5 12 15l4.5-4.5"/><path d="M5 19.5h14"/></svg>
-      <span>Neue Version – tippen zum Laden</span>
+      <span>Neue Version da. Tippen zum Laden.</span>
     </button>
 
     <!-- Anmeldung -->
@@ -49,7 +49,7 @@
       <div class="anmelden-kopf">
         <img class="logo-gross" src="bilder/logo.png" alt="SATE" width="261" height="60">
         <h1 class="titel"><strong>SATE</strong> Team</h1>
-        <p class="untertitel">Bestand, Verkäufe und Lager – alles an einem Ort.</p>
+        <p class="untertitel">Bestand, Verkäufe und Lager an einem Ort.</p>
       </div>
       <form id="code-form" class="karte anmelden-karte" novalidate>
         <label for="code" class="feld-label">Dein Zugangscode</label>
@@ -68,7 +68,7 @@
       <div class="app-kopf">
         <p id="offline" class="banner offline-banner" role="status" hidden>
           <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M4 9.5a12 12 0 0 1 16 0"/><path d="M7 13a7.5 7.5 0 0 1 10 0"/><path d="M10 16.5a3 3 0 0 1 4 0"/><path d="M4 4l16 16"/></svg>
-          <span id="offline-text">Offline – zeigt gespeicherten Stand</span>
+          <span id="offline-text">Offline, du siehst den gespeicherten Stand</span>
         </p>
         <!-- Stand-Zeit relativ („Aktualisiert vor 5 Min.“), bewusst ohne Live-Region (ändert sich jede Minute) -->
         <p id="stand" class="stand"></p>
@@ -226,7 +226,7 @@
   <!-- Blatt von unten (Kunden-Details u. a.), Inhalt baut kern.js (S.blattZeigen) -->
   <dialog id="blatt" class="blatt" aria-labelledby="blatt-titel">
     <div class="blatt-kopf">
-      <h2 id="blatt-titel" class="blatt-titel"></h2>
+      <h2 id="blatt-titel" class="blatt-titel" tabindex="-1"></h2>
       <button id="blatt-zu" type="button" class="rund" aria-label="Schließen">
         <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M6.5 6.5l11 11M17.5 6.5l-11 11"/></svg>
       </button>

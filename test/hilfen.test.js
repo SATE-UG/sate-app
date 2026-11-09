@@ -353,11 +353,11 @@ test('Feinschliff: Hinweis „Noch keine Inventur“ freundlich, andere unverän
 
   const teil = H.hinweiseOrdnen(['Noch keine Inventur bei Lager Nord, Lager Ost: Gesamtbestand ist der rechnerische aus der Übersicht.',
     'Lager-Log Zeile 7: Art „X“ unbekannt, zählt nicht.']);
-  assert.strictEqual(teil.bestand, 'Noch nicht alle Lager gezählt – der Bestand ist geschätzt (aus Abfüllungen minus Verkäufe). ' +
+  assert.strictEqual(teil.bestand, 'Noch nicht alle Lager gezählt. Der Bestand ist geschätzt (aus Abfüllungen minus Verkäufe). ' +
     'Nach der Inventur zeigt die App den echten Bestand.');
   assert.deepStrictEqual(teil.andere, ['Lager-Log Zeile 7: Art „X“ unbekannt, zählt nicht.']);
   const keine = H.hinweiseOrdnen(['Noch keine Inventur: Gesamtbestand ist der rechnerische aus der Übersicht (ohne Promo, Eigenverbrauch, Bruch).']);
-  assert.match(keine.bestand, /^Noch kein Lager gezählt – der Bestand ist geschätzt/);
+  assert.match(keine.bestand, /^Noch kein Lager gezählt\. Der Bestand ist geschätzt/);
   assert.deepStrictEqual(keine.andere, []);
   assert.deepStrictEqual(H.hinweiseOrdnen(undefined), { bestand: '', andere: [] });
 });

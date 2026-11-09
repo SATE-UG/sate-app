@@ -195,7 +195,7 @@ test('standText: kurzer Stand zum Teilen, ohne Kundennamen', () => {
   const jv = H.jahresVergleich(H.monatsWerte({}, v), '2026-11-09');
   const u = { kennzahlen: { gesamtbestand: 8353, gesamtQuelle: 'rechnerisch' }, bestellung: { spaetestensBestellen: '2027-02-14' } };
   const t = H.standText(u, jv, '2026-11-09');
-  assert.strictEqual(t.split('\n')[0], 'SATE – Stand 9. Nov 2026');
+  assert.strictEqual(t.split('\n')[0], 'SATE Stand vom 9. Nov 2026');
   assert.match(t, /Bestand: 8\.353 Flaschen \(geschätzt\)/);
   assert.match(t, /Spätestens bestellen bis: 14\. Feb 2027 \(noch 97 Tage\)/);
   assert.match(t, /Dieses Jahr: 602 Flaschen \(−71 % zum Vorjahr, Jan–Okt\)/);

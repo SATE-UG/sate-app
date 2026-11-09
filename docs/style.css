@@ -188,7 +188,8 @@ h2 {
 .kacheln { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 0 0 12px; }
 .kachel { background: var(--karte); border-radius: var(--radius); padding: 14px 16px 16px; min-width: 0; }
 .kachel-label { display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 500; color: var(--leise); }
-.label-icon { width: 16px; height: 16px; }
+.label-zeile { justify-content: space-between; gap: 12px; }
+.label-rechts { font-variant-numeric: tabular-nums; white-space: nowrap; }
 .kachel-wert {
   margin: 6px 0 2px;
   font-size: 34px;
@@ -219,9 +220,15 @@ h2 {
 }
 .bestellung-fehlt { margin: 0 0 16px; font-size: 16px; }
 .am-stueck { white-space: nowrap; }
-/* Rechenweg zum Bestelltermin (v24): Bestand → reicht bis → − Abfüllung − Puffer → = bestellen, Annahmen klein darunter */
-.rw-titel { margin: 14px 0 0; padding-top: 12px; border-top: 1px solid var(--linie); font-size: 13px; font-weight: 600; }
-.rechenweg.bestell-rechenweg { margin: 2px 0 0; padding-top: 0; border-top: 0; font-size: 14px; }
+/* Rechenweg zum Bestelltermin: seit v26 zugeklappt hinter „So rechnet die App“ (Bestand → reicht bis → − Abfüllung − Puffer → = bestellen) */
+.rw-knopf { width: 100%; min-height: 44px; display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  margin: 14px 0 -12px; padding: 0; border: 0; border-top: 1px solid var(--linie); background: none; color: var(--leise);
+  font: inherit; font-size: 14px; font-weight: 500; text-align: left; cursor: pointer; -webkit-appearance: none; appearance: none; }
+.rw-knopf[aria-expanded="true"] { margin-bottom: 0; }
+.rw-knopf[aria-expanded="true"] .klapp-pfeil { transform: rotate(90deg); }
+.rw-knopf:active { opacity: 0.55; }
+.rw-knopf:focus-visible { outline: 2px solid var(--akzent); outline-offset: 2px; border-radius: 8px; }
+.rechenweg.bestell-rechenweg { margin: 0; padding-top: 0; border-top: 0; font-size: 14px; }
 .bestell-rechenweg .rw-zeile { flex-wrap: wrap; align-items: baseline; column-gap: 12px; row-gap: 1px; padding: 4px 0; }
 .bestell-rechenweg dt { min-width: 0; }
 .bestell-rechenweg .rw-summe { margin-top: 2px; padding-top: 7px; }
@@ -236,13 +243,13 @@ h2 {
 .datum-zeile { margin: 0 0 18px; font-size: 14px; color: var(--leise); min-height: 1.4em; }
 
 /* Kachel als Knopf (z. B. „Dieses Jahr“ öffnet Verkäufe) */
-.kachel-knopf { display: block; width: 100%; border: 0; color: var(--text); font: inherit; text-align: left; cursor: pointer;
+.kachel-knopf { display: flex; flex-direction: column; width: 100%; border: 0; color: var(--text); font: inherit; text-align: left; cursor: pointer;
   -webkit-appearance: none; appearance: none; transition: transform 0.1s ease, background-color 0.1s ease; }
 .kachel-knopf > span { display: block; }
 .kachel-knopf > .kachel-label { display: flex; }
 .kachel-pfeil { margin-left: auto; font-size: 20px; line-height: 0.8; color: var(--leise); }
-.kachel-knopf > .trend-zeile { display: flex; margin-top: 8px; }
-.kachel .trend { white-space: nowrap; font-size: 12px; padding: 3px 8px; }
+.kachel-fuss { margin-top: auto; padding-top: 10px; font-size: 13px; line-height: 1.35; color: var(--leise); font-variant-numeric: tabular-nums; }
+.kachel-fuss .mini-fortschritt, .kachel-fuss .verteilung-balken.mini { margin: 0 0 7px; height: 5px; }
 .kachel-knopf:active { transform: scale(0.97); background: #242426; }
 .kachel-knopf:focus-visible { outline: 2px solid var(--akzent); outline-offset: 2px; }
 
@@ -258,7 +265,6 @@ h2 {
 .mini-fortschritt { display: block; height: 5px; margin: 8px 0 5px; border-radius: 3px; background: var(--feld); overflow: hidden; }
 .mini-fuell { display: block; height: 100%; min-width: 3px; border-radius: 3px; background: var(--text); }
 .mini-fuell.voll { background: var(--gruen); }
-.fortschritt-text { margin-top: 0; }
 .verteilung-balken.mini { display: flex; height: 6px; margin: 9px 0 3px; }
 .zeilen-karte { width: 100%; display: flex; align-items: center; gap: 12px; border: 0; color: var(--text); font: inherit; text-align: left;
   cursor: pointer; -webkit-appearance: none; appearance: none; transition: transform 0.1s ease, background-color 0.1s ease; }
@@ -273,8 +279,10 @@ h2 {
 .aktiv-titel { font-size: 15px; font-weight: 600; overflow-wrap: anywhere; }
 .aktiv-titel .badge { margin-left: 8px; }
 .aktiv-wert { font-size: 15px; font-weight: 600; white-space: nowrap; font-variant-numeric: tabular-nums; }
-.rechnung-icon { color: var(--akzent); }
+.aktiv-rechts { display: flex; flex-direction: column; align-items: flex-end; text-align: right; }
+.aktiv-rechts .nebenzeile { margin-top: 2px; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .aktiv-zeile.storniert .aktiv-titel, .aktiv-zeile.storniert .aktiv-wert { color: var(--leise); text-decoration: line-through; }
+.aktiv-zeile.storniert .badge { text-decoration: none; }
 
 /* Kunden (v23): Suche mit Sortierung, Kanal-Filter als Chips (waagerecht scrollbar) */
 .such-zeile { display: flex; gap: 8px; margin: 0 0 10px; }
@@ -288,8 +296,8 @@ h2 {
 .filter-chips .chip { flex: none; background: var(--karte); }
 .filter-chips .chip[aria-pressed="true"] { background: #F2F2F2; color: #000000; }
 #kunden-inhalt > h2:first-child, #kunden-inhalt > .h2-zeile:first-child { margin-top: 0; }
-h3.gruppe { font-size: 13px; font-weight: 600; color: var(--leise); text-transform: uppercase; letter-spacing: 0.06em; margin: 20px 4px 8px; }
-.rang-zahlen .trend { margin-top: 3px; padding: 1px 8px; font-size: 12px; }
+h3.gruppe { font-size: 14px; font-weight: 600; color: var(--leise); margin: 22px 4px 8px; }
+.rang-zahlen .trend { margin-top: 1px; }
 
 /* Lager (v23): Liste mit „zählen“, Lager-Blatt mit zwei Zahlen und Knöpfen */
 .badge.badge-zaehlen { background: var(--akzent-weich); color: var(--akzent); }
@@ -314,15 +322,13 @@ h3.gruppe { font-size: 13px; font-weight: 600; color: var(--leise); text-transfo
 .pill {
   display: inline-flex;
   align-items: center;
-  gap: 7px;
-  padding: 6px 12px 6px 10px;
+  padding: 5px 12px;
   border-radius: 999px;
   font-size: 14px;
   font-weight: 600;
   background: var(--feld);
   color: var(--text);
 }
-.punkt { width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
 .pill-bald { background: var(--akzent-weich); color: var(--akzent); }
 .pill-jetzt { background: var(--akzent); color: #000000; }
 .pill-leer { color: var(--leise); }
@@ -496,27 +502,26 @@ h3.gruppe { font-size: 13px; font-weight: 600; color: var(--leise); text-transfo
 .legende-tipp { margin-left: auto; }
 
 .zeitraum-text { font-size: 13px; color: var(--leise); margin: 0 4px 8px; font-variant-numeric: tabular-nums; }
-.vergleich-text { margin: -2px 4px 0; font-size: 13px; }
+.vergleich-text { margin: -2px 4px 12px; font-size: 13px; }
 .info-leer { color: var(--leise); }
 /* Vergleich eines Monats: zwei Zellen nebeneinander (Vorjahresmonat, Vormonat), Prozent farbig, Basiswert leise */
 .vergleich-raster { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px; margin: 12px 0 2px; }
 .vg-zelle { display: flex; flex-direction: column; gap: 1px; padding: 9px 12px; border-radius: var(--radius-klein); background: var(--feld); min-width: 0; }
 .vg-label { font-size: 12px; color: var(--leise); }
 .vg-wert { font-size: 19px; font-weight: 700; line-height: 1.25; font-variant-numeric: tabular-nums; color: var(--text); }
-.vg-wert.trend-hoch .trend-pfeil, .vg-wert.trend-hoch .trend-zahl { color: var(--gruen); }
-.vg-wert.trend-runter .trend-pfeil, .vg-wert.trend-runter .trend-zahl { color: var(--rot); }
+.vg-wert.trend-hoch { color: var(--gruen); }
+.vg-wert.trend-runter { color: var(--rot); }
 .vg-basis { font-size: 12px; color: var(--leise); font-variant-numeric: tabular-nums; }
 /* Summen eines Zeitraums (Kanäle und Kunden): kompakt nebeneinander */
 .karte.summen { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 8px; padding: 14px 16px; }
 .summe-zelle { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; min-width: 0; }
 .summe-wert { font-size: 20px; font-weight: 700; line-height: 1.2; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
-.summe-zelle .trend { margin-top: 4px; padding: 1px 8px; font-size: 12px; white-space: nowrap; }
+.summe-zelle .trend { margin-top: 2px; }
 .jahr-karte { padding: 16px 16px 14px; }
 .jahr-karte .diagramm { margin: 14px -8px 0; width: calc(100% + 16px); }
 .jahr-karte .legende { margin: 8px 0 0; }
 .jahr-karte .trend-zeile { align-items: center; }
 .jahr-karte .trend-hinweis { font-size: 12px; }
-.kachel .trend-zeile { margin-top: 8px; }
 #verkaeufe-inhalt > h3 .h3-zusatz { margin-left: 6px; font-weight: 500; text-transform: none; letter-spacing: 0; }
 
 /* Kunden: ganze Zeile tippbar (öffnet die Details), Kanal klein darunter */
@@ -540,13 +545,12 @@ h3.gruppe { font-size: 13px; font-weight: 600; color: var(--leise); text-transfo
 .zeilen-knopf:active { opacity: 0.55; }
 .zeilen-knopf:focus-visible { outline: 2px solid var(--akzent); outline-offset: 2px; border-radius: 8px; }
 .rang-unter { display: block; font-size: 13px; color: var(--leise); margin-top: 1px; overflow-wrap: anywhere; }
-.rang-unter .badge { margin-left: 6px; }
+.rang-unter .badge { margin-left: 6px; padding: 0 7px; font-size: 11px; line-height: 16px; vertical-align: 1px; }
 /* Lange Kundennamen: höchstens zwei Zeilen, deutsche Silbentrennung, der volle Name steht im Kunden-Blatt */
 .kunde-name { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; overflow-wrap: break-word;
   -webkit-hyphens: auto; hyphens: auto; }
 .rang-titel .badge, .rang-titel .trend { margin-left: 8px; vertical-align: 1px; }
-.rang-titel .trend { padding: 1px 8px; font-size: 12px; }
-.chevron.klein { font-size: 22px; margin-left: -4px; }
+.chevron.klein { margin-left: -4px; }
 .badge-neu { background: var(--akzent-weich); color: var(--akzent); }
 .knopf.mehr-knopf { min-height: 44px; margin: -4px 0 12px; font-size: 15px; background: transparent; color: var(--akzent); }
 .knopf.mehr-knopf:active { background: var(--karte); }
@@ -554,6 +558,7 @@ h3.gruppe { font-size: 13px; font-weight: 600; color: var(--leise); text-transfo
 /* Ranglisten: Kanäle (mit Anteil) und Top 10 Kunden (mit Platz) */
 .rang-zeile { display: flex; align-items: center; gap: 12px; }
 .liste > li.rang-zeile { padding: 12px 0; }
+.liste > li.rang-zeile.kunde-zeile { padding: 0; }
 .rang-nr {
   flex: none;
   width: 26px;
@@ -572,15 +577,14 @@ h3.gruppe { font-size: 13px; font-weight: 600; color: var(--leise); text-transfo
 .rang-titel { display: block; font-size: 16px; overflow-wrap: anywhere; }
 .rang-name .anteil { margin-top: 8px; }
 .rang-zahlen { display: flex; flex-direction: column; align-items: flex-end; text-align: right; }
+/* Ranglisten mit Anteils-Balken: rechte Spalte gleich breit, damit alle Balken gleich lang sind */
+.rangliste .rang-zahlen { min-width: 132px; }
 .rang-flaschen { font-size: 15px; font-weight: 600; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .rang-umsatz { font-size: 13px; color: var(--leise); white-space: nowrap; font-variant-numeric: tabular-nums; }
 
 /* Lager-Karten */
 .karte-kopf { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 0 0 12px; }
 .karte-kopf h3 { margin: 0; font-size: 17px; font-weight: 600; overflow-wrap: anywhere; }
-.lager-werte { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
-.lager-werte > div { min-width: 0; }
-.lager-datum { margin: 6px 0 4px; font-size: 22px; font-weight: 600; line-height: 1.2; font-variant-numeric: tabular-nums; }
 /* Bestand gesamt (Lager): Zahl, geschätzt/gezählt, wie viele Lager gezählt, Verteilung als geteilter Balken */
 .gesamt-karte .karte-kopf { margin-bottom: 4px; }
 .gesamt-karte .kachel-zusatz { margin-top: 4px; }
@@ -619,11 +623,10 @@ h3.gruppe { font-size: 13px; font-weight: 600; color: var(--leise); text-transfo
 .rechenweg-leer { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--linie); }
 
 /* Noch nicht gezählte Lager: eine Zeile pro Standort mit „Inventur eintragen“ */
-.offen-text { margin: 4px 4px 8px; }
 .liste > li.offen-zeile { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 0; }
 .offen-zeile .zeile-name { min-width: 0; overflow-wrap: anywhere; }
 
-/* Verlauf: Symbol | Art, Menge, „Datum · von … · Kommentar“ | Storno */
+/* Verlauf: Symbol | Art, Menge und Ort, „Datum von …“, Kommentar | Storno */
 .liste > li.verlauf-zeile { display: grid; grid-template-columns: 32px 1fr auto; align-items: center; gap: 12px; padding: 12px 0; }
 .verlauf-icon {
   width: 32px;
@@ -636,6 +639,7 @@ h3.gruppe { font-size: 13px; font-weight: 600; color: var(--leise); text-transfo
   color: var(--text);
 }
 .verlauf-icon .icon { width: 18px; height: 18px; }
+.verlauf-icon.rechnung-icon { color: var(--akzent); }
 .verlauf-mitte { min-width: 0; }
 .verlauf-kopf { display: flex; align-items: center; gap: 8px; font-size: 15px; line-height: 1.3; }
 .verlauf-art { font-weight: 600; }
@@ -672,7 +676,7 @@ button.klapp-kopf:active { transform: scale(0.98); background: #242426; }
 .klapp-kopf[aria-expanded="true"] .klapp-pfeil { transform: rotate(90deg); }
 .klapp-inhalt { animation: rein 0.22s ease-out; }
 
-/* Verkäufe zuordnen: Kunde | Flaschen, darunter Rechnung · Datum | Standort als kleine Pille (natives select) */
+/* Verkäufe zuordnen: Kunde | Flaschen, darunter „Rechnung vom Datum“ | Standort als kleine Pille (natives select) */
 .liste > li.zuordnen-zeile { padding: 12px 0; }
 .zuordnen-kunde { font-weight: 600; font-size: 15px; }
 .zuordnen-unten { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 4px; }
@@ -788,10 +792,6 @@ select:disabled, input:disabled, textarea:disabled { opacity: 0.5; }
 .chip:focus-visible { outline: 2px solid var(--akzent); outline-offset: 2px; }
 .chip:disabled { opacity: 0.45; }
 /* Zuletzt eingetragen */
-.liste > li.zuletzt-zeile { display: grid; grid-template-columns: 32px 1fr; align-items: center; gap: 12px; padding: 11px 0; }
-.zuletzt-text { min-width: 0; display: flex; flex-direction: column; }
-.zuletzt-text .verlauf-art { font-size: 15px; }
-.zuletzt-zeile.storniert .verlauf-art { color: var(--leise); }
 #zuletzt-inhalt h2 { margin-top: 28px; }
 
 /* Art als Kacheln: Symbol links, Name und Kurztext rechts (zwei Spalten) */
@@ -1074,9 +1074,12 @@ html.luecke-unten .leiste { padding-bottom: 6px; }
 .blatt-kopf::before { content: ''; position: absolute; top: 6px; left: 50%; width: 36px; height: 5px; margin-left: -18px; border-radius: 3px; background: rgba(255, 255, 255, 0.22); }
 .blatt-titel { margin: 4px 0 0; font-family: var(--schrift); font-size: 22px; font-weight: 700; line-height: 1.2; overflow-wrap: break-word;
   -webkit-hyphens: auto; hyphens: auto; }
+.blatt-titel:focus { outline: none; }
 .blatt .rund { background: var(--feld); flex: none; }
 .blatt-inhalt {
-  flex: 1;
+  /* Nicht „flex: 1“: mit Basis 0 fällt der Inhalt in Safari (iPhone) auf null Höhe zusammen, weil das Blatt selbst keine
+     feste Höhe hat. So ist der Inhalt so hoch wie nötig und schrumpft erst an der Höchstgrenze des Blatts (dann scrollt er). */
+  flex: 0 1 auto;
   min-height: 0;
   overflow-y: auto;
   overscroll-behavior: contain;
@@ -1090,13 +1093,14 @@ html.luecke-unten .leiste { padding-bottom: 6px; }
 .blatt-zahl { background: var(--feld); border-radius: var(--radius-klein); padding: 10px 12px; min-width: 0; }
 .blatt-wert { margin: 4px 0 0; font-size: 22px; font-weight: 700; line-height: 1.15; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
 .blatt-euro { margin-top: 2px; color: var(--text); font-weight: 500; white-space: nowrap; }
-.blatt-titel-klein { font-size: 13px; font-weight: 600; color: var(--leise); text-transform: uppercase; letter-spacing: 0.06em; margin: 20px 0 8px; }
+.blatt-titel-klein { font-size: 14px; font-weight: 600; color: var(--leise); margin: 22px 0 8px; }
 .blatt .diagramm.mini { margin: 0 0 4px; }
 .fakten { margin: 16px 0 0; display: grid; gap: 0; }
 .fakt { display: flex; justify-content: space-between; gap: 16px; padding: 11px 0; border-bottom: 1px solid var(--linie); font-size: 15px; }
 .fakt:last-child { border-bottom: 0; }
 .fakt dt { color: var(--leise); }
 .fakt dd { margin: 0; text-align: right; font-weight: 600; font-variant-numeric: tabular-nums; }
+.fakt-unter { display: block; margin-top: 1px; font-size: 13px; font-weight: 400; color: var(--leise); }
 .blatt-liste > li { padding: 11px 0; font-size: 15px; }
 
 /* Rückfrage (iOS-Hinweisfenster) */
@@ -1147,29 +1151,24 @@ html.luecke-unten .leiste { padding-bottom: 6px; }
 .update-banner:active { transform: scale(0.98); }
 .update-banner:focus-visible { outline: 2px solid var(--akzent); outline-offset: 2px; }
 
-/* Trends (Verkäufe und Übersicht): Pfeil und Zahl farbig, Rest grau; neutraler Grund */
+/* Trends (Verkäufe, Kunden, Start): nur die Zahl farbig („+12 %“), der Rest grau; kein Pfeil, kein Hintergrund */
 .trend-zeile { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0 0; }
 .trend {
-  display: inline-flex;
-  align-items: baseline;
-  gap: 3px;
-  padding: 3px 10px;
-  border-radius: 999px;
-  background: var(--feld);
+  display: inline-block;
   color: var(--leise);
   font-size: 13px;
   font-weight: 600;
   line-height: 1.35;
+  white-space: nowrap;
   font-variant-numeric: tabular-nums;
 }
-.trend-pfeil { font-weight: 700; }
-.trend-wozu { font-weight: 500; color: var(--leise); }
-.trend-hoch .trend-pfeil, .trend-hoch .trend-zahl { color: var(--gruen); }
-.trend-runter .trend-pfeil, .trend-runter .trend-zahl { color: var(--rot); }
+.trend-wozu { font-weight: 400; color: var(--leise); }
+.trend-hoch .trend-zahl { color: var(--gruen); }
+.trend-runter .trend-zahl { color: var(--rot); }
 .trend-gleich .trend-zahl { color: var(--text); }
 .trend-hinweis { font-size: 13px; color: var(--leise); line-height: 1.35; }
 
-.chevron { flex: none; font-size: 28px; line-height: 1; color: var(--leise); }
+.chevron { flex: none; font-size: 22px; line-height: 1; color: var(--leise); }
 
 /* Ziehen zum Aktualisieren: runder Knopf mit Pfeil oben über der Ansicht (dreht sich bis zur Schwelle), beim Laden ein
    Kreisel. Den Inhalt bewegt nur das native Gummiband von iOS, nicht wir. */

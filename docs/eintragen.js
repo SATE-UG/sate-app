@@ -166,7 +166,7 @@
 
   function auswahlFuellen(sel, liste) {
     const alt = sel.value;
-    sel.replaceChildren(h('option', { value: '', text: '– bitte wählen –' }), ...liste.map((o) => h('option', { value: o, text: o })));
+    sel.replaceChildren(h('option', { value: '', text: 'Bitte wählen' }), ...liste.map((o) => h('option', { value: o, text: o })));
     sel.value = liste.indexOf(alt) >= 0 ? alt : '';
   }
 
@@ -279,13 +279,12 @@
     ziel.replaceChildren(...[
       h('h2', {}, h('strong', { text: 'Zuletzt' }), ' eingetragen'),
       zustand,
-      h('div', { class: 'karte liste-karte' }, h('ul', { class: 'liste', role: 'list' }, liste.map((e) => h('li', { class: 'zuletzt-zeile' + (e.storniert ? ' storniert' : '') },
+      h('div', { class: 'karte liste-karte' }, h('ul', { class: 'liste', role: 'list' }, liste.map((e) => h('li', { class: 'aktiv-zeile' + (e.storniert ? ' storniert' : '') },
         h('span', { class: 'verlauf-icon' }, S.icon(ART_ICON[e.art] || 'info')),
-        h('span', { class: 'zuletzt-text' },
-          h('span', { class: 'verlauf-art', text: e.art + (e.storniert ? ' (storniert)' : '') }),
-          h('span', { class: 'nebenzeile', text: [typeof e.flaschen === 'number' ? H.zahlFormat(e.flaschen, 0) + ' Fl.' : '',
-            e.art === 'Umlagerung' ? e.standort + ' → ' + (e.nach || '?') : e.standort, H.datumKurz(e.datum), e.wer ? 'von ' + e.wer : '']
-            .filter(Boolean).join(' · ') })))))),
+        h('span', { class: 'aktiv-text' },
+          h('span', { class: 'aktiv-titel' }, e.art || '?', e.storniert ? h('span', { class: 'badge badge-storno', text: 'storniert' }) : null),
+          h('span', { class: 'nebenzeile', text: e.art === 'Umlagerung' ? e.standort + ' → ' + (e.nach || '?') : e.standort })),
+        S.aktivRechts(e))))),
       h('button', { type: 'button', class: 'knopf mehr-knopf', text: 'Ganzer Verlauf im Lager', onclick: () => { S.ansichtZeigen('lager'); } })].filter(Boolean));
   }
   S.zuletztZeigen = zuletztZeigen;
@@ -332,7 +331,7 @@
     if (e.art === 'ok') {
       // Standort fürs nächste Mal merken (nicht bei Abfüllung, die geht immer ins Hauptlager)
       if (b.art !== 'Abfüllung' && S.speicher) S.speicher.schreiben(K_STANDORT, b.standort);
-      S.melden((e.daten.wiederholt ? 'War schon gespeichert: ' : 'Gespeichert: ') + H.buchungText(b) + '.', false, e.daten.hinweise);
+      S.melden((e.daten.wiederholt ? 'War schon gespeichert. ' : 'Gespeichert. ') + H.buchungText(b) + '.', false, e.daten.hinweise);
       leeren();
       S.nachOben('eintragen');
       if (typeof S.verlaufLaden === 'function') S.verlaufLaden(); // „Zuletzt eingetragen“ auffrischen
