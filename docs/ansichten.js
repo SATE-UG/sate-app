@@ -179,9 +179,7 @@
     return h('button', {
       type: 'button', class: 'karte trend-karte',
       onclick: () => {
-        const a = auswertung();
         Z.monatWahl = t.monat;
-        Z.jahrWahl = a && a.jv && t.monat.slice(0, 4) !== String(a.jv.jahr) ? 'vorjahr' : 'dieses';
         Z.diagramm = 'flaschen';
         S.ansichten.verkaeufe();
         S.ansichtZeigen('verkaeufe');
@@ -445,20 +443,30 @@
 
   const GM = { breite: 340, hoehe: 184, links: 30, unten: 20, oben: 20 };
 
-  /** Gezeigtes Jahr im Monatsdiagramm (Umschalter): dieses Jahr gegen Vorjahr oder Vorjahr gegen das Jahr davor. */
-  function monatsJahr(a) {
-    const vorjahr = Z.jahrWahl === 'vorjahr' && a.jvVorjahr;
-    return { jv: vorjahr ? a.jvVorjahr : a.jv, haupt: vorjahr ? 'Vorjahr' : 'Dieses Jahr', vergleich: vorjahr ? 'Jahr davor' : 'Vorjahr' };
+  /**
+   * Gewählter Monat als `JJJJ-MM`: gemerkt (dieses Jahr oder Vorjahr), sonst der letzte volle Monat – im Januar also der
+   * Dezember des Vorjahrs.
+   */
+  function gewaehlterMonatText(a) {
+    const jahr = a.jv.jahr;
+    if (typeof Z.monatWahl === 'string' && /^\d{4}-(0[1-9]|1[0-2])$/.test(Z.monatWahl)) {
+      const j = Number(Z.monatWahl.slice(0, 4));
+      if (j === jahr || (j === jahr - 1 && a.jvVorjahr)) return Z.monatWahl;
+    }
+    const letzter = H.monatPlus(a.heute.slice(0, 7), -1);
+    return letzter.slice(0, 4) === String(jahr) || a.jvVorjahr ? letzter : jahr + '-01';
   }
 
   /**
-   * Gewählter Monat (Index 0–11): gemerkt als `JJJJ-MM` (die Monatsnummer gilt auch im anderen Jahr), sonst der letzte
-   * volle Monat (im Januar der Januar, im Vorjahr der Dezember).
+   * Gezeigtes Jahr im Monatsdiagramm = das Jahr des gewählten Monats: normal dieses Jahr gegen das Vorjahr; blättert man
+   * vor den Januar zurück (oder ist im Januar noch kein Monat voll), das Vorjahr gegen das Jahr davor. Kein Umschalter
+   * (Mark 2026-11-09: zwei Ansichten waren doppelt, die Vorjahresbalken stehen ja schon daneben).
    */
-  function gewaehlterMonat(jv) {
-    if (typeof Z.monatWahl === 'string' && /^\d{4}-(0[1-9]|1[0-2])$/.test(Z.monatWahl)) return Number(Z.monatWahl.slice(5, 7)) - 1;
-    const i = jv.monate.findIndex((m) => m.laufend);
-    return i < 0 ? 11 : Math.max(0, i - 1);
+  function monatsJahr(a) {
+    const text = gewaehlterMonatText(a);
+    const vorjahr = !!a.jvVorjahr && text.slice(0, 4) === String(a.jvVorjahr.jahr);
+    return { jv: vorjahr ? a.jvVorjahr : a.jv, haupt: vorjahr ? 'Vorjahr' : 'Dieses Jahr', vergleich: vorjahr ? 'Jahr davor' : 'Vorjahr',
+      vorjahr: vorjahr, index: Number(text.slice(5, 7)) - 1 };
   }
 
   function monatInfo(info, a, mj, i, g) {
@@ -475,6 +483,7 @@
     const vj = m.vorjahr ? mj.vergleich + ' ' + (m.laufend ? 'ganzer Monat ' : '') + mitEinheit(m.vorjahr[g], g) : mj.vergleich + ' ohne Daten';
     info.replaceChildren(
       h('p', { class: 'kachel-label' }, H.monatName(m.monat),
+        mj.vorjahr ? h('span', { class: 'badge klein-badge', text: 'Vorjahr' }) : null,
         m.laufend ? h('span', { class: 'badge klein-badge', text: 'bisher' }) : null,
         m.zukunft ? h('span', { class: 'badge klein-badge', text: 'kommt noch' }) : null),
       m.dieses ? grosseZahl('info-wert', m.dieses[g], g) : h('p', { class: 'info-wert info-leer', text: '–' }),
@@ -504,7 +513,7 @@
     jv.monate.forEach((m, i) => {
       const x0 = GM.links + i * r.platz;
       const mitte = x0 + r.platz / 2;
-      const gewaehlt = i === gewaehlterMonat(jv);
+      const gewaehlt = i === mj.index;
       const gr = s('g', { class: 'paar' + (m.laufend ? ' laufend' : '') + (gewaehlt ? ' gewaehlt' : '') });
       gr.append(s('rect', { x: rund(x0 + 1), y: GM.oben - 8, width: rund(r.platz - 2), height: rund(r.basis - GM.oben + 8), rx: 6, class: 'spalte' }));
       const balken = (wert, x, klasse) => {
@@ -550,21 +559,34 @@
 
   function monateKarte(a, g) {
     const mj = monatsJahr(a);
-    let i = gewaehlterMonat(mj.jv);
+    let i = mj.index;
     const info = h('div', { class: 'balken-info', 'aria-live': 'polite' });
     monatInfo(info, a, mj, i, g);
     const svg = monatsDiagramm(a, mj, g, info);
+    // Über den Jahreswechsel blättern: Jahr wechseln, alles neu zeichnen, Fokus zurück auf denselben Pfeil
+    const ueberJahr = (monat, label) => {
+      Z.monatWahl = monat;
+      S.ansichten.verkaeufe();
+      const k = document.querySelector('#verkaeufe-inhalt .monat-schritte [aria-label="' + label + '"]');
+      if (k && !k.disabled) k.focus({ preventScroll: true });
+      // Die Live-Region wurde mit neu gezeichnet: den neuen Monat ausdrücklich ansagen (VoiceOver)
+      S.ansagen(H.monatName(monat) + ' ' + monat.slice(0, 4) + (monat.slice(0, 4) === String(a.jv.jahr) ? ', dieses Jahr' : ', Vorjahr'));
+    };
     // Pfeile ‹ › zum Blättern: große Tippflächen (die Monate im Diagramm sind bei 12 Spalten nur ~25 px breit)
-    const zurueck = h('button', { type: 'button', class: 'rund', 'aria-label': 'Monat davor', onclick: () => svg.waehle(i - 1) },
-      h('span', { class: 'pfeil-text', 'aria-hidden': 'true', text: '‹' }));
-    const weiter = h('button', { type: 'button', class: 'rund', 'aria-label': 'Monat danach', onclick: () => svg.waehle(i + 1) },
-      h('span', { class: 'pfeil-text', 'aria-hidden': 'true', text: '›' }));
-    const knoepfe = (j) => { i = j; zurueck.disabled = j <= 0; weiter.disabled = j >= mj.jv.monate.length - 1; };
+    const zurueck = h('button', { type: 'button', class: 'rund', 'aria-label': 'Monat davor',
+      onclick: () => (i > 0 ? svg.waehle(i - 1) : !mj.vorjahr && a.jvVorjahr ? ueberJahr(a.jvVorjahr.jahr + '-12', 'Monat davor') : null) },
+    h('span', { class: 'pfeil-text', 'aria-hidden': 'true', text: '‹' }));
+    const weiter = h('button', { type: 'button', class: 'rund', 'aria-label': 'Monat danach',
+      onclick: () => (i < 11 ? svg.waehle(i + 1) : mj.vorjahr ? ueberJahr(a.jv.jahr + '-01', 'Monat danach') : null) },
+    h('span', { class: 'pfeil-text', 'aria-hidden': 'true', text: '›' }));
+    const knoepfe = (j) => {
+      i = j;
+      zurueck.disabled = j <= 0 && (mj.vorjahr || !a.jvVorjahr);
+      weiter.disabled = j >= 11 && !mj.vorjahr;
+    };
     svg.nachher = knoepfe;
     knoepfe(i);
     return [
-      a.jvVorjahr ? umschalter('Jahr', [['dieses', 'Dieses Jahr'], ['vorjahr', 'Vorjahr']], Z.jahrWahl === 'vorjahr' ? 'vorjahr' : 'dieses',
-        (w) => { Z.jahrWahl = w; S.ansichten.verkaeufe(); }) : null,
       h('section', { class: 'karte diagramm-karte', 'aria-label': 'Pro Monat, ' + mj.haupt },
         h('div', { class: 'monat-schritte' }, zurueck, weiter),
         info,

@@ -31,8 +31,7 @@
       verlaufVeraltet: true,
       diagramm: 'flaschen',
       zeitraum: 'jahr',
-      monatWahl: null,   // Verkäufe: gewählter Monat im Monatsdiagramm (`JJJJ-MM`), null = letzter voller Monat
-      jahrWahl: 'dieses', // Verkäufe: Monatsdiagramm für 'dieses' Jahr oder das 'vorjahr'
+      monatWahl: null,   // Verkäufe: gewählter Monat (`JJJJ-MM`, auch im Vorjahr), null = letzter voller Monat
       alleKunden: false, // Verkäufe: alle Kunden statt Top 10
       alleNachfassen: false,
       zuordnenOffen: false, // Lager: „Verkäufe zuordnen“ aufgeklappt?
