@@ -300,8 +300,9 @@ function spaeterErfasst_(a, b) {
  * `verkaeufe`: [{zeile, monat, datum, kanal, kunde, flaschen, standort}] (verkaeufeLesen).
  * `heute` (`JJJJ-MM-TT`, optional): Log-Zeilen und Verkäufe mit (Lager)datum danach zählen noch nicht (Hinweis);
  * Altzeilen ohne Rechnungsdatum erst, wenn ihr Monat nach dem laufenden liegt.
- * Rückgabe { standorte: [{standort, bestand, letzteInventur, gezaehlt, schwund}], hinweise }.
+ * Rückgabe { standorte: [{standort, bestand, letzteInventur, gezaehlt, schwund, seitInventur}], hinweise }.
  * bestand/letzteInventur/schwund = null, solange es keine Inventur gibt (Schwund auch bei der ersten Inventur).
+ * seitInventur = { verkauft, zugaenge, abgaenge } nach dem Inventurtag (Umlagerung hin = Zugang, weg = Abgang).
  */
 function lagerBerechnen(buchungen, verkaeufe, e, heute) {
   const hinweise = [];
@@ -320,11 +321,12 @@ function lagerBerechnen(buchungen, verkaeufe, e, heute) {
       return;
     }
     if (b.art === 'Umlagerung') {
-      bewegungen[b.standort].push({ datum: b.datum, menge: -b.flaschen });
-      bewegungen[b.nach].push({ datum: b.datum, menge: b.flaschen });
+      bewegungen[b.standort].push({ datum: b.datum, menge: -b.flaschen, art: 'abgang' });
+      bewegungen[b.nach].push({ datum: b.datum, menge: b.flaschen, art: 'zugang' });
       return;
     }
-    bewegungen[b.standort].push({ datum: b.datum, menge: LAGER_ARTEN[b.art] * b.flaschen });
+    const menge = LAGER_ARTEN[b.art] * b.flaschen;
+    bewegungen[b.standort].push({ datum: b.datum, menge: menge, art: menge >= 0 ? 'zugang' : 'abgang' });
   });
   const unbekannt = Object.create(null);
   let spaeter = 0;
@@ -334,22 +336,33 @@ function lagerBerechnen(buchungen, verkaeufe, e, heute) {
     if (!bewegungen[s]) { unbekannt[s] = (unbekannt[s] || 0) + 1; return; }
     // Altliste ohne Rechnungsdatum (Lagerdatum = Monatsende): erst ein Monat nach dem laufenden ist Zukunft
     if (v.datum ? zukunft(datum) : !!heute && !!v.monat && v.monat > heute.slice(0, 7)) { spaeter++; return; }
-    if (datum) bewegungen[s].push({ datum: datum, menge: -v.flaschen });
+    if (datum) bewegungen[s].push({ datum: datum, menge: -v.flaschen, art: 'verkauf' });
   });
   Object.keys(unbekannt).forEach((s) => hinweise.push('Verkäufe: Standort „' + s + '“ unbekannt (' + unbekannt[s] +
     ' Zeilen), zählt bei keinem Lager.'));
   if (spaeter) hinweise.push('Verkäufe: ' + spaeter + (spaeter === 1 ? ' Zeile' : ' Zeilen') + ' mit Datum in der Zukunft, zählt noch nicht.');
 
   const summe = (s, von, bis) => bewegungen[s].reduce((x, w) => x + ((von === null || w.datum > von) && (bis === null || w.datum <= bis) ? w.menge : 0), 0);
+  // Seit der letzten Inventur, aufgeteilt (für „So kommt die Zahl zustande“): verkauft und abgang positiv
+  const seit = (s, von) => {
+    const t = { verkauft: 0, zugaenge: 0, abgaenge: 0 };
+    bewegungen[s].forEach((w) => {
+      if (w.datum <= von) return;
+      if (w.art === 'verkauf') t.verkauft -= w.menge;
+      else if (w.art === 'zugang') t.zugaenge += w.menge;
+      else t.abgaenge -= w.menge;
+    });
+    return { verkauft: runde_(t.verkauft, 2), zugaenge: runde_(t.zugaenge, 2), abgaenge: runde_(t.abgaenge, 2) };
+  };
   const standorte = e.standorte.map((s) => {
     const tage = Object.keys(inventuren[s]).sort();
-    if (!tage.length) return { standort: s, bestand: null, letzteInventur: null, gezaehlt: null, schwund: null };
+    if (!tage.length) return { standort: s, bestand: null, letzteInventur: null, gezaehlt: null, schwund: null, seitInventur: null };
     const letzte = inventuren[s][tage[tage.length - 1]];
     const vorige = tage.length > 1 ? inventuren[s][tage[tage.length - 2]] : null;
     const schwund = vorige ? runde_(vorige.flaschen + summe(s, vorige.datum, letzte.datum) - letzte.flaschen, 2) : null;
     return {
       standort: s, bestand: runde_(letzte.flaschen + summe(s, letzte.datum, null), 2), letzteInventur: letzte.datum,
-      gezaehlt: letzte.flaschen, schwund: schwund,
+      gezaehlt: letzte.flaschen, schwund: schwund, seitInventur: seit(s, letzte.datum),
     };
   });
   return { standorte: standorte, hinweise: hinweise };

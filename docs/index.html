@@ -78,14 +78,15 @@
 
       <div id="ansichten" class="ansichten">
         <section id="ansicht-uebersicht" class="ansicht" role="tabpanel" aria-labelledby="reiter-uebersicht">
-          <h1 class="titel"><strong>Hallo</strong> <span id="name"></span></h1>
+          <h1 class="titel titel-gruss"><strong>Hallo</strong> <span id="name"></span></h1>
+          <p id="datum-zeile" class="datum-zeile"></p>
           <div id="uebersicht-inhalt"></div>
           <!-- Abmelden klein und gedimmt ganz unten (app.js hängt die Zeile hinter die Fußzeile) -->
           <p id="abmelden-zeile" class="abmelden-zeile"><button id="abmelden" type="button" class="text-link">Abmelden</button></p>
         </section>
 
         <section id="ansicht-verkaeufe" class="ansicht" role="tabpanel" aria-labelledby="reiter-verkaeufe">
-          <h1 class="titel"><strong>Verkäufe</strong> pro Monat</h1>
+          <h1 class="titel"><strong>Verkäufe</strong> &amp; Kunden</h1>
           <div id="verkaeufe-inhalt"></div>
         </section>
 
@@ -197,6 +198,17 @@
       <button id="dialog-ja" type="button" class="knopf haupt">Ja</button>
       <button id="dialog-nein" type="button" class="knopf">Abbrechen</button>
     </div>
+  </dialog>
+
+  <!-- Blatt von unten (Kunden-Details u. a.), Inhalt baut kern.js (S.blattZeigen) -->
+  <dialog id="blatt" class="blatt" aria-labelledby="blatt-titel">
+    <div class="blatt-kopf">
+      <h2 id="blatt-titel" class="blatt-titel"></h2>
+      <button id="blatt-zu" type="button" class="rund" aria-label="Schließen">
+        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M6.5 6.5l11 11M17.5 6.5l-11 11"/></svg>
+      </button>
+    </div>
+    <div id="blatt-inhalt" class="blatt-inhalt"></div>
   </dialog>
 
   <script src="config.js"></script>

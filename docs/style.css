@@ -204,7 +204,25 @@ h2 {
 .bestellung { padding: 18px 16px 16px; }
 .bestellung.stufe-jetzt { box-shadow: inset 0 0 0 1.5px var(--akzent); }
 .bestellung-kopf { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin: 0 0 16px; }
-.bestellung-leer-am { font-size: 13px; color: var(--leise); font-variant-numeric: tabular-nums; }
+.bestellung-frist { font-size: 14px; font-weight: 600; color: var(--leise); font-variant-numeric: tabular-nums; }
+.bestellung.stufe-bald .bestellung-frist, .bestellung.stufe-jetzt .bestellung-frist { color: var(--akzent); }
+
+/* Zeitstrahl Heute → Bestellen → Leer (gleich verteilt, Dauer über den Strecken) */
+.zeitstrahl { margin: 2px 0 2px; }
+.zeitstrahl-linie { display: flex; align-items: center; padding-top: 20px; }
+.zs-punkt { flex: none; width: 12px; height: 12px; border-radius: 50%; background: var(--text); }
+.zs-bestellen { background: var(--akzent); }
+.zs-leer { background: transparent; box-shadow: inset 0 0 0 2px var(--leise); }
+.zs-strecke { flex: 1; position: relative; height: 3px; margin: 0 6px; border-radius: 2px; background: rgba(255, 255, 255, 0.85); }
+.strecke-vorlauf { background: repeating-linear-gradient(90deg, var(--leise) 0 5px, transparent 5px 9px); }
+.strecke-vorbei, .bestellung.stufe-bald .strecke-jetzt, .bestellung.stufe-jetzt .strecke-jetzt { background: var(--akzent); }
+.zs-dauer { position: absolute; left: 50%; bottom: 9px; transform: translateX(-50%); font-size: 12px; font-weight: 600; color: var(--leise);
+  white-space: nowrap; font-variant-numeric: tabular-nums; }
+.zeitstrahl-namen { display: flex; justify-content: space-between; gap: 8px; margin-top: 8px; }
+.zs-name { display: flex; flex-direction: column; min-width: 0; font-size: 12px; line-height: 1.3; color: var(--leise); font-variant-numeric: tabular-nums; }
+.zs-name strong { color: var(--text); font-size: 13px; font-weight: 600; }
+.zs-name:nth-child(2) { align-items: center; text-align: center; }
+.zs-name:last-child { align-items: flex-end; text-align: right; }
 .bestellung-datum {
   margin: 4px 0 18px;
   font-size: 40px;
@@ -214,7 +232,33 @@ h2 {
   font-variant-numeric: tabular-nums;
 }
 .bestellung-fehlt { margin: 0 0 16px; font-size: 16px; }
-.bestellung > .kachel-zusatz { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--linie); }
+.bestellung > .kachel-zusatz { margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--linie); }
+.bestellung-datum + .zeitstrahl { margin-top: -6px; }
+
+/* Begrüßung: Datum klein unter „Hallo Mark“ */
+.titel-gruss { margin-bottom: 4px; }
+.datum-zeile { margin: 0 0 18px; font-size: 14px; color: var(--leise); min-height: 1.4em; }
+
+/* Kachel als Knopf (z. B. „Dieses Jahr“ öffnet Verkäufe) */
+.kachel-knopf { display: block; width: 100%; border: 0; color: var(--text); font: inherit; text-align: left; cursor: pointer;
+  -webkit-appearance: none; appearance: none; transition: transform 0.1s ease, background-color 0.1s ease; }
+.kachel-knopf > span { display: block; }
+.kachel-knopf > .kachel-label { display: flex; }
+.kachel-pfeil { margin-left: auto; font-size: 20px; line-height: 0.8; color: var(--leise); }
+.kachel-knopf > .trend-zeile { display: flex; margin-top: 8px; }
+.kachel .trend { white-space: nowrap; font-size: 12px; padding: 3px 8px; }
+.kachel-knopf:active { transform: scale(0.97); background: #242426; }
+.kachel-knopf:focus-visible { outline: 2px solid var(--akzent); outline-offset: 2px; }
+
+/* Sparkline in der Karte „Letzter voller Monat“ */
+.trend-karte-reihe { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; width: 100%; }
+.sparkline { flex: none; width: 104px; height: 36px; margin-bottom: 2px; }
+.sparkline .spark { fill: #6C6C70; }
+.sparkline .spark-gewaehlt { fill: var(--akzent); }
+.sparkline .spark-laufend { fill: rgba(255, 255, 255, 0.1); }
+
+/* Standorte: Inventurdatum und Kisten klein unter dem Namen */
+.zeile-unter { display: block; font-size: 13px; color: var(--leise); margin-top: 2px; font-variant-numeric: tabular-nums; }
 
 .pill {
   display: inline-flex;
@@ -362,21 +406,75 @@ h2 {
 .diagramm .achsen-text, .diagramm .jahr { font-size: 9px; }
 .diagramm .gitter { stroke: var(--linie); stroke-width: 1; }
 .diagramm .achse { stroke: rgba(255, 255, 255, 0.24); stroke-width: 1; }
-.diagramm .balken-flaeche { fill: #7A7A80; transition: fill 0.2s ease; }
-.diagramm .laufend .balken-flaeche { fill: rgba(255, 255, 255, 0.07); stroke: var(--leise); stroke-width: 1; stroke-dasharray: 3 2; }
-.diagramm .gewaehlt .balken-flaeche { fill: var(--akzent); }
-.diagramm .laufend.gewaehlt .balken-flaeche { fill: var(--akzent-weich); stroke: var(--akzent); }
+/* Monate: Balkenpaare Vorjahr (grau, links) | Dieses Jahr (hell, rechts); gewählter Monat gelb mit heller Spalte.
+   Kontraste: #6C6C70 auf #1C1C1E 3,2:1, #D1D1D6 auf #1C1C1E 11:1 (Grafik ≥ 3:1). */
+.diagramm .spalte { fill: transparent; transition: fill 0.2s ease; }
+.diagramm .gewaehlt .spalte { fill: rgba(255, 255, 255, 0.05); }
+.diagramm .balken-vorjahr { fill: #6C6C70; transition: fill 0.2s ease; }
+.diagramm .balken-dieses { fill: #D1D1D6; transition: fill 0.2s ease; }
+.diagramm .laufend .balken-dieses, .diagramm .balken-laufend { fill: rgba(255, 255, 255, 0.08); stroke: #D1D1D6; stroke-width: 1; stroke-dasharray: 3 2; }
+.diagramm .gewaehlt .balken-dieses { fill: var(--akzent); }
+.diagramm .gewaehlt .balken-vorjahr { fill: #8E8E93; }
+.diagramm .laufend.gewaehlt .balken-dieses { fill: var(--akzent-weich); stroke: var(--akzent); }
 .diagramm .gewaehlt .monat { fill: var(--akzent); font-weight: 700; }
+.diagramm .balken-dieses.negativ, .diagramm .balken-vorjahr.negativ { fill: var(--rot); } /* Gutschriften unter der Nulllinie */
+/* Dieses Jahr kumuliert: gelbe Linie mit Fläche, Vorjahr grau gestrichelt */
+.diagramm .linie-dieses { fill: none; stroke: var(--akzent); stroke-width: 2.25; stroke-linejoin: round; stroke-linecap: round; }
+.diagramm .flaeche-dieses { fill: url(#kumul-flaeche); stroke: none; }
+.diagramm .linie-vorjahr { fill: none; stroke: #8E8E93; stroke-width: 1.75; stroke-dasharray: 4 3; stroke-linejoin: round; stroke-linecap: round; }
+.diagramm .punkt-dieses { fill: var(--akzent); stroke: var(--karte); stroke-width: 2; }
+.diagramm .punkt-vorjahr { fill: #8E8E93; stroke: var(--karte); stroke-width: 1.5; }
+.diagramm.mini .mini-wert { font-size: 9px; fill: var(--leise); }
+.diagramm.mini .monat { font-size: 9px; }
 .diagramm .wert-label { fill: var(--akzent); font-size: 10.5px; font-weight: 700; }
 .diagramm .treffer { fill: transparent; cursor: pointer; outline: none; -webkit-tap-highlight-color: transparent; }
 .diagramm .treffer:focus-visible { stroke: var(--text); stroke-width: 1; stroke-dasharray: 2 2; }
 .legende { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; font-size: 12px; color: var(--leise); margin: 8px 8px 0; }
 .zeichen { display: inline-block; width: 10px; height: 10px; margin-right: 6px; border-radius: 3px; vertical-align: -1px; }
-.zeichen-gewaehlt { background: var(--akzent); }
-.zeichen-laufend { border: 1px dashed var(--leise); }
+.zeichen-dieses { background: #D1D1D6; }
+.zeichen-vorjahr { background: #6C6C70; }
+.zeichen-linie, .zeichen-linie-vorjahr { width: 14px; height: 0; border-radius: 0; border-top: 2.25px solid var(--akzent); vertical-align: 3px; }
+.zeichen-linie-vorjahr { border-top: 2px dashed #8E8E93; }
 .legende-tipp { margin-left: auto; }
 
 .zeitraum-text { font-size: 13px; color: var(--leise); margin: 0 4px 8px; font-variant-numeric: tabular-nums; }
+.vergleich-text { margin: -2px 4px 0; font-size: 13px; }
+.info-leer { color: var(--leise); }
+.jahr-karte { padding: 16px 16px 14px; }
+.jahr-karte .diagramm { margin: 14px -8px 0; width: calc(100% + 16px); }
+.jahr-karte .legende { margin: 8px 0 0; }
+.jahr-karte .trend-zeile { align-items: center; }
+.jahr-karte .trend-hinweis { font-size: 12px; }
+.kachel .trend-zeile { margin-top: 8px; }
+#verkaeufe-inhalt > h3 .h3-zusatz { margin-left: 6px; font-weight: 500; text-transform: none; letter-spacing: 0; }
+
+/* Kunden: ganze Zeile tippbar (öffnet die Details), Kanal klein darunter */
+.liste > li.kunde-zeile { padding: 0; }
+.zeilen-knopf {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 0;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  -webkit-appearance: none;
+  appearance: none;
+  transition: opacity 0.1s ease;
+}
+.zeilen-knopf:active { opacity: 0.55; }
+.zeilen-knopf:focus-visible { outline: 2px solid var(--akzent); outline-offset: 2px; border-radius: 8px; }
+.rang-unter { display: block; font-size: 13px; color: var(--leise); margin-top: 1px; overflow-wrap: anywhere; }
+.rang-titel .badge, .rang-titel .trend { margin-left: 8px; vertical-align: 1px; }
+.rang-titel .trend { padding: 1px 8px; font-size: 12px; }
+.chevron.klein { font-size: 22px; margin-left: -4px; }
+.badge-neu { background: var(--akzent-weich); color: var(--akzent); }
+.knopf.mehr-knopf { min-height: 44px; margin: -4px 0 12px; font-size: 15px; background: transparent; color: var(--akzent); }
+.knopf.mehr-knopf:active { background: var(--karte); }
 
 /* Ranglisten: Kanäle (mit Anteil) und Top 10 Kunden (mit Platz) */
 .rang-zeile { display: flex; align-items: center; gap: 12px; }
@@ -798,6 +896,52 @@ html.luecke-unten .leiste { padding-bottom: 6px; }
 .toast-text { min-width: 0; overflow-wrap: anywhere; }
 .toast .nebenzeile { color: var(--leise); font-weight: 400; }
 
+/* Blatt von unten (Kunden-Details): volle Breite, oben abgerundet, Inhalt scrollt für sich */
+.blatt {
+  position: fixed;
+  inset: auto 0 0 0;
+  width: 100%;
+  max-width: 560px;
+  max-height: calc(100% - 44px - env(safe-area-inset-top));
+  margin: 0 auto;
+  padding: 0;
+  border: 0;
+  border-radius: 20px 20px 0 0;
+  background: var(--karte);
+  color: var(--text);
+  font: inherit;
+  box-shadow: 0 -10px 40px rgba(0, 0, 0, 0.6);
+  overflow: hidden;
+}
+.blatt[open] { display: flex; flex-direction: column; animation: blatt-hoch 0.28s cubic-bezier(0.2, 0.8, 0.2, 1); }
+.blatt::backdrop { background: rgba(0, 0, 0, 0.6); }
+.blatt-kopf { flex: none; display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 18px 16px 6px 20px; }
+.blatt-kopf::before { content: ''; position: absolute; top: 6px; left: 50%; width: 36px; height: 5px; margin-left: -18px; border-radius: 3px; background: rgba(255, 255, 255, 0.22); }
+.blatt-titel { margin: 4px 0 0; font-family: var(--schrift); font-size: 22px; font-weight: 700; line-height: 1.2; overflow-wrap: anywhere; }
+.blatt .rund { background: var(--feld); flex: none; }
+.blatt-inhalt {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+  padding: 0 20px calc(24px + env(safe-area-inset-bottom));
+}
+.blatt-inhalt::-webkit-scrollbar { display: none; }
+.blatt-unter { font-size: 14px; color: var(--leise); margin: 0 0 16px; }
+.blatt-zahlen { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 0 0 20px; }
+.blatt-zahl { background: var(--feld); border-radius: var(--radius-klein); padding: 10px 12px; min-width: 0; }
+.blatt-wert { margin: 4px 0 0; font-size: 22px; font-weight: 700; line-height: 1.15; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.blatt-titel-klein { font-size: 13px; font-weight: 600; color: var(--leise); text-transform: uppercase; letter-spacing: 0.06em; margin: 20px 0 8px; }
+.blatt .diagramm.mini { margin: 0 0 4px; }
+.fakten { margin: 16px 0 0; display: grid; gap: 0; }
+.fakt { display: flex; justify-content: space-between; gap: 16px; padding: 11px 0; border-bottom: 1px solid var(--linie); font-size: 15px; }
+.fakt:last-child { border-bottom: 0; }
+.fakt dt { color: var(--leise); }
+.fakt dd { margin: 0; text-align: right; font-weight: 600; font-variant-numeric: tabular-nums; }
+.blatt-liste > li { padding: 11px 0; font-size: 15px; }
+
 /* Rückfrage (iOS-Hinweisfenster) */
 .dialog {
   width: calc(100% - 48px);
@@ -927,6 +1071,7 @@ html.luecke-unten .leiste { padding-bottom: 6px; }
 @keyframes rein { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
 @keyframes hoch { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
 @keyframes auf { from { opacity: 0; transform: scale(0.96); } to { opacity: 1; transform: none; } }
+@keyframes blatt-hoch { from { transform: translateY(100%); } to { transform: none; } }
 @keyframes drehen { to { transform: rotate(360deg); } }
 @keyframes glanz { from { background-position: 100% 0; } to { background-position: -100% 0; } }
 

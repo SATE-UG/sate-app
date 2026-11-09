@@ -98,7 +98,7 @@
     return h('span', { class: 'trend trend-' + r },
       h('span', { class: 'trend-pfeil', 'aria-hidden': 'true', text: r === 'hoch' ? '↑' : r === 'runter' ? '↓' : '→' }),
       h('span', { class: 'trend-zahl', text: H.prozentText(v.prozent) }),
-      h('span', { class: 'trend-wozu', text: ' ' + wozu }));
+      wozu ? h('span', { class: 'trend-wozu', text: ' ' + wozu }) : null);
   }
 
   /** Trend-Zeile für einen Monat (Vormonat, Vorjahresmonat). Laufender Monat: nur Hinweis, kein unfairer Vergleich. */
@@ -114,18 +114,32 @@
 
   // Übersicht ---------------------------------------------------------------------------------------------------
 
-  /** Balken „Reichweite“ (0–12 Monate) mit Strich bei Vorlauf + Puffer. */
-  function reichweiteLeiste(b, stufe) {
-    const w = H.reichweiteBalken(b.reichweite, b.vorlaufMonate, b.pufferWochen);
-    if (!w) return null;
-    return h('div', { class: 'reichweite' },
-      h('div', { class: 'reichweite-text' },
-        h('span', {}, 'Reichweite ', h('strong', { text: H.zahlFormat(b.reichweite, 1) + ' Monate' })),
-        h('span', { class: 'reichweite-legende' }, h('span', { class: 'grenze-zeichen', 'aria-hidden': 'true' }), 'Vorlauf + Puffer')),
-      h('div', { class: 'fortschritt stufe-' + (stufe || 'leer'), 'aria-hidden': 'true' },
-        prozent(h('div', { class: 'fortschritt-fuell' }), w.fuell),
-        prozent(h('div', { class: 'fortschritt-grenze' }), w.grenze, 'left')),
-      h('div', { class: 'reichweite-skala', 'aria-hidden': 'true' }, h('span', { text: 'heute' }), h('span', { text: '12 Monate' })));
+  /**
+   * Zeitstrahl in der Bestell-Karte: Heute → Spätestens bestellen → Leer (nach Datum geordnet, gleich verteilt), auf den
+   * Strecken dazwischen die Dauer. Vor dem Bestelltermin ist die erste Strecke hell, danach (überfällig) gelb.
+   */
+  function zeitstrahl(b, heute) {
+    if (!H.datumGueltig(b.leerAm) || !H.datumGueltig(b.spaetestensBestellen) || !H.datumGueltig(heute)) return null;
+    const punkte = [
+      { art: 'heute', name: 'Heute', datum: heute },
+      { art: 'bestellen', name: 'Bestellen', datum: b.spaetestensBestellen },
+      { art: 'leer', name: 'Leer', datum: b.leerAm },
+    ].sort((x, y) => (x.datum < y.datum ? -1 : x.datum > y.datum ? 1 : (x.art === 'heute' ? -1 : 1)));
+    const strecken = [0, 1].map((i) => {
+      const von = punkte[i];
+      const bis = punkte[i + 1];
+      const tage = H.tageZwischen(von.datum, bis.datum);
+      const klasse = von.art === 'heute' ? 'strecke-jetzt' : bis.art === 'heute' ? 'strecke-vorbei' : 'strecke-vorlauf';
+      return { klasse: klasse, text: H.dauerText(tage) };
+    });
+    return h('div', { class: 'zeitstrahl', 'aria-hidden': 'true' },
+      h('div', { class: 'zeitstrahl-linie' },
+        punkte.map((p, i) => [
+          h('span', { class: 'zs-punkt zs-' + p.art }),
+          i < 2 ? h('span', { class: 'zs-strecke ' + strecken[i].klasse }, h('span', { class: 'zs-dauer', text: strecken[i].text })) : null,
+        ])),
+      h('div', { class: 'zeitstrahl-namen' }, punkte.map((p) => h('span', { class: 'zs-name zs-name-' + p.art },
+        h('strong', { text: p.name }), h('span', { text: H.datumKurz(p.datum) })))));
   }
 
   /** Monate vor dem Diagramm-Zeitraum (für den Vorjahresmonat), fehlt bei älteren Server-Versionen. */
@@ -134,7 +148,23 @@
     return Array.isArray(v) ? v : null;
   }
 
-  /** Karte „Letzter voller Monat: N Flaschen, ±x % …“; antippen öffnet Verkäufe mit diesem Monat. */
+  /** Kleine Balken (Sparkline) der Monate, Monat `i` gelb, der laufende gestrichelt. */
+  function sparkline(monate, i) {
+    const B = 104;
+    const HH = 40;
+    const max = Math.max.apply(null, [1].concat(monate.map((m) => (typeof m.flaschen === 'number' ? m.flaschen : 0))));
+    const platz = B / monate.length;
+    const bb = Math.max(platz - 2.5, 2);
+    return s('svg', { viewBox: '0 0 ' + B + ' ' + HH, class: 'sparkline', 'aria-hidden': 'true', focusable: 'false' },
+      monate.map((m, j) => {
+        const hh = Math.max((Math.max(m.flaschen || 0, 0) / max) * (HH - 2), m.flaschen > 0 ? 2 : 1);
+        return s('rect', { x: Math.round((j * platz + (platz - bb) / 2) * 100) / 100, y: Math.round((HH - hh) * 100) / 100,
+          width: Math.round(bb * 100) / 100, height: Math.round(hh * 100) / 100, rx: Math.min(1.5, bb / 2),
+          class: j === i ? 'spark-gewaehlt' : j === monate.length - 1 ? 'spark-laufend' : 'spark' });
+      }));
+  }
+
+  /** Karte „Letzter voller Monat: N Flaschen, ±x % …“ mit Sparkline; antippen öffnet Verkäufe mit diesem Monat. */
   function letzterMonatKarte(monate) {
     if (monate.length < 2) return null;
     const i = monate.length - 2;
@@ -143,62 +173,101 @@
     const vergleich = t.vorjahr || t.vormonat;
     return h('button', {
       type: 'button', class: 'karte trend-karte',
-      onclick: () => { Z.balken = i; Z.diagramm = 'flaschen'; S.ansichten.verkaeufe(); S.ansichtZeigen('verkaeufe'); },
+      onclick: () => {
+        const a = auswertung();
+        Z.monatWahl = t.monat;
+        Z.jahrWahl = a && a.jv && t.monat.slice(0, 4) !== String(a.jv.jahr) ? 'vorjahr' : 'dieses';
+        Z.diagramm = 'flaschen';
+        S.ansichten.verkaeufe();
+        S.ansichtZeigen('verkaeufe');
+        const ziel = S.el('monate-anker');
+        if (ziel) ziel.scrollIntoView({ block: 'start', behavior: 'smooth' });
+      },
     },
     h('span', { class: 'trend-karte-text' },
       h('span', { class: 'kachel-label', text: 'Letzter voller Monat · ' + H.monatFormat(t.monat, true) }),
-      h('span', { class: 'trend-karte-wert' }, H.zahlFormat(t.wert, 0), h('span', { class: 'einheit', text: t.wert === 1 ? ' Flasche' : ' Flaschen' })),
+      h('span', { class: 'trend-karte-reihe' },
+        h('span', { class: 'trend-karte-wert' }, H.zahlFormat(t.wert, 0), h('span', { class: 'einheit', text: t.wert === 1 ? ' Flasche' : ' Flaschen' })),
+        sparkline(monate, i)),
       vergleich
         ? h('span', { class: 'trend-zeile' }, trendChip(vergleich, t.vorjahr ? 'zum Vorjahresmonat' : 'zum Vormonat'))
         : h('span', { class: 'trend-zeile trend-hinweis', text: 'Kein Vergleich möglich.' })),
     h('span', { class: 'chevron', 'aria-hidden': 'true', text: '›' }));
   }
 
+  /** Kachel als Knopf (öffnet eine Ansicht); sonst wie kachel(). */
+  function kachelKnopf(inhalt, beiKlick, vorlesen) {
+    return h('button', { type: 'button', class: 'kachel kachel-knopf', onclick: beiKlick, 'aria-label': vorlesen }, inhalt);
+  }
+
   S.ansichten.uebersicht = function () {
     S.el('name').textContent = Z.name || '';
     const ziel = leeren('uebersicht-inhalt');
     const u = Z.daten;
+    S.el('datum-zeile').textContent = u && H.datumGueltig(u.heute) ? H.wochentagText(u.heute) : '';
     if (!u) return platzhalter(ziel, ['gross', 'reihe', 'reihe', 'zeile']);
     const k = u.kennzahlen;
     const b = u.bestellung;
     const st = H.bestellStufe(b.status);
     const stufe = st.stufe || 'leer';
+    const a = auswertung();
+    const heute = a.heute;
     const proKiste = typeof k.flaschenProKiste === 'number' && k.flaschenProKiste > 0 ? k.flaschenProKiste : null;
     const summe = u.lager.reduce((x, l) => x + (typeof l.bestand === 'number' && l.bestand > 0 ? l.bestand : 0), 0);
     const mitAnteil = H.anteileSinnvoll(u.lager); // ein einziger gezählter Standort hätte immer 100 %
     const geschaetzt = k.gesamtQuelle !== 'inventur';
     const hw = H.hinweiseOrdnen(u.hinweise);
-    const bisher = H.monatBisher(u.verkaeufe.monate, typeof u.heute === 'string' ? u.heute : H.heuteBerlin());
+    const jv = a.jv;
+    const laufend = jv ? jv.monate.find((m) => m.laufend) : null;
+    const bisher = H.monatBisher(u.verkaeufe.monate, heute);
+    const bisBestellen = H.datumGueltig(b.spaetestensBestellen) ? H.tageZwischen(heute, b.spaetestensBestellen) : null;
+    const vg = jv && jv.vergleich;
+    const pJahr = vg ? H.veraenderung(vg.dieses.flaschen, vg.vorjahr.flaschen) : null;
+    const zuVerkaeufen = () => { Z.diagramm = 'flaschen'; S.ansichten.verkaeufe(); S.ansichtZeigen('verkaeufe'); S.nachOben('verkaeufe'); };
+    const annahme = 'Rechnet mit Ø ' + H.zahlFormat(k.abverkaufProMonat, 0) + ' Flaschen pro Monat (' +
+      (H.zeitraumKurz(k.abverkaufVon, k.abverkaufBis) || 'letzte Monate') + '), ' + H.kistenFormat(b.vorlaufMonate) + ' Monaten Vorlauf beim Abfüller und ' +
+      H.kistenFormat(b.pufferWochen) + ' Wochen Puffer.';
 
     // Fehlende Teile (null) überspringen, sonst schreibt append „null“ als Text
     ziel.append(...[
       h('section', { class: 'karte bestellung stufe-' + stufe, 'aria-label': 'Bestellstatus' },
         h('div', { class: 'bestellung-kopf' },
           h('span', { class: 'pill pill-' + stufe }, h('span', { class: 'punkt', 'aria-hidden': 'true' }), st.text),
-          b.leerAm ? h('span', { class: 'bestellung-leer-am', text: 'leer etwa am ' + H.datumText(b.leerAm) }) : null),
+          bisBestellen === null ? null : h('span', { class: 'bestellung-frist', text: bisBestellen > 1 ? 'noch ' + H.zahlFormat(bisBestellen, 0) + ' Tage'
+            : bisBestellen === 1 ? 'bis morgen' : bisBestellen === 0 ? 'heute' : 'seit ' + H.zahlFormat(-bisBestellen, 0) + (bisBestellen === -1 ? ' Tag' : ' Tagen') + ' fällig' })),
         b.spaetestensBestellen
           ? [h('p', { class: 'kachel-label', text: 'Spätestens bestellen bis' }),
             h('p', { class: 'bestellung-datum', text: H.datumText(b.spaetestensBestellen) })]
           : h('p', { class: 'bestellung-fehlt', text: 'Dafür fehlen Bestand oder Verkäufe der letzten Monate.' }),
-        reichweiteLeiste(b, st.stufe),
-        h('p', { class: 'kachel-zusatz', text: 'Rechnet mit ' + H.kistenFormat(b.vorlaufMonate) + ' Monaten Vorlauf beim Abfüller und ' +
-          H.kistenFormat(b.pufferWochen) + ' Wochen Puffer.' })),
+        zeitstrahl(b, heute),
+        b.leerAm ? h('p', { class: 'nur-vorlesen', text: 'Leer etwa am ' + H.datumText(b.leerAm) + ', Reichweite ' + H.zahlFormat(b.reichweite, 1) + ' Monate.' }) : null,
+        h('p', { class: 'kachel-zusatz', text: (typeof b.reichweite === 'number' ? 'Reichweite ' + H.zahlFormat(b.reichweite, 1) + ' Monate. ' : '') + annahme })),
       h('div', { class: 'kacheln' },
         kachel('Bestand', H.zahlFormat(k.gesamtbestand, 0), 'Flaschen', geschaetzt ? 'geschätzt' : 'gezählt', 'flasche',
           H.kistenKurz(k.gesamtbestand, proKiste, geschaetzt)),
-        kachel('Reichweite', H.zahlFormat(b.reichweite, 1), 'Monate',
-          typeof k.mindestbestand === 'number' && k.mindestbestand > 0 ? 'bis Mindestbestand' : 'ab heute'),
+        jv ? kachelKnopf([
+          h('span', { class: 'kachel-label' }, 'Dieses Jahr', h('span', { class: 'kachel-pfeil', 'aria-hidden': 'true', text: '›' })),
+          h('span', { class: 'kachel-wert', text: H.zahlFormat(jv.bisher.flaschen, 0) }),
+          h('span', { class: 'kachel-zusatz', text: 'Flaschen' }),
+          pJahr !== null ? h('span', { class: 'trend-zeile' }, trendChip({ prozent: pJahr }, 'zum Vorjahr'))
+            : jv.vorjahrGesamt ? h('span', { class: 'kachel-zusatz', text: 'Vorjahr gesamt: ' + H.zahlFormat(jv.vorjahrGesamt.flaschen, 0) }) : null],
+        zuVerkaeufen, 'Dieses Jahr ' + flaschen(jv.bisher.flaschen) + (pJahr === null ? '' : ', ' + H.prozentText(pJahr) + ' zum Vorjahr') + '. Verkäufe öffnen')
+          : kachel('Reichweite', H.zahlFormat(b.reichweite, 1), 'Monate', 'ab heute'),
         kachel('Ø pro Monat', H.zahlFormat(k.abverkaufProMonat, 0), 'Flaschen',
           typeof k.abverkaufProMonat === 'number' ? H.zeitraumKurz(k.abverkaufVon, k.abverkaufBis) : 'noch unbekannt'),
-        // Laufender Monat ohne Trend: er ist erst bis heute gezählt, ein Vergleich mit vollen Monaten wäre unfair
-        kachel('Dieser Monat', bisher ? H.zahlFormat(bisher.flaschen, 0) : '–', bisher && bisher.flaschen === 1 ? 'Flasche' : 'Flaschen', 'bis heute')),
+        // Laufender Monat ohne Trend: er ist erst bis heute gezählt; zum Einordnen der ganze Vorjahresmonat
+        kachel('Dieser Monat', bisher ? H.zahlFormat(bisher.flaschen, 0) : '–', bisher && bisher.flaschen === 1 ? 'Flasche' : 'Flaschen', 'bis heute', null,
+          laufend && laufend.vorjahr ? 'Vorjahresmonat: ' + H.zahlFormat(laufend.vorjahr.flaschen, 0) : null)),
       // „Noch keine Inventur …“ der Schnittstelle als freundlicher Satz direkt unter dem Bestand
       hw.bestand ? h('p', { class: 'notiz' }, S.icon('info', 'notiz-icon'), h('span', { text: hw.bestand })) : null,
       letzterMonatKarte(u.verkaeufe.monate),
       ueberschrift('h2', 'Standorte'),
       h('div', { class: 'karte liste-karte' }, h('ul', { class: 'liste', role: 'list' }, u.lager.map((l) => h('li', { class: 'standort-zeile' },
-        h('div', { class: 'zeile' }, h('span', { class: 'zeile-name', text: l.standort }),
-          l.bestand === null ? h('span', { class: 'zeile-leise', text: 'nicht gezählt' }) : h('span', { class: 'zeile-wert', text: flaschen(l.bestand) })),
+        h('div', { class: 'zeile' },
+          h('span', { class: 'zeile-name' }, l.standort,
+            h('span', { class: 'zeile-unter', text: l.bestand === null ? 'noch nicht gezählt' : 'Inventur ' + H.datumKurz(l.letzteInventur) +
+              (H.kistenKurz(l.bestand, proKiste, false) ? ' · ' + H.kistenKurz(l.bestand, proKiste, false) : '') })),
+          l.bestand === null ? h('span', { class: 'zeile-leise', text: '–' }) : h('span', { class: 'zeile-wert', text: flaschen(l.bestand) })),
         l.bestand === null || !mitAnteil ? null : anteil(summe > 0 ? (Math.max(l.bestand, 0) / summe) * 100 : 0))))),
       // Übrige Hinweise (z. B. unlesbare Zeilen im Sheet) unverändert, aber klein und dezent
       hw.andere.length
@@ -208,88 +277,250 @@
   };
 
   // Verkäufe ----------------------------------------------------------------------------------------------------
+  // Seit 2026-11-09: Karte „Dieses Jahr“ (Summe bis heute, Vergleich mit dem Vorjahr, Verlauf als Linien), Monate als
+  // Balkenpaare Dieses Jahr/Vorjahr, Kanäle mit Veränderung, alle Kunden mit Details, „Lange nichts bestellt“.
+  // Gerechnet wird aus `verkaeufe.zeilen`; ältere Schnittstellen ohne Zeilen: Monate aus den 25 Monatswerten, Kanäle
+  // und Top 10 wie von der Schnittstelle geliefert.
 
-  // links 28: bei 390 px Breite ist jede Trefferfläche ≈ 24 px breit (WCAG 2.5.8)
-  const MASSE = { breite: 340, hoehe: 196, links: 28, unten: 32, oben: 22, luecke: 7 };
+  /** Auswertung der gezeigten Daten, einmal pro Antwort gerechnet. */
+  let memo = { daten: null, wert: null };
+  function auswertung() {
+    const u = Z.daten;
+    if (!u) return null;
+    if (memo.daten === u) return memo.wert;
+    const heute = H.datumGueltig(u.heute) ? u.heute : H.heuteBerlin();
+    const zeilen = H.verkaufZeilen(u.verkaeufe, heute);
+    const werte = H.monatsWerte(u.verkaeufe, zeilen);
+    const jv = H.jahresVergleich(werte, heute);
+    const vorjahr = jv ? H.jahresVergleich(werte, heute, jv.jahr - 1) : null;
+    memo = { daten: u, wert: { zeilen: zeilen, heute: heute, werte: werte, jv: jv, jvVorjahr: vorjahr } };
+    return memo.wert;
+  }
+  S.auswertung = auswertung;
 
-  /** Text zum gewählten Balken (für Vorleseprogramme), z. B. „Oktober 2026: 1.234 Flaschen · 2.345 €“. */
-  function balkenText(m, laufend) {
-    return H.monatFormat(m.monat, true) + (laufend ? ' (läuft noch)' : '') + ': ' + flaschen(m.flaschen) + ' · ' + H.euroFormat(m.umsatz);
+  /** Zahl mit Einheit der gewählten Größe: „1.234 Flaschen“ bzw. „2.345 €“. */
+  function mitEinheit(z, g) {
+    if (g === 'umsatz') return H.euroFormat(z);
+    return flaschen(z);
+  }
+  /** Große Zahl plus kleine Einheit dahinter (für Karten-Köpfe). */
+  function grosseZahl(klasse, z, g) {
+    return h('p', { class: klasse }, H.zahlFormat(z, 0),
+      h('span', { class: 'einheit', text: g === 'umsatz' ? ' €' : (z === 1 ? ' Flasche' : ' Flaschen') }));
+  }
+  /** „Jan – Okt“ (gleicher Monat: „Januar“). */
+  function monateVonBis(von, bis) {
+    return von === bis ? H.monatName(von) : H.monatFormat(von) + ' – ' + H.monatFormat(bis);
   }
 
-  /** Kurzer Wert über dem gewählten Balken. */
-  function kurzWert(m, wert) {
-    const z = m[wert];
-    if (typeof z !== 'number') return '–';
-    return H.achsenText(Math.round(z)) + (wert === 'umsatz' ? ' €' : '');
+  /**
+   * Gemeinsame Achse und Spalten für die Jahres-Diagramme (12 Monate nebeneinander). `werte` = alle gezeichneten Zahlen;
+   * negative (Gutschriften) bekommen Platz unter der Nulllinie. Rückgabe { striche, oben, null0 (y der Nulllinie),
+   * basis (unterer Rand), platz, y(w) }.
+   */
+  function jahresRaster(M, werte, striche) {
+    const r = H.achseMitMinus(werte, striche || 4);
+    const flaeche = M.hoehe - M.oben - M.unten;
+    const y = (w) => M.oben + ((r.oben - (typeof w === 'number' && isFinite(w) ? w : 0)) / (r.oben - r.unten)) * flaeche;
+    return { striche: r.striche, oben: r.oben, null0: y(0), basis: M.oben + flaeche, platz: (M.breite - M.links) / 12, y: y };
   }
-
-  /** Kopf der Diagramm-Karte: Monat, große Zahl, die andere Größe klein, darunter die Trends zur gezeigten Größe. */
-  function infoFuellen(info, monate, i, wert) {
-    const m = monate[i];
-    const laufend = i === monate.length - 1;
-    const fl = [H.zahlFormat(m.flaschen, 0), m.flaschen === 1 ? 'Flasche' : 'Flaschen'];
-    const eu = [H.zahlFormat(m.umsatz, 0), '€'];
-    const [gross, klein] = wert === 'umsatz' ? [eu, fl] : [fl, eu];
-    info.replaceChildren(
-      h('p', { class: 'kachel-label' }, H.monatFormat(m.monat, true), laufend ? h('span', { class: 'badge klein-badge', text: 'bisher' }) : null),
-      h('p', { class: 'info-wert' }, gross[0], h('span', { class: 'einheit', text: ' ' + gross[1] })),
-      h('p', { class: 'kachel-zusatz', text: klein.join(' ') }),
-      trendZeile(H.monatsTrend(monate, i, wert, vergleichsmonate())));
-  }
-
-  /** Balkendiagramm als SVG (13 Monate). Antippen eines Monats zeigt seine Zahlen oben in der Karte. */
-  function diagramm(monate, wert, info) {
-    const d = H.diagrammMasse(monate.map((m) => m[wert]), MASSE);
-    const svg = s('svg', {
-      viewBox: '0 0 ' + MASSE.breite + ' ' + MASSE.hoehe, class: 'diagramm', role: 'group',
-      'aria-label': (wert === 'umsatz' ? 'Umsatz' : 'Flaschen') + ' pro Monat, ' + H.zeitraumFormat(monate[0].monat, monate[monate.length - 1].monat),
+  function gitter(svg, M, r) {
+    r.striche.forEach((w) => {
+      const yy = Math.round(r.y(w) * 100) / 100;
+      svg.append(s('line', { x1: M.links, x2: M.breite, y1: yy, y2: yy, class: w === 0 ? 'achse' : 'gitter' }));
+      svg.append(s('text', { x: M.links - 6, y: yy + 3, 'text-anchor': 'end', class: 'achsen-text',
+        text: w < 0 ? '−' + H.achsenText(-w, r.oben) : H.achsenText(w, r.oben) }));
     });
-    d.striche.forEach((t) => {
-      svg.append(s('line', { x1: MASSE.links, x2: MASSE.breite, y1: t.y, y2: t.y, class: t.wert === 0 ? 'achse' : 'gitter' }));
-      svg.append(s('text', { x: MASSE.links - 6, y: t.y + 3, 'text-anchor': 'end', class: 'achsen-text', text: H.achsenText(t.wert) }));
+  }
+
+  // Karte „Dieses Jahr“: Summe Januar bis heute, Vergleich volle Monate, Linien kumuliert -------------------------
+
+  const KM = { breite: 340, hoehe: 150, links: 30, unten: 20, oben: 14 };
+
+  function kumulDiagramm(jv, g) {
+    const d = H.kumuliert(jv.monate, 'dieses', g);
+    const v = H.kumuliert(jv.monate, 'vorjahr', g);
+    const r = jahresRaster(KM, d.concat(v), 3);
+    const x = (i) => Math.round((KM.links + (i + 0.5) * r.platz) * 100) / 100;
+    const punkte = (reihe) => reihe.map((w, i) => (w === null ? null : [x(i), Math.round(r.y(w) * 100) / 100])).filter(Boolean);
+    const pfad = (p) => p.map((q, i) => (i ? 'L' : 'M') + q[0] + ' ' + q[1]).join(' ');
+    const pd = punkte(d);
+    const pv = punkte(v);
+    const svg = s('svg', { viewBox: '0 0 ' + KM.breite + ' ' + KM.hoehe, class: 'diagramm kumul', 'aria-hidden': 'true', focusable: 'false' });
+    svg.append(s('defs', {}, s('linearGradient', { id: 'kumul-flaeche', x1: 0, y1: 0, x2: 0, y2: 1 },
+      s('stop', { offset: 0, 'stop-color': '#E8C547', 'stop-opacity': 0.26 }),
+      s('stop', { offset: 1, 'stop-color': '#E8C547', 'stop-opacity': 0 }))));
+    gitter(svg, KM, r);
+    [0, 3, 6, 9, 11].forEach((i) => {
+      svg.append(s('text', { x: x(i), y: r.basis + 14, 'text-anchor': 'middle', class: 'monat', text: H.monatFormat(jv.monate[i].monat) }));
     });
-    const gruppen = [];
-    d.balken.forEach((b, i) => {
-      const m = monate[i];
-      const laufend = i === monate.length - 1;
-      const mitte = b.x + b.b / 2;
-      const gewaehlt = i === Z.balken;
-      const g = s('g', { class: 'balken' + (laufend ? ' laufend' : '') + (gewaehlt ? ' gewaehlt' : '') });
-      if (b.h > 0) g.append(s('rect', { x: b.x, y: b.y, width: b.b, height: b.h, rx: Math.min(4, b.b / 2, b.h / 2), class: 'balken-flaeche' }));
-      g.append(s('text', {
-        x: Math.max(MASSE.links + 12, Math.min(MASSE.breite - 12, mitte)), y: Math.max(b.y - 6, 10), 'text-anchor': 'middle',
-        class: 'wert-label', text: kurzWert(m, wert), hidden: !gewaehlt,
-      }));
-      g.append(s('text', { x: mitte, y: d.basis + 15, 'text-anchor': 'middle', class: 'monat', text: H.monatFormat(m.monat) }));
-      if (i === 0 || m.monat.slice(5) === '01') {
-        g.append(s('text', { x: mitte, y: d.basis + 28, 'text-anchor': 'middle', class: 'jahr', text: m.monat.slice(0, 4) }));
+    if (pv.length > 1) svg.append(s('path', { d: pfad(pv), class: 'linie-vorjahr' }));
+    if (pd.length) {
+      if (pd.length > 1) {
+        const n = Math.round(r.null0 * 100) / 100;
+        svg.append(s('path', { d: pfad(pd) + ' L' + pd[pd.length - 1][0] + ' ' + n + ' L' + pd[0][0] + ' ' + n + ' Z', class: 'flaeche-dieses' }));
+        svg.append(s('path', { d: pfad(pd), class: 'linie-dieses' }));
       }
-      const treffer = s('rect', {
-        x: MASSE.links + i * d.platz, y: 0, width: d.platz, height: MASSE.hoehe, class: 'treffer', tabindex: 0, role: 'button',
-        'aria-label': balkenText(m, laufend), 'aria-pressed': gewaehlt ? 'true' : 'false',
-      });
+      const ende = pd[pd.length - 1];
+      const i = d.filter((w) => w !== null).length - 1;
+      if (v[i] !== null && v[i] !== undefined) svg.append(s('circle', { cx: ende[0], cy: Math.round(r.y(v[i]) * 100) / 100, r: 3, class: 'punkt-vorjahr' }));
+      svg.append(s('circle', { cx: ende[0], cy: ende[1], r: 4.5, class: 'punkt-dieses' }));
+      svg.append(s('text', {
+        x: Math.min(ende[0], KM.breite - 4), y: Math.max(ende[1] - 9, 9), 'text-anchor': ende[0] > KM.breite - 40 ? 'end' : 'middle',
+        class: 'wert-label', text: H.achsenText(Math.round(d[i])) + (g === 'umsatz' ? ' €' : ''),
+      }));
+    }
+    return svg;
+  }
+
+  function jahrKarte(a, g) {
+    const jv = a.jv;
+    const jetzt = a.heute.slice(0, 7);
+    const vg = jv.vergleich;
+    const p = vg ? H.veraenderung(vg.dieses[g], vg.vorjahr[g]) : null;
+    const vorleser = 'Dieses Jahr bis heute ' + mitEinheit(jv.bisher[g], g) +
+      (vg ? '. ' + monateVonBis(jahrAnfang(jetzt), vg.bis) + ': ' + mitEinheit(vg.dieses[g], g) + ', im Vorjahr ' + mitEinheit(vg.vorjahr[g], g) : '') + '.';
+    return h('section', { class: 'karte jahr-karte', 'aria-label': 'Dieses Jahr' },
+      h('p', { class: 'kachel-label', text: 'Dieses Jahr · ' + monateVonBis(jahrAnfang(jetzt), jetzt) }),
+      grosseZahl('info-wert', jv.bisher[g], g),
+      vg
+        ? h('p', { class: 'trend-zeile' }, p === null ? null : trendChip({ prozent: p }, 'zum Vorjahr'),
+          h('span', { class: 'trend-hinweis', text: monateVonBis(jahrAnfang(jetzt), vg.bis) + ' verglichen: ' + H.zahlFormat(vg.dieses[g], 0) +
+            ' gegenüber ' + H.zahlFormat(vg.vorjahr[g], 0) + (g === 'umsatz' ? ' €' : '') }))
+        : h('p', { class: 'trend-zeile trend-hinweis', text: 'Der Vergleich mit dem Vorjahr startet, sobald der erste Monat vorbei ist.' }),
+      h('p', { class: 'nur-vorlesen', text: vorleser }),
+      kumulDiagramm(jv, g),
+      h('div', { class: 'legende' },
+        h('span', {}, h('span', { class: 'zeichen zeichen-linie', 'aria-hidden': 'true' }), 'Dieses Jahr'),
+        h('span', {}, h('span', { class: 'zeichen zeichen-linie-vorjahr', 'aria-hidden': 'true' }), 'Vorjahr'),
+        jv.vorjahrGesamt ? h('span', { class: 'legende-tipp', text: 'Vorjahr gesamt ' + H.zahlFormat(jv.vorjahrGesamt[g], 0) + (g === 'umsatz' ? ' €' : '') }) : null));
+  }
+  function jahrAnfang(monat) { return monat.slice(0, 4) + '-01'; }
+
+  // Monate: Balkenpaare Vorjahr (links, grau) | Dieses Jahr (rechts, hell; gewählt gelb) ---------------------------
+
+  const GM = { breite: 340, hoehe: 184, links: 30, unten: 20, oben: 20 };
+
+  /** Gezeigtes Jahr im Monatsdiagramm (Umschalter): dieses Jahr gegen Vorjahr oder Vorjahr gegen das Jahr davor. */
+  function monatsJahr(a) {
+    const vorjahr = Z.jahrWahl === 'vorjahr' && a.jvVorjahr;
+    return { jv: vorjahr ? a.jvVorjahr : a.jv, haupt: vorjahr ? 'Vorjahr' : 'Dieses Jahr', vergleich: vorjahr ? 'Jahr davor' : 'Vorjahr' };
+  }
+
+  /**
+   * Gewählter Monat (Index 0–11): gemerkt als `JJJJ-MM` (die Monatsnummer gilt auch im anderen Jahr), sonst der letzte
+   * volle Monat (im Januar der Januar, im Vorjahr der Dezember).
+   */
+  function gewaehlterMonat(jv) {
+    if (typeof Z.monatWahl === 'string' && /^\d{4}-(0[1-9]|1[0-2])$/.test(Z.monatWahl)) return Number(Z.monatWahl.slice(5, 7)) - 1;
+    const i = jv.monate.findIndex((m) => m.laufend);
+    return i < 0 ? 11 : Math.max(0, i - 1);
+  }
+
+  function monatInfo(info, a, mj, i, g) {
+    const m = mj.jv.monate[i];
+    const vor = a.werte(H.monatPlus(m.monat, -1));
+    const chips = [];
+    if (m.dieses && !m.laufend) {
+      const pj = m.vorjahr ? H.veraenderung(m.dieses[g], m.vorjahr[g]) : null;
+      const pm = vor ? H.veraenderung(m.dieses[g], vor[g]) : null;
+      if (pj !== null) chips.push(trendChip({ prozent: pj }, 'zum Vorjahresmonat'));
+      if (pm !== null) chips.push(trendChip({ prozent: pm }, 'zum Vormonat'));
+    }
+    const andere = g === 'umsatz' ? 'flaschen' : 'umsatz';
+    const vj = m.vorjahr ? mj.vergleich + ' ' + (m.laufend ? 'ganzer Monat ' : '') + mitEinheit(m.vorjahr[g], g) : mj.vergleich + ' ohne Daten';
+    info.replaceChildren(
+      h('p', { class: 'kachel-label' }, H.monatName(m.monat),
+        m.laufend ? h('span', { class: 'badge klein-badge', text: 'bisher' }) : null,
+        m.zukunft ? h('span', { class: 'badge klein-badge', text: 'kommt noch' }) : null),
+      m.dieses ? grosseZahl('info-wert', m.dieses[g], g) : h('p', { class: 'info-wert info-leer', text: '–' }),
+      h('p', { class: 'kachel-zusatz', text: (m.dieses ? mitEinheit(m.dieses[andere], andere) + ' · ' : '') + vj }),
+      chips.length ? h('p', { class: 'trend-zeile' }, chips)
+        : m.laufend ? h('p', { class: 'trend-zeile trend-hinweis', text: 'Läuft noch, verglichen wird, sobald der Monat vorbei ist.' })
+          : m.zukunft ? h('p', { class: 'trend-zeile trend-hinweis', text: 'So viel war es im Vorjahr – gut zum Planen.' }) : null);
+  }
+
+  function monatsText(m, mj, g) {
+    return H.monatName(m.monat) + ' ' + m.monat.slice(0, 4) + ': ' +
+      (m.zukunft ? 'kommt noch' : (m.dieses ? mitEinheit(m.dieses[g], g) : 'keine Daten') + (m.laufend ? ' bisher' : '')) +
+      ', ' + mj.vergleich + ' ' + (m.vorjahr ? mitEinheit(m.vorjahr[g], g) : 'ohne Daten');
+  }
+
+  function monatsDiagramm(a, mj, g, info) {
+    const jv = mj.jv;
+    const alle = [];
+    jv.monate.forEach((m) => { if (m.dieses) alle.push(m.dieses[g]); if (m.vorjahr) alle.push(m.vorjahr[g]); });
+    const r = jahresRaster(GM, alle, 4);
+    const bb = Math.min(9, (r.platz - 7) / 2);
+    const svg = s('svg', { viewBox: '0 0 ' + GM.breite + ' ' + GM.hoehe, class: 'diagramm paare', role: 'group',
+      'aria-label': (g === 'umsatz' ? 'Umsatz' : 'Flaschen') + ' pro Monat, ' + mj.haupt + ' und ' + mj.vergleich });
+    gitter(svg, GM, r);
+    const gruppen = [];
+    const rund = (z) => Math.round(z * 100) / 100;
+    jv.monate.forEach((m, i) => {
+      const x0 = GM.links + i * r.platz;
+      const mitte = x0 + r.platz / 2;
+      const gewaehlt = i === gewaehlterMonat(jv);
+      const gr = s('g', { class: 'paar' + (m.laufend ? ' laufend' : '') + (gewaehlt ? ' gewaehlt' : '') });
+      gr.append(s('rect', { x: rund(x0 + 1), y: GM.oben - 8, width: rund(r.platz - 2), height: rund(r.basis - GM.oben + 8), rx: 6, class: 'spalte' }));
+      const balken = (wert, x, klasse) => {
+        const yy = r.y(wert);
+        const hh = Math.abs(r.null0 - yy);
+        if (hh > 0.5) {
+          gr.append(s('rect', { x: rund(x), y: rund(Math.min(yy, r.null0)), width: rund(bb), height: rund(hh), rx: Math.min(3, bb / 2, hh / 2),
+            class: klasse + (wert < 0 ? ' negativ' : '') }));
+        }
+      };
+      if (m.vorjahr) balken(m.vorjahr[g], mitte - bb - 1, 'balken-vorjahr');
+      if (m.dieses) balken(m.dieses[g], mitte + 1, 'balken-dieses');
+      const oben = m.dieses ? Math.min(r.y(m.dieses[g]), r.null0) : r.basis;
+      gr.append(s('text', {
+        x: rund(Math.max(GM.links + 14, Math.min(GM.breite - 14, mitte + bb / 2 + 1))), y: rund(Math.max(oben - 5, 9)), 'text-anchor': 'middle',
+        class: 'wert-label', text: m.dieses ? H.achsenText(Math.round(m.dieses[g])) : '', hidden: !gewaehlt || !m.dieses,
+      }));
+      gr.append(s('text', { x: rund(mitte), y: r.basis + 14, 'text-anchor': 'middle', class: 'monat', text: H.monatFormat(m.monat) }));
+      const treffer = s('rect', { x: rund(x0), y: 0, width: rund(r.platz), height: GM.hoehe, class: 'treffer', tabindex: 0, role: 'button',
+        'aria-label': monatsText(m, mj, g), 'aria-pressed': gewaehlt ? 'true' : 'false' });
       const waehlen = () => {
-        Z.balken = i;
-        infoFuellen(info, monate, i, wert);
+        Z.monatWahl = m.monat;
+        monatInfo(info, a, mj, i, g);
         gruppen.forEach((x, j) => {
           x.classList.toggle('gewaehlt', j === i);
           const l = x.querySelector('.wert-label');
-          if (j === i) l.removeAttribute('hidden'); else l.setAttribute('hidden', '');
+          if (j === i && l.textContent) l.removeAttribute('hidden'); else l.setAttribute('hidden', '');
           x.querySelector('.treffer').setAttribute('aria-pressed', j === i ? 'true' : 'false');
         });
       };
-      // Unsichtbare Trefferfläche über die ganze Höhe, damit auch kleine Balken gut zu treffen sind
       treffer.addEventListener('click', waehlen);
       treffer.addEventListener('keydown', (ev) => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); waehlen(); } });
-      g.append(treffer);
-      gruppen.push(g);
-      svg.append(g);
+      gr.append(treffer);
+      gruppen.push(gr);
+      svg.append(gr);
     });
     return svg;
   }
 
-  /** Rangliste Name | Flaschen + Umsatz, optional mit Anteils-Balken (Kanäle) oder Platz-Nummer (Kunden). */
+  function monateKarte(a, g) {
+    const mj = monatsJahr(a);
+    const i = gewaehlterMonat(mj.jv);
+    const info = h('div', { class: 'balken-info', 'aria-live': 'polite' });
+    monatInfo(info, a, mj, i, g);
+    return [
+      a.jvVorjahr ? umschalter('Jahr', [['dieses', 'Dieses Jahr'], ['vorjahr', 'Vorjahr']], Z.jahrWahl === 'vorjahr' ? 'vorjahr' : 'dieses',
+        (w) => { Z.jahrWahl = w; S.ansichten.verkaeufe(); }) : null,
+      h('section', { class: 'karte diagramm-karte', 'aria-label': 'Pro Monat, ' + mj.haupt },
+        info,
+        monatsDiagramm(a, mj, g, info),
+        h('div', { class: 'legende' },
+          h('span', {}, h('span', { class: 'zeichen zeichen-dieses', 'aria-hidden': 'true' }), mj.haupt),
+          h('span', {}, h('span', { class: 'zeichen zeichen-vorjahr', 'aria-hidden': 'true' }), mj.vergleich),
+          h('span', { class: 'legende-tipp', text: 'Monat antippen' }))),
+    ];
+  }
+
+  // Kanäle und Kunden -------------------------------------------------------------------------------------------
+
+  /** Rangliste der Schnittstelle (ältere Version ohne Zeilen): Name | Flaschen + Umsatz. */
   function rangliste(zeilen, mitAnteil, nummeriert) {
     if (!zeilen.length) return h('div', { class: 'karte' }, h('p', { class: 'leer', text: 'Keine Verkäufe in diesem Zeitraum.' }));
     const max = Math.max.apply(null, zeilen.map((z) => z.flaschen).concat([1]));
@@ -300,40 +531,222 @@
         h('span', { class: 'rang-umsatz', text: H.euroFormat(z.umsatz) }))))));
   }
 
+  /** Zeitraum des Umschalters: von/bis (Monate) und womit verglichen wird (gleiche Monate im Jahr davor). */
+  function zeitraumGrenzen(a, welcher) {
+    const jetzt = a.heute.slice(0, 7);
+    const jahr = Number(jetzt.slice(0, 4));
+    if (welcher === 'vorjahr') {
+      return { von: (jahr - 1) + '-01', bis: (jahr - 1) + '-12', vgl: { von: (jahr - 1) + '-01', bis: (jahr - 1) + '-12', vonVor: (jahr - 2) + '-01', bisVor: (jahr - 2) + '-12',
+        text: 'Veränderung gegenüber dem Jahr davor' } };
+    }
+    if (welcher === 'gesamt') {
+      const erster = a.zeilen.reduce((x, z) => (z.monat < x ? z.monat : x), jetzt);
+      return { von: erster, bis: jetzt, vgl: null };
+    }
+    const bis = H.monatPlus(jetzt, -1);
+    return { von: jahr + '-01', bis: jetzt, vgl: bis.slice(0, 4) === String(jahr)
+      ? { von: jahr + '-01', bis: bis, vonVor: (jahr - 1) + '-01', bisVor: (jahr - 1) + bis.slice(4), text: 'Veränderung ' + monateVonBis(jahr + '-01', bis) + ' gegenüber dem Vorjahr' }
+      : null };
+  }
+
+  /** Chip „+12 %“ (ohne Zusatz; auch −100 % und weniger), „neu“, wenn es im Vergleichszeitraum nichts gab. */
+  function kleinerTrend(jetzt, vorher) {
+    const j = typeof jetzt === 'number' ? jetzt : 0;
+    if (vorher > 0) return trendChip({ prozent: H.veraenderung(j, vorher) }, '');
+    return j > 0 ? h('span', { class: 'badge badge-neu', text: 'neu' }) : null;
+  }
+
+  function kanalListe(z, vgl) {
+    const vorher = vgl ? Object.create(null) : null;
+    const jetzt = vgl ? Object.create(null) : null;
+    let kanaele = z.kanaele;
+    if (vgl) {
+      vgl.vor.kanaele.forEach((k) => { vorher[k.kanal] = k.flaschen; });
+      vgl.jetzt.kanaele.forEach((k) => { jetzt[k.kanal] = k.flaschen; });
+      // Kanäle, die im Vergleichszeitraum verkauft haben und jetzt fehlen, mit 0 zeigen (sonst verschwinden Verluste)
+      const da = Object.create(null);
+      z.kanaele.forEach((k) => { da[k.kanal] = true; });
+      kanaele = kanaele.concat(vgl.vor.kanaele.filter((k) => !da[k.kanal] && k.flaschen > 0).map((k) => ({ kanal: k.kanal, flaschen: 0, umsatz: 0 })));
+    }
+    if (!kanaele.length) return h('div', { class: 'karte' }, h('p', { class: 'leer', text: 'Keine Verkäufe in diesem Zeitraum.' }));
+    const max = Math.max.apply(null, kanaele.map((k) => k.flaschen).concat([1]));
+    return h('div', { class: 'karte liste-karte' }, h('ul', { class: 'liste rangliste', role: 'list' }, kanaele.map((k) => h('li', { class: 'rang-zeile' },
+      h('div', { class: 'rang-name' }, h('span', { class: 'rang-titel' }, k.kanal, vgl ? kleinerTrend(jetzt[k.kanal], vorher[k.kanal]) : null),
+        anteil((k.flaschen / max) * 100)),
+      h('div', { class: 'rang-zahlen' }, h('span', { class: 'rang-flaschen', text: flaschen(k.flaschen) }),
+        h('span', { class: 'rang-umsatz', text: H.euroFormat(k.umsatz) }))))));
+  }
+
+  const KUNDEN_ANFANG = 10;
+
+  /** Kundenliste (Top 10, aufklappbar auf alle). `neuAb` = ab diesem Monat gilt ein Kunde als neu (oder null). */
+  function kundenListe(z, neuAb) {
+    if (!z.kunden.length) return h('div', { class: 'karte' }, h('p', { class: 'leer', text: 'Keine Verkäufe in diesem Zeitraum.' }));
+    const alle = !!Z.alleKunden;
+    const liste = alle ? z.kunden : z.kunden.slice(0, KUNDEN_ANFANG);
+    return [
+      h('div', { class: 'karte liste-karte' }, h('ol', { class: 'liste rangliste', role: 'list' }, liste.map((k, i) => h('li', { class: 'rang-zeile kunde-zeile' },
+        h('button', { type: 'button', class: 'zeilen-knopf', 'aria-label': k.kunde + ', ' + flaschen(k.flaschen) + ', ' + H.euroFormat(k.umsatz) + '. Details',
+          'data-kunde': k.schluessel, onclick: () => S.kundeZeigen(k.schluessel) },
+        h('span', { class: 'rang-nr' + (i < 3 ? ' vorne' : ''), text: String(i + 1), 'aria-hidden': 'true' }),
+        h('span', { class: 'rang-name' }, h('span', { class: 'rang-titel' }, k.kunde,
+          neuAb && k.erster >= neuAb ? h('span', { class: 'badge badge-neu', text: 'neu' }) : null),
+        h('span', { class: 'rang-unter', text: k.kanal })),
+        h('span', { class: 'rang-zahlen' }, h('span', { class: 'rang-flaschen', text: flaschen(k.flaschen) }),
+          h('span', { class: 'rang-umsatz', text: H.euroFormat(k.umsatz) })),
+        h('span', { class: 'chevron klein', 'aria-hidden': 'true', text: '›' })))))),
+      z.kunden.length > KUNDEN_ANFANG
+        ? h('button', { type: 'button', class: 'knopf mehr-knopf', 'aria-expanded': alle ? 'true' : 'false',
+          text: alle ? 'Nur die Top 10 zeigen' : 'Alle ' + z.kunden.length + ' Kunden zeigen',
+          onclick: () => { Z.alleKunden = !alle; S.ansichten.verkaeufe(); } })
+        : null,
+    ];
+  }
+
+  function nachfassenListe(a) {
+    const liste = H.nachfassen(a.zeilen, a.heute);
+    if (!liste.length) return null;
+    const alle = !!Z.alleNachfassen;
+    const zeigen = alle ? liste : liste.slice(0, 5);
+    return [
+      ueberschrift('h2', 'Lange', 'nichts bestellt'),
+      h('p', { class: 'hinweis', text: 'Kunden mit mindestens zwei Bestellungen, die seit über drei Monaten nichts bestellt haben. Vielleicht mal nachfragen?' }),
+      h('div', { class: 'karte liste-karte' }, h('ul', { class: 'liste', role: 'list' }, zeigen.map((k) => h('li', { class: 'kunde-zeile' },
+        h('button', { type: 'button', class: 'zeilen-knopf', 'data-kunde': k.schluessel, onclick: () => S.kundeZeigen(k.schluessel),
+          'aria-label': k.kunde + ', zuletzt ' + H.wannText(k.letzte) + ', ' + k.bestellungen + ' Bestellungen. Details' },
+        h('span', { class: 'rang-name' }, h('span', { class: 'rang-titel', text: k.kunde }),
+          h('span', { class: 'rang-unter', text: 'zuletzt ' + H.wannText(k.letzte) + ' · ' + H.abstandText(k.tage) })),
+        h('span', { class: 'rang-zahlen' }, h('span', { class: 'rang-flaschen', text: k.bestellungen + ' Bestellungen' }),
+          h('span', { class: 'rang-umsatz', text: flaschen(k.flaschen) + ' gesamt' })),
+        h('span', { class: 'chevron klein', 'aria-hidden': 'true', text: '›' })))))),
+      liste.length > 5
+        ? h('button', { type: 'button', class: 'knopf mehr-knopf', 'aria-expanded': alle ? 'true' : 'false',
+          text: alle ? 'Weniger zeigen' : 'Alle ' + liste.length + ' zeigen', onclick: () => { Z.alleNachfassen = !alle; S.ansichten.verkaeufe(); } })
+        : null,
+    ];
+  }
+
+  function kanaeleUndKunden(a) {
+    const u = Z.daten;
+    if (Z.zeitraum !== 'vorjahr' && Z.zeitraum !== 'gesamt') Z.zeitraum = 'jahr';
+    const teile = [
+      ueberschrift('h2', 'Kanäle', 'und Kunden'),
+      umschalter('Zeitraum', [['jahr', 'Dieses Jahr'], ['vorjahr', 'Vorjahr'], ['gesamt', 'Gesamt']], Z.zeitraum,
+        (w) => { Z.zeitraum = w; Z.alleKunden = false; S.ansichten.verkaeufe(); }),
+    ];
+    if (!a.zeilen) {
+      // Ältere Schnittstelle: fertige Summen, Top 10, keine Details
+      const z = u.verkaeufe[Z.zeitraum];
+      return teile.concat([
+        h('p', { class: 'zeitraum-text', text: Z.zeitraum === 'gesamt' ? 'Seit ' + H.monatFormat(z.von, true) : H.zeitraumFormat(z.von, z.bis) }),
+        h('div', { class: 'kacheln' }, kachel('Verkauft', H.zahlFormat(z.flaschen, 0), z.flaschen === 1 ? 'Flasche' : 'Flaschen', null),
+          kachel('Umsatz', H.zahlFormat(z.umsatz, 0), 'Euro', null)),
+        h('h3', { text: 'Kanäle' }),
+        rangliste(z.kanaele.map((x) => ({ name: x.kanal, flaschen: x.flaschen, umsatz: x.umsatz })), true, false),
+        h('h3', { text: 'Top 10 Kunden' }),
+        rangliste(z.kunden.map((x) => ({ name: x.kunde, flaschen: x.flaschen, umsatz: x.umsatz })), false, true)]);
+    }
+    const gr = zeitraumGrenzen(a, Z.zeitraum);
+    const z = H.zeitraumAuswerten(a.zeilen, gr.von, gr.bis);
+    if (Z.zeitraum === 'jahr' && !z.kanaele.length) {
+      // Anfang Januar: noch nichts in diesem Jahr, das Vorjahr ist dann die interessante Ansicht
+      return teile.concat([h('p', { class: 'zeitraum-text', text: H.zeitraumFormat(z.von, z.bis) }),
+        leerKarte('Noch keine Verkäufe in diesem Jahr', 'Sobald die ersten Rechnungen im Sheet stehen, siehst du sie hier.', 'Vorjahr zeigen',
+          () => { Z.zeitraum = 'vorjahr'; S.ansichten.verkaeufe(); })]);
+    }
+    const vgl = gr.vgl ? { jetzt: H.zeitraumAuswerten(a.zeilen, gr.vgl.von, gr.vgl.bis), vor: H.zeitraumAuswerten(a.zeilen, gr.vgl.vonVor, gr.vgl.bisVor) } : null;
+    const mitVergleich = vgl && vgl.vor.flaschen > 0 ? vgl : null;
+    // Neu = erster Kauf überhaupt in diesem Zeitraum; nur zeigen, wenn nicht ohnehin alle neu sind (Startjahr)
+    const neu = Z.zeitraum !== 'gesamt' ? z.kunden.filter((k) => k.erster >= gr.von).length : 0;
+    const neuAb = neu > 0 && neu < z.kunden.length ? gr.von : null;
+    const chip = (g) => (mitVergleich ? H.veraenderung(mitVergleich.jetzt[g], mitVergleich.vor[g]) : null);
+    const kpi = (label, wert, einheit, g) => {
+      const p = chip(g);
+      return h('div', { class: 'kachel' }, h('p', { class: 'kachel-label', text: label }), h('p', { class: 'kachel-wert', text: wert }),
+        h('p', { class: 'kachel-zusatz', text: einheit }), p === null ? null : h('p', { class: 'trend-zeile' }, trendChip({ prozent: p }, '')));
+    };
+    return teile.concat([
+      h('p', { class: 'zeitraum-text', text: Z.zeitraum === 'gesamt' ? 'Seit ' + H.monatFormat(z.von, true) : H.zeitraumFormat(z.von, z.bis) }),
+      h('div', { class: 'kacheln' },
+        kpi('Verkauft', H.zahlFormat(z.flaschen, 0), z.flaschen === 1 ? 'Flasche' : 'Flaschen', 'flaschen'),
+        kpi('Umsatz', H.zahlFormat(z.umsatz, 0), 'Euro', 'umsatz')),
+      mitVergleich ? h('p', { class: 'hinweis vergleich-text', text: gr.vgl.text + ' (volle Monate).' }) : null,
+      h('h3', { text: 'Kanäle' }),
+      kanalListe(z, mitVergleich),
+      h('h3', {}, 'Kunden', h('span', { class: 'h3-zusatz', text: '· ' + z.kunden.length + (neuAb ? ', davon ' + neu + ' neu' : '') }))],
+    kundenListe(z, neuAb));
+  }
+
   S.ansichten.verkaeufe = function () {
     const ziel = leeren('verkaeufe-inhalt');
     const u = Z.daten;
-    if (!u) return platzhalter(ziel, ['segment', 'diagramm', 'zeile']);
-    const monate = u.verkaeufe.monate;
-    if (!monate.length) return ziel.append(leerKarte('Noch keine Verkäufe', 'Sobald Rechnungen im Sheet stehen, siehst du sie hier pro Monat.'));
-    // Vorauswahl: letzter voller Monat (der laufende ist noch unvollständig), bei nur einem Monat dieser
-    if (Z.balken === null || Z.balken < 0 || Z.balken >= monate.length) Z.balken = Math.max(monate.length - 2, 0);
-    const wert = Z.diagramm === 'umsatz' ? 'umsatz' : 'flaschen';
-    const info = h('div', { class: 'balken-info', 'aria-live': 'polite' });
-    infoFuellen(info, monate, Z.balken, wert);
-    if (Z.zeitraum !== 'vorjahr' && Z.zeitraum !== 'gesamt') Z.zeitraum = 'jahr';
-    const z = u.verkaeufe[Z.zeitraum];
-    ziel.append(
-      umschalter('Diagramm', [['flaschen', 'Flaschen'], ['umsatz', 'Umsatz']], wert, (w) => { Z.diagramm = w; S.ansichten.verkaeufe(); }),
-      h('div', { class: 'karte diagramm-karte' },
-        info,
-        diagramm(monate, wert, info),
-        h('div', { class: 'legende' },
-          h('span', {}, h('span', { class: 'zeichen zeichen-gewaehlt', 'aria-hidden': 'true' }), 'gewählt'),
-          h('span', {}, h('span', { class: 'zeichen zeichen-laufend', 'aria-hidden': 'true' }), 'läuft noch'),
-          h('span', { class: 'legende-tipp', text: 'Monat antippen' }))),
-      ueberschrift('h2', 'Kanäle', 'und Kunden'),
-      umschalter('Zeitraum', [['jahr', 'Dieses Jahr'], ['vorjahr', 'Vorjahr'], ['gesamt', 'Gesamt']], Z.zeitraum,
-        (w) => { Z.zeitraum = w; S.ansichten.verkaeufe(); }),
-      h('p', { class: 'zeitraum-text', text: Z.zeitraum === 'gesamt' ? 'Seit ' + H.monatFormat(z.von, true) : H.zeitraumFormat(z.von, z.bis) }),
-      h('div', { class: 'kacheln' },
-        kachel('Verkauft', H.zahlFormat(z.flaschen, 0), z.flaschen === 1 ? 'Flasche' : 'Flaschen', null),
-        kachel('Umsatz', H.zahlFormat(z.umsatz, 0), 'Euro', null)),
-      h('h3', { text: 'Kanäle' }),
-      rangliste(z.kanaele.map((x) => ({ name: x.kanal, flaschen: x.flaschen, umsatz: x.umsatz })), true, false),
-      h('h3', { text: 'Top 10 Kunden' }),
-      rangliste(z.kunden.map((x) => ({ name: x.kunde, flaschen: x.flaschen, umsatz: x.umsatz })), false, true));
+    if (!u) return platzhalter(ziel, ['segment', 'gross', 'diagramm', 'zeile']);
+    const a = auswertung();
+    if (!a.jv) return ziel.append(leerKarte('Keine Verkäufe lesbar', 'Die Antwort der Schnittstelle enthält keine Monate.'));
+    const g = Z.diagramm === 'umsatz' ? 'umsatz' : 'flaschen';
+    ziel.append(...[
+      umschalter('Diagramm', [['flaschen', 'Flaschen'], ['umsatz', 'Umsatz']], g, (w) => { Z.diagramm = w; S.ansichten.verkaeufe(); }),
+      jahrKarte(a, g),
+      h('h2', { id: 'monate-anker' }, h('strong', { text: 'Pro' }), ' Monat'),
+    ].concat(monateKarte(a, g), kanaeleUndKunden(a), a.zeilen ? nachfassenListe(a) || [] : []).filter(Boolean));
   };
+
+  // Kunden-Details (Blatt von unten) ----------------------------------------------------------------------------
+
+  function miniDiagramm(monate) {
+    const M = { breite: 320, hoehe: 96, links: 4, unten: 16, oben: 14 };
+    const max = Math.max.apply(null, [0].concat(monate.map((m) => m.flaschen)));
+    const a = H.achse(max, 2);
+    const flaeche = M.hoehe - M.oben - M.unten;
+    const basis = M.oben + flaeche;
+    const platz = (M.breite - M.links) / monate.length;
+    const bb = Math.min(14, platz - 6);
+    const svg = s('svg', { viewBox: '0 0 ' + M.breite + ' ' + M.hoehe, class: 'diagramm mini', 'aria-hidden': 'true', focusable: 'false' });
+    svg.append(s('line', { x1: M.links, x2: M.breite, y1: basis, y2: basis, class: 'achse' }));
+    monate.forEach((m, i) => {
+      const mitte = M.links + (i + 0.5) * platz;
+      const hh = (Math.max(m.flaschen, 0) / a.max) * flaeche;
+      const letzter = i === monate.length - 1;
+      if (hh > 0.5) {
+        svg.append(s('rect', { x: Math.round((mitte - bb / 2) * 100) / 100, y: Math.round((basis - hh) * 100) / 100, width: bb, height: Math.round(hh * 100) / 100,
+          rx: Math.min(3, hh / 2), class: letzter ? 'balken-laufend' : 'balken-dieses' }));
+        svg.append(s('text', { x: mitte, y: Math.max(basis - hh - 4, 9), 'text-anchor': 'middle', class: 'mini-wert', text: H.achsenText(Math.round(m.flaschen)) }));
+      }
+      if (i % 3 === 0 || letzter) svg.append(s('text', { x: mitte, y: basis + 12, 'text-anchor': 'middle', class: 'monat', text: H.monatFormat(m.monat) }));
+    });
+    return svg;
+  }
+
+  S.kundeZeigen = function (schluessel) {
+    const a = auswertung();
+    const d = a && a.zeilen ? H.kundeDetails(a.zeilen, schluessel, a.heute) : null;
+    if (!d) return;
+    const her = d.letzte ? H.tageZwischen(d.letzte.datum || zeilenEnde(d.letzte.monat), a.heute) : null;
+    const summe = (label, x) => h('div', { class: 'blatt-zahl' }, h('p', { class: 'kachel-label', text: label }),
+      h('p', { class: 'blatt-wert', text: H.zahlFormat(x.flaschen, 0) }), h('p', { class: 'kachel-zusatz', text: 'Fl. · ' + H.euroFormat(x.umsatz) }));
+    const fakten = [
+      ['Bestellungen', String(d.bestellungen)],
+      ['Ø pro Bestellung', d.proBestellung === null ? '–' : flaschen(d.proBestellung)],
+      ['Letzte Bestellung', H.wannText(d.letzte) + (her !== null && her >= 0 ? ' · ' + H.abstandText(her) : '')],
+      ['Kunde seit', H.wannText(d.erste)],
+    ];
+    // Nach dem Schließen zurück auf den Knopf dieses Kunden, auch wenn die Liste inzwischen neu gebaut wurde
+    const zurueck = () => Array.from(document.querySelectorAll('#ansicht-verkaeufe [data-kunde]')).find((x) => x.dataset.kunde === schluessel) || null;
+    S.blattZeigen(d.kunde, [
+      h('p', { class: 'blatt-unter', text: d.kanaele.join(', ') }),
+      h('div', { class: 'blatt-zahlen' }, summe('Dieses Jahr', d.jahr), summe('Vorjahr', d.vorjahr), summe('Gesamt', d.gesamt)),
+      h('p', { class: 'blatt-titel-klein', text: 'Flaschen, letzte 13 Monate' }),
+      miniDiagramm(d.monate),
+      h('dl', { class: 'fakten' }, fakten.map(([k, w]) => h('div', { class: 'fakt' }, h('dt', { text: k }), h('dd', { text: w })))),
+      h('p', { class: 'blatt-titel-klein', text: 'Letzte Bestellungen' }),
+      h('ul', { class: 'liste blatt-liste', role: 'list' }, d.liste.map((x) => h('li', { class: 'zeile' },
+        h('span', { text: H.wannText(x) }),
+        h('span', {}, h('strong', { text: flaschen(x.flaschen) }), h('span', { class: 'zeile-leise', text: ' · ' + H.euroFormat(x.umsatz) }))))),
+    ], zurueck);
+  };
+  function zeilenEnde(monat) {
+    return H.tagePlus(H.monatPlus(monat, 1) + '-01', -1);
+  }
 
   // Lager -------------------------------------------------------------------------------------------------------
 

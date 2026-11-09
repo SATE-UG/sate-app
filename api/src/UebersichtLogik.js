@@ -49,6 +49,7 @@ function uebersichtBauen(roh, formatieren, jetzt) {
     bestellung: Object.assign(bestellung, { vorlaufMonate: e.vorlaufMonate, pufferWochen: e.pufferWochen }),
     lager: lager.standorte.map((s) => ({
       standort: s.standort, bestand: s.bestand, kisten: kiste(s.bestand), letzteInventur: s.letzteInventur, schwund: s.schwund,
+      gezaehlt: s.gezaehlt, seitInventur: s.seitInventur,
     })),
     verkaeufe: verkaeufeAuswerten(vk.verkaeufe, heute),
     abfuellungen: abfuellungenLesen(roh.abfuellungen, formatieren),

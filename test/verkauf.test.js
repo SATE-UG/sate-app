@@ -184,3 +184,17 @@ test('Vergleichsmonate: die 12 Monate vor dem Diagramm-Zeitraum', () => {
   assert.strictEqual(a.vergleichsmonate[11].flaschen, 9);
   assert.strictEqual(a.monate[0].monat, '2025-11', 'Diagramm bleibt bei 13 Monaten');
 });
+
+test('Verkaufszeilen kompakt: alle Zeilen, sortiert nach Monat und Datum, Gutschriften negativ', () => {
+  const v = k.verkaeufeLesen(verkaufZeilen(), D.berlin).verkaeufe;
+  const a = roh(k.verkaeufeAuswerten(v, '2026-11-08'));
+  assert.strictEqual(a.zeilen.length, v.length);
+  assert.deepStrictEqual(a.zeilen[0], ['2025-10', '', 'Karlsruhe', 'Bar Eins', 100, 120, '']);
+  assert.deepStrictEqual(a.zeilen[a.zeilen.length - 1], ['2026-11', '2026-11-03', 'Karlsruhe', 'Bar Eins', 48, 60, 'RE1']);
+  const okt = a.zeilen.filter((z) => z[0] === '2026-10');
+  // Altzeile (ohne Datum) vor den Rechnungen, Rechnungen nach Datum
+  assert.deepStrictEqual(okt.map((z) => z[1]), ['', '2026-10-01', '2026-10-30']);
+  assert.deepStrictEqual(okt[2], ['2026-10', '2026-10-30', 'Berlin', 'Späti Zwei', -24, -26.5, 'RE1']);
+  for (let i = 1; i < a.zeilen.length; i++) assert.ok(a.zeilen[i - 1][0] <= a.zeilen[i][0], 'nach Monat sortiert');
+  assert.deepStrictEqual(roh(k.verkaeufeAuswerten([], '2026-11-08').zeilen), []);
+});

@@ -105,6 +105,28 @@
     return lang ? MONATE_LANG[i] + ' ' + m.slice(0, 4) : MONATE_KURZ[i];
   }
 
+  const WOCHENTAGE = ['Sonntag', 'Montag', 'Dienstag', 'Mittwoch', 'Donnerstag', 'Freitag', 'Samstag'];
+
+  /** `JJJJ-MM-TT` → „Montag, 9. November“. Ungültig → ''. */
+  function wochentagText(t) {
+    if (!datumGueltig(t)) return '';
+    const d = new Date(Date.UTC(Number(t.slice(0, 4)), Number(t.slice(5, 7)) - 1, Number(t.slice(8, 10))));
+    return WOCHENTAGE[d.getUTCDay()] + ', ' + Number(t.slice(8, 10)) + '. ' + MONATE_LANG[Number(t.slice(5, 7)) - 1];
+  }
+
+  /** Dauer in Tagen in Worten: „1 Tag“, „12 Tage“, „5 Wochen“ (ab 14 Tagen), „2,5 Monate“ (ab 60 Tagen). Ungültig → ''. */
+  function dauerText(tage) {
+    if (!istZahl(tage) || tage < 0) return '';
+    if (tage < 14) return tage === 1 ? '1 Tag' : zahlFormat(tage, 0) + ' Tage';
+    if (tage < 60) return zahlFormat(Math.round(tage / 7), 0) + ' Wochen';
+    return zahlFormat(Math.round(tage / (365.25 / 12) * 10) / 10, 1).replace(/,0$/, '') + ' Monate';
+  }
+
+  /** `JJJJ-MM` → „November“ (ohne Jahr). Ungültig → „–“. */
+  function monatName(m) {
+    return monatFormat(m) === '–' ? '–' : MONATE_LANG[Number(m.slice(5, 7)) - 1];
+  }
+
   /** Zeitraum `JJJJ-MM` bis `JJJJ-MM` → „Nov 2025 – Okt 2026“ (ein Monat: „Jan 2026“). Ungültig → ''. */
   function zeitraumFormat(von, bis) {
     if (monatFormat(von) === '–' || monatFormat(bis) === '–') return '';
@@ -240,6 +262,22 @@
   function runde(z) { return Math.round(z * 100) / 100; }
 
   /**
+   * Achse für Werte, die auch negativ sein können (Gutschriften): Schrittweite wie achse() aus der Spanne, Striche von
+   * `unten` (≤ 0) bis `oben` (> 0) in ganzen Schritten. Ungültige Werte zählen nicht. Rückgabe { unten, oben, schritt, striche }.
+   */
+  function achseMitMinus(werte, anzahl) {
+    const zahlen = (werte || []).filter(istZahl);
+    const max = Math.max.apply(null, [0].concat(zahlen));
+    const min = Math.min.apply(null, [0].concat(zahlen));
+    const schritt = achse(max - min, anzahl || 4).schritt;
+    const unten = min < 0 ? -Math.ceil(-min / schritt - 1e-9) * schritt : 0;
+    const oben = Math.max(schritt, Math.ceil(max / schritt - 1e-9) * schritt);
+    const striche = [];
+    for (let i = 0; unten + i * schritt <= oben + schritt / 2; i++) striche.push(Math.round((unten + i * schritt) * 1e6) / 1e6);
+    return { unten: Math.round(unten * 1e6) / 1e6, oben: Math.round(oben * 1e6) / 1e6, schritt: schritt, striche: striche };
+  }
+
+  /**
    * Maße für ein Balkendiagramm. `werte` = Zahlen (ungültig → 0), `m` = { breite, hoehe, links, unten, oben, luecke }.
    * Rückgabe { balken: [{x, y, b, h, wert}], striche: [{wert, y}], basis, platz } in Einheiten der viewBox.
    * Negative Werte (Gutschriften) zeichnen als 0 hoch.
@@ -262,9 +300,13 @@
     };
   }
 
-  /** Achsenbeschriftung kurz: 1.500 → „1.500“, 12.000 → „12 Tsd.“, 12.500 → „12,5 Tsd.“. */
-  function achsenText(w) {
-    return w >= 10000 ? zahlFormat(w / 1000, w % 1000 ? 1 : 0) + ' Tsd.' : zahlFormat(w, 0);
+  /**
+   * Achsenbeschriftung kurz: 1.500 → „1.500“, 12.000 → „12 Tsd.“, 12.500 → „12,5 Tsd.“. Mit `max` ≥ 10.000 (höchster
+   * Strich der Achse) alle Striche außer 0 in Tsd., damit eine Achse einheitlich ist (5.000 → „5 Tsd.“).
+   */
+  function achsenText(w, max) {
+    const tsd = w >= 10000 || (max >= 10000 && w > 0);
+    return tsd ? zahlFormat(w / 1000, w % 1000 ? 1 : 0) + ' Tsd.' : zahlFormat(w, 0);
   }
 
   // Antworten --------------------------------------------------------------------------------------------------
@@ -470,14 +512,280 @@
     return String(Math.max(0, Math.min(grenze, (z === null ? 0 : z) + schritt)));
   }
 
+  // Auswertungen aus den Verkaufszeilen (seit 2026-11-09): Jahresvergleich, Kanäle und Kunden, Kunden-Details --------
+
+  const MONAT_MUSTER = /^\d{4}-(0[1-9]|1[0-2])$/;
+  const leerSumme = () => ({ flaschen: 0, umsatz: 0 });
+  const summeRunden = (x) => (x ? { flaschen: runde(x.flaschen), umsatz: runde(x.umsatz) } : null);
+  function addieren(ziel, x) {
+    ziel.flaschen += x.flaschen;
+    ziel.umsatz += x.umsatz;
+    return ziel;
+  }
+
+  /** Wie die Schnittstelle: Kunden gleich, wenn sie bis auf Groß/klein und Leerzeichen gleich heißen. */
+  function kundeSchluessel(kunde) {
+    return String(kunde || '').trim().replace(/\s+/g, ' ').toLowerCase();
+  }
+
+  /**
+   * Verkaufszeilen der Schnittstelle (`verkaeufe.zeilen`, je [Monat, Datum, Kanal, Kunde, Flaschen, Umsatz, Rechnung])
+   * → Objekte { monat, datum ('' ohne Rechnungsdatum), kanal, kunde, schluessel, flaschen, umsatz, rechnung }.
+   * `rechnung` ohne Zusatz wie „#2“ (zweite Zeile derselben Rechnung), '' ohne Nummer. Unlesbare Zeilen fallen weg, mit
+   * `heute` (`JJJJ-MM-TT`) auch Zeilen aus späteren Monaten (wie bei den Monatssummen der Schnittstelle).
+   * Ältere Schnittstelle ohne das Feld: null.
+   */
+  function verkaufZeilen(verkaeufe, heute) {
+    if (!verkaeufe || !Array.isArray(verkaeufe.zeilen)) return null;
+    const bis = datumGueltig(heute) ? heute.slice(0, 7) : null;
+    return verkaeufe.zeilen
+      .filter((z) => Array.isArray(z) && typeof z[0] === 'string' && MONAT_MUSTER.test(z[0]) && istZahl(z[4]) && (!bis || z[0] <= bis))
+      .map((z) => {
+        const kunde = String(z[3] === undefined || z[3] === null ? '' : z[3]).trim();
+        const rechnung = String(z[6] === undefined || z[6] === null ? '' : z[6]).split('#')[0].trim();
+        return { monat: z[0], datum: datumGueltig(z[1]) ? z[1] : '', kanal: String(z[2] || '').trim() || 'Sonstiges', kunde: kunde,
+          schluessel: kundeSchluessel(kunde) || '(ohne name)', flaschen: z[4], umsatz: istZahl(z[5]) ? z[5] : 0, rechnung: rechnung };
+      });
+  }
+
+  /**
+   * Flaschen und Umsatz pro Monat als Funktion `werte(monat)` → { flaschen, umsatz }. Aus den Zeilen (Monate ohne
+   * Verkäufe → 0), sonst aus `monate` und `vergleichsmonate` der Schnittstelle (25 Monate; außerhalb → null).
+   */
+  function monatsWerte(verkaeufe, zeilen) {
+    const tab = Object.create(null);
+    if (zeilen) {
+      zeilen.forEach((z) => addieren(tab[z.monat] = tab[z.monat] || leerSumme(), z));
+      return (m) => (tab[m] ? summeRunden(tab[m]) : leerSumme());
+    }
+    const v = verkaeufe || {};
+    [].concat(Array.isArray(v.vergleichsmonate) ? v.vergleichsmonate : [], Array.isArray(v.monate) ? v.monate : []).forEach((x) => {
+      if (x && MONAT_MUSTER.test(x.monat)) tab[x.monat] = { flaschen: istZahl(x.flaschen) ? x.flaschen : 0, umsatz: istZahl(x.umsatz) ? x.umsatz : 0 };
+    });
+    return (m) => (tab[m] ? { flaschen: tab[m].flaschen, umsatz: tab[m].umsatz } : null);
+  }
+
+  /**
+   * Ein Jahr gegen das Jahr davor, Januar bis Dezember. `heute` = `JJJJ-MM-TT` (Datum der Schnittstelle, damit der
+   * Jahreswechsel überall gleich gilt), `werte` aus monatsWerte, `jahrWahl` (Zahl, optional) = gezeigtes Jahr, Standard
+   * das Jahr von `heute` („Dieses Jahr“; mit Jahr − 1 das Vorjahr gegen das Jahr davor). Rückgabe:
+   * { jahr, monate: 12 × { monat, vorjahrMonat, dieses ({flaschen, umsatz}; null für Monate, die noch kommen), vorjahr (oder
+   *   null), laufend, zukunft }, bisher (Januar bis heute bzw. ganzes Jahr), vergleich ({ bis, dieses, vorjahr }: volle
+   *   Monate in beiden Jahren; ohne vollen Monat oder bei Lücken null), vorjahrGesamt (Januar bis Dezember; null bei Lücken) }.
+   */
+  function jahresVergleich(werte, heute, jahrWahl) {
+    if (!datumGueltig(heute) || typeof werte !== 'function') return null;
+    const jetzt = heute.slice(0, 7);
+    const jahr = Number.isInteger(jahrWahl) ? jahrWahl : Number(heute.slice(0, 4));
+    const bisher = leerSumme();
+    const vgDieses = leerSumme();
+    const vgVorjahr = leerSumme();
+    const vjGesamt = leerSumme();
+    let vjLuecke = false;
+    let vgLuecke = false;
+    const monate = [];
+    for (let i = 1; i <= 12; i++) {
+      const mm = (i < 10 ? '0' : '') + i;
+      const m = jahr + '-' + mm;
+      const vm = (jahr - 1) + '-' + mm;
+      const zukunft = m > jetzt;
+      const d = zukunft ? null : werte(m);
+      const v = werte(vm);
+      if (d) addieren(bisher, d);
+      if (v) addieren(vjGesamt, v); else vjLuecke = true;
+      if (m < jetzt) {
+        if (d && v) { addieren(vgDieses, d); addieren(vgVorjahr, v); } else vgLuecke = true;
+      }
+      monate.push({ monat: m, vorjahrMonat: vm, dieses: summeRunden(d), vorjahr: summeRunden(v), laufend: m === jetzt, zukunft: zukunft });
+    }
+    const voll = monate.filter((m) => m.monat < jetzt); // volle Monate im gezeigten Jahr
+    return {
+      jahr: jahr,
+      monate: monate,
+      bisher: summeRunden(bisher),
+      vergleich: voll.length >= 1 && !vgLuecke
+        ? { bis: voll[voll.length - 1].monat, dieses: summeRunden(vgDieses), vorjahr: summeRunden(vgVorjahr) } : null,
+      vorjahrGesamt: vjLuecke ? null : summeRunden(vjGesamt),
+    };
+  }
+
+  /**
+   * Laufende Summen über die 12 Monate. Ab dem ersten fehlenden Monat (noch nicht da oder unbekannt) bleibt alles null,
+   * sonst wäre eine spätere Summe nicht mehr „seit Januar“. `groesse` = 'flaschen' | 'umsatz'.
+   */
+  function kumuliert(monate, schluessel, groesse) {
+    let summe = 0;
+    let luecke = false;
+    return (monate || []).map((m) => {
+      const x = m && m[schluessel];
+      if (!x || luecke) { luecke = true; return null; }
+      summe += istZahl(x[groesse]) ? x[groesse] : 0;
+      return runde(summe);
+    });
+  }
+
+  /** Häufigste Schreibweise, bei Gleichstand die alphabetisch erste (wie die Schnittstelle). */
+  function haeufigsterName(namen) {
+    return Object.keys(namen).sort((a, b) => namen[b] - namen[a] || (a < b ? -1 : a > b ? 1 : 0))[0] || '';
+  }
+
+  /** Lieferdatum einer Zeile zum Vergleichen: Rechnungsdatum, sonst Monatsende (Altliste kennt nur den Monat). */
+  function zeilenTag(z) {
+    if (z.datum) return z.datum;
+    const j = Number(z.monat.slice(0, 4));
+    const m = Number(z.monat.slice(5, 7));
+    return new Date(Date.UTC(j, m, 0)).toISOString().slice(0, 10);
+  }
+
+  /**
+   * Bestellungen zählen: Zeilen mit Flaschen > 0. Zeilen derselben Rechnung zählen als eine (eine Rechnung kann mehrere
+   * Zeilen haben); ohne Rechnungsnummer Zeilen mit gleichem Rechnungsdatum, Altzeilen ohne beides einzeln.
+   */
+  function bestellungenZaehlen(zeilen) {
+    const schon = Object.create(null);
+    let einzeln = 0;
+    (zeilen || []).forEach((z) => {
+      if (!(z.flaschen > 0)) return;
+      if (z.rechnung) schon['r:' + z.rechnung] = true;
+      else if (z.datum) schon['d:' + z.datum] = true;
+      else einzeln++;
+    });
+    return Object.keys(schon).length + einzeln;
+  }
+
+  /**
+   * Kanäle und Kunden in [von, bis] (Monate `JJJJ-MM`, beide inklusive) aus den Zeilen. Rückgabe { von, bis, flaschen,
+   * umsatz, kanaele: [{kanal, flaschen, umsatz}], kunden: [{schluessel, kunde, kanal, flaschen, umsatz, erster}] }, beide
+   * nach Flaschen absteigend (bei Gleichstand Umsatz, dann Name). `erster` = erster Monat des Kunden überhaupt.
+   */
+  function zeitraumAuswerten(zeilen, von, bis) {
+    const kanaele = Object.create(null);
+    const kunden = Object.create(null);
+    const erster = Object.create(null);
+    const summe = leerSumme();
+    (zeilen || []).forEach((z) => {
+      if (!erster[z.schluessel] || z.monat < erster[z.schluessel]) erster[z.schluessel] = z.monat;
+      if (z.monat < von || z.monat > bis) return;
+      addieren(summe, z);
+      addieren(kanaele[z.kanal] = kanaele[z.kanal] || { kanal: z.kanal, flaschen: 0, umsatz: 0 }, z);
+      const k = kunden[z.schluessel] = kunden[z.schluessel] ||
+        { namen: Object.create(null), kanaele: Object.create(null), flaschen: 0, umsatz: 0 };
+      addieren(k, z);
+      const n = z.kunde || '(ohne Name)';
+      k.namen[n] = (k.namen[n] || 0) + 1;
+      k.kanaele[z.kanal] = (k.kanaele[z.kanal] || 0) + Math.abs(z.flaschen);
+    });
+    const ordnen = (a, b, name) => b.flaschen - a.flaschen || b.umsatz - a.umsatz || (a[name] < b[name] ? -1 : a[name] > b[name] ? 1 : 0);
+    return {
+      von: von, bis: bis, flaschen: runde(summe.flaschen), umsatz: runde(summe.umsatz),
+      kanaele: Object.keys(kanaele).map((k) => ({ kanal: k, flaschen: runde(kanaele[k].flaschen), umsatz: runde(kanaele[k].umsatz) }))
+        .sort((a, b) => ordnen(a, b, 'kanal')),
+      kunden: Object.keys(kunden).map((s) => ({
+        schluessel: s, kunde: haeufigsterName(kunden[s].namen), kanal: haeufigsterName(kunden[s].kanaele),
+        flaschen: runde(kunden[s].flaschen), umsatz: runde(kunden[s].umsatz), erster: erster[s],
+      })).sort((a, b) => ordnen(a, b, 'kunde')),
+    };
+  }
+
+  /**
+   * Alles zu einem Kunden (`schluessel` aus kundeSchluessel). `heute` = `JJJJ-MM-TT`. Rückgabe null, wenn es ihn nicht
+   * gibt, sonst { kunde, kanaele (nach Flaschen), jahr, vorjahr, gesamt ({flaschen, umsatz}), bestellungen, proBestellung,
+   * erste, letzte ({ monat, datum }), monate (13 Monate bis heute: {monat, flaschen, umsatz}), liste (neueste 12 Zeilen) }.
+   */
+  function kundeDetails(zeilen, schluessel, heute) {
+    const eigene = (zeilen || []).filter((z) => z.schluessel === schluessel);
+    if (!eigene.length || !datumGueltig(heute)) return null;
+    const jahr = heute.slice(0, 4);
+    const vorjahr = String(Number(jahr) - 1);
+    const namen = Object.create(null);
+    const kanaele = Object.create(null);
+    const s = { jahr: leerSumme(), vorjahr: leerSumme(), gesamt: leerSumme() };
+    const proMonat = Object.create(null);
+    eigene.forEach((z) => {
+      const n = z.kunde || '(ohne Name)';
+      namen[n] = (namen[n] || 0) + 1;
+      kanaele[z.kanal] = (kanaele[z.kanal] || 0) + Math.abs(z.flaschen);
+      addieren(s.gesamt, z);
+      if (z.monat.slice(0, 4) === jahr) addieren(s.jahr, z);
+      if (z.monat.slice(0, 4) === vorjahr) addieren(s.vorjahr, z);
+      addieren(proMonat[z.monat] = proMonat[z.monat] || leerSumme(), z);
+    });
+    const nachTag = (a, b) => (zeilenTag(a) < zeilenTag(b) ? -1 : zeilenTag(a) > zeilenTag(b) ? 1 : 0);
+    const positiv = eigene.filter((z) => z.flaschen > 0).sort(nachTag);
+    const bestellungen = bestellungenZaehlen(eigene);
+    const jetzt = heute.slice(0, 7);
+    const monate = [];
+    for (let i = 12; i >= 0; i--) {
+      const m = monatPlus(jetzt, -i);
+      monate.push(Object.assign({ monat: m }, summeRunden(proMonat[m] || leerSumme())));
+    }
+    const ort = (z) => (z ? { monat: z.monat, datum: z.datum } : null);
+    return {
+      kunde: haeufigsterName(namen),
+      kanaele: Object.keys(kanaele).sort((a, b) => kanaele[b] - kanaele[a] || (a < b ? -1 : 1)),
+      jahr: summeRunden(s.jahr), vorjahr: summeRunden(s.vorjahr), gesamt: summeRunden(s.gesamt),
+      bestellungen: bestellungen,
+      proBestellung: bestellungen ? Math.round(positiv.reduce((x, z) => x + z.flaschen, 0) / bestellungen) : null,
+      erste: ort(positiv[0]), letzte: ort(positiv[positiv.length - 1]),
+      monate: monate,
+      liste: eigene.slice().sort((a, b) => nachTag(b, a)).slice(0, 12)
+        .map((z) => ({ monat: z.monat, datum: z.datum, kanal: z.kanal, flaschen: z.flaschen, umsatz: z.umsatz })),
+    };
+  }
+
+  /**
+   * „Lange nichts bestellt“: Kunden mit mindestens `min` Bestellungen (Standard 2), deren letzte Bestellung mehr als
+   * `tage` Tage (Standard 90) und höchstens 18 Monate zurückliegt. Bei Altzeilen ohne Datum zählt das Monatsende.
+   * Rückgabe [{ schluessel, kunde, letzte ({monat, datum}), tage, bestellungen, flaschen (gesamt) }], nach Flaschen absteigend.
+   */
+  function nachfassen(zeilen, heute, tage, min) {
+    if (!datumGueltig(heute)) return [];
+    const grenze = tage > 0 ? tage : 90;
+    const mindestens = min > 0 ? min : 2;
+    const nachKunde = Object.create(null);
+    (zeilen || []).forEach((z) => { (nachKunde[z.schluessel] = nachKunde[z.schluessel] || []).push(z); });
+    const aus = [];
+    Object.keys(nachKunde).forEach((s) => {
+      const eigene = nachKunde[s];
+      const n = bestellungenZaehlen(eigene);
+      if (n < mindestens) return;
+      const letzte = eigene.filter((z) => z.flaschen > 0).reduce((a, z) => (!a || zeilenTag(z) > zeilenTag(a) ? z : a), null);
+      const her = tageZwischen(zeilenTag(letzte), heute);
+      if (her <= grenze || her > 548) return;
+      const namen = Object.create(null);
+      eigene.forEach((z) => { const k = z.kunde || '(ohne Name)'; namen[k] = (namen[k] || 0) + 1; });
+      aus.push({ schluessel: s, kunde: haeufigsterName(namen), letzte: { monat: letzte.monat, datum: letzte.datum }, tage: her,
+        bestellungen: n, flaschen: runde(eigene.reduce((x, z) => x + z.flaschen, 0)) });
+    });
+    return aus.sort((a, b) => b.flaschen - a.flaschen || a.tage - b.tage || (a.kunde < b.kunde ? -1 : 1));
+  }
+
+  /** Tag oder Monat kurz: mit Datum „6. Nov 2026“, sonst „Nov 2026“. Ungültig → „–“. */
+  function wannText(x) {
+    if (!x) return '–';
+    if (datumGueltig(x.datum)) return datumText(x.datum);
+    return monatFormat(x.monat) === '–' ? '–' : monatFormat(x.monat) + ' ' + x.monat.slice(0, 4);
+  }
+
+  /** Abstand in Worten: „vor 3 Tagen“, „vor 5 Wochen“ (unter 60 Tagen), sonst „vor 4 Monaten“. Ungültig → ''. */
+  function abstandText(tage) {
+    if (!istZahl(tage) || tage < 0) return '';
+    if (tage === 0) return 'heute';
+    if (tage < 14) return tage === 1 ? 'gestern' : 'vor ' + tage + ' Tagen';
+    if (tage < 60) return 'vor ' + Math.round(tage / 7) + ' Wochen';
+    return 'vor ' + Math.round(tage / (365.25 / 12)) + ' Monaten';
+  }
+
   const hilfen = {
     CODE_LAENGE, ARTEN, MAX_KOMMENTAR, codeBereinigen, codePruefen, apiUrlGueltig, zahlFormat, euroFormat, kistenFormat,
     zeitFormat, datumGueltig, datumFormat, datumText, monatFormat, zeitraumFormat, heuteBerlin, tagePlus, tageZwischen, bestellStufe,
     reichweiteBalken,
     ganzeZahlEingabe, flaschenAusEingabe, kistenText, kistenTeilen, buchungPruefen, buchungText, anfrageIdAus, achse, diagrammMasse,
-    achsenText, antwortDeuten, uebersichtGueltig, neuer,
+    achsenText, achseMitMinus, antwortDeuten, uebersichtGueltig, neuer,
     relativZeit, monatPlus, veraenderung, prozentText, richtung, monatsTrend, reiterPosition, ziehRichtung, gummiband,
     MAX_FLASCHEN, datumKurz, monateAnzahl, zeitraumKurz, monatBisher, kistenKurz, anteileSinnvoll, hinweiseOrdnen, verlaufOhneStorno, schrittWert,
+    kundeSchluessel, verkaufZeilen, monatsWerte, jahresVergleich, kumuliert, zeitraumAuswerten, kundeDetails, nachfassen,
+    bestellungenZaehlen, wannText, abstandText, monatName, wochentagText, dauerText,
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = hilfen;
   else wurzel.SATE_HILFEN = hilfen;

@@ -87,7 +87,7 @@ function rechne(logZeilen, verkaeufe) {
 
 test('Ohne Inventur: Bestand null, Gesamt aus „rechnerisch“ mit Quelle', () => {
   const { s, standorte } = rechne([z('2026-10-01', 'Lager Süd', 'Abfüllung', 1000)]);
-  assert.deepStrictEqual(s['Lager Süd'], { standort: 'Lager Süd', bestand: null, letzteInventur: null, gezaehlt: null, schwund: null });
+  assert.deepStrictEqual(s['Lager Süd'], { standort: 'Lager Süd', bestand: null, letzteInventur: null, gezaehlt: null, schwund: null, seitInventur: null });
   assert.deepStrictEqual(roh(k.gesamtBestand(standorte, 5000)),
     { wert: 5000, quelle: 'rechnerisch', summeBekannt: null, fehlen: ['Lager Süd', 'Lager Nord', 'Lager Ost'] });
 });
@@ -142,6 +142,8 @@ test('Mehrere Inventuren: letzte gilt, Schwund aus der vorigen, gleicher Tag →
   assert.strictEqual(s['Lager Süd'].schwund, 20);
   assert.strictEqual(s['Lager Süd'].gezaehlt, 870);
   assert.strictEqual(s['Lager Süd'].bestand, 866);
+  // So kommt die Zahl zustande: 870 gezählt − 4 Bruch (Verkauf vom 05.10. liegt vor der Inventur)
+  assert.deepStrictEqual(roh(s['Lager Süd'].seitInventur), { verkauft: 0, zugaenge: 0, abgaenge: 4 });
   // ohne „Erfasst am“: Zeilenreihenfolge, die untere gilt
   const r = rechne([z('2026-11-01', 'Lager Nord', 'Inventur', 50), z('2026-11-01', 'Lager Nord', 'Inventur', 40)]).s;
   assert.strictEqual(r['Lager Nord'].bestand, 40);
@@ -330,4 +332,21 @@ test('Tab Lager: Namen bis einschließlich „Summe“', () => {
   assert.deepStrictEqual(roh(k.lagerNamenBisSumme(['A', 'B', 'C', 'D', 'Summe', '', 'Hinweis'])), ['A', 'B', 'C', 'D', 'Summe']);
   assert.deepStrictEqual(roh(k.lagerNamenBisSumme([' Summe '])), [' Summe ']);
   assert.strictEqual(k.lagerNamenBisSumme(['A', 'B', '']), null);
+});
+
+test('seitInventur: Verkäufe, Zugänge (Abfüllung, Umlagerung hin) und Abgänge (Promo, Umlagerung weg) getrennt', () => {
+  const verkaeufe = [
+    { monat: '2026-11', datum: '2026-11-04', kanal: 'Karlsruhe', kunde: 'Bar', flaschen: 48, standort: '' },
+    { monat: '2026-11', datum: '2026-11-05', kanal: 'Karlsruhe', kunde: 'Bar', flaschen: -24, standort: '' }, // Gutschrift
+  ];
+  const { s } = rechne([
+    z('2026-11-01', 'Lager Süd', 'Inventur', 1000),
+    z('2026-11-02', 'Lager Süd', 'Abfüllung', 500),
+    z('2026-11-02', 'Lager Süd', 'Umlagerung', 100, { nach: 'Lager Nord' }),
+    z('2026-11-03', 'Lager Süd', 'Promo', 12),
+    z('2026-11-01', 'Lager Nord', 'Inventur', 10),
+  ], verkaeufe);
+  assert.deepStrictEqual(roh(s['Lager Süd'].seitInventur), { verkauft: 24, zugaenge: 500, abgaenge: 112 });
+  assert.strictEqual(s['Lager Süd'].bestand, 1000 + 500 - 100 - 12 - 24);
+  assert.deepStrictEqual(roh(s['Lager Nord'].seitInventur), { verkauft: 0, zugaenge: 100, abgaenge: 0 });
 });

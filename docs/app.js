@@ -348,9 +348,10 @@
     abgemeldet = true;
     verlaufNr++;
     Object.assign(Z, { code: '', name: '', daten: null, frisch: false, laedt: false, verlauf: null, verlaufLaedt: false,
-      verlaufFehler: '', verlaufVeraltet: true, balken: null, zuordnenOffen: false, offline: false, ladenNachholen: false, sitzung: Z.sitzung + 1 });
+      verlaufFehler: '', verlaufVeraltet: true, monatWahl: null, jahrWahl: 'dieses', alleKunden: false, alleNachfassen: false, zuordnenOffen: false, offline: false, ladenNachholen: false, sitzung: Z.sitzung + 1 });
     meldung('');
     S.frageSchliessen();
+    S.blattSchliessen();
     S.meldenSchliessen();
     S.eintragenZuruecksetzen();
     S.renderAlle();

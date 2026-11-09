@@ -90,6 +90,9 @@ function zeitraumAuswerten_(verkaeufe, von, bis) {
  * Regel 8: Flaschen und Umsatz pro Monat (letzte 13 Monate inkl. laufendem, auch leere Monate), dazu pro Kanal und
  * Top-Kunden für das laufende Jahr (Januar bis laufender Monat), das Vorjahr (Januar bis Dezember) und gesamt (erster
  * Monat mit Verkäufen bis laufender Monat). `letzte12` (12 volle Monate) bleibt für ältere App-Versionen in der Antwort.
+ * `zeilen` (seit 2026-11-09): alle Verkäufe kompakt für Auswertungen in der App (Jahresvergleich, Kunden-Details), je
+ * [Monat `JJJJ-MM`, Datum `JJJJ-MM-TT` oder '', Kanal, Kunde, Flaschen, Umsatz, Rechnung oder ''], nach Monat und Datum
+ * sortiert.
  */
 function verkaeufeAuswerten(verkaeufe, heute) {
   const jetzt = heute.slice(0, 7);
@@ -113,5 +116,13 @@ function verkaeufeAuswerten(verkaeufe, heute) {
     jahr: zeitraumAuswerten_(verkaeufe, jetzt.slice(0, 4) + '-01', jetzt),
     vorjahr: zeitraumAuswerten_(verkaeufe, (Number(jetzt.slice(0, 4)) - 1) + '-01', (Number(jetzt.slice(0, 4)) - 1) + '-12'),
     gesamt: zeitraumAuswerten_(verkaeufe, ersterMonat_(verkaeufe, jetzt), jetzt),
+    zeilen: verkaufZeilenKompakt(verkaeufe),
   };
+}
+
+/** Verkäufe → [[Monat, Datum oder '', Kanal, Kunde, Flaschen, Umsatz, Rechnung oder ''], …], sortiert nach Monat, Datum, Zeile. */
+function verkaufZeilenKompakt(verkaeufe) {
+  return verkaeufe.slice().sort((a, b) => (a.monat < b.monat ? -1 : a.monat > b.monat ? 1 : 0) ||
+    ((a.datum || '') < (b.datum || '') ? -1 : (a.datum || '') > (b.datum || '') ? 1 : 0) || (a.zeile || 0) - (b.zeile || 0))
+    .map((v) => [v.monat, v.datum || '', v.kanal, v.kunde, runde_(v.flaschen, 2), runde_(v.umsatz || 0, 2), v.rechnung || '']);
 }

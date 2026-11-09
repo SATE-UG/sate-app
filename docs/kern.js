@@ -31,7 +31,10 @@
       verlaufVeraltet: true,
       diagramm: 'flaschen',
       zeitraum: 'jahr',
-      balken: null,
+      monatWahl: null,   // Verkäufe: gewählter Monat im Monatsdiagramm (`JJJJ-MM`), null = letzter voller Monat
+      jahrWahl: 'dieses', // Verkäufe: Monatsdiagramm für 'dieses' Jahr oder das 'vorjahr'
+      alleKunden: false, // Verkäufe: alle Kunden statt Top 10
+      alleNachfassen: false,
       zuordnenOffen: false, // Lager: „Verkäufe zuordnen“ aufgeklappt?
     },
     ansichten: {},
@@ -218,6 +221,42 @@
   };
   S.el('dialog-ja').addEventListener('click', () => S.el('dialog').close('ja'));
   S.el('dialog-nein').addEventListener('click', () => S.el('dialog').close('nein'));
+
+  /**
+   * Blatt von unten (iOS-Sheet) mit Titel und Inhalt (Knoten). Schließen: Knopf oben rechts, Tippen auf den dunklen
+   * Rand, Escape. Der Fokus geht danach zurück auf das Element, von dem aus es geöffnet wurde.
+   */
+  let blattVon = null;
+  let blattZurueck = null; // Ersatz, falls das auslösende Element inzwischen neu gebaut wurde (z. B. nach Neuladen)
+  S.blattZeigen = function (titel, inhalt, zurueck) {
+    const b = S.el('blatt');
+    if (!b || typeof b.showModal !== 'function') return false;
+    S.el('blatt-titel').textContent = titel;
+    S.el('blatt-inhalt').replaceChildren(...[].concat(inhalt).filter(Boolean));
+    blattZurueck = typeof zurueck === 'function' ? zurueck : null;
+    if (!b.open) {
+      blattVon = document.activeElement;
+      b.showModal();
+    }
+    S.el('blatt-inhalt').scrollTop = 0;
+    S.el('blatt-zu').focus();
+    return true;
+  };
+  S.blattSchliessen = function () {
+    const b = S.el('blatt');
+    if (b && b.open) b.close();
+  };
+  S.el('blatt-zu').addEventListener('click', S.blattSchliessen);
+  // Tipp auf den Rand (das <dialog> selbst, nicht sein Inhalt) schließt
+  S.el('blatt').addEventListener('click', (ev) => { if (ev.target === S.el('blatt')) S.blattSchliessen(); });
+  S.el('blatt').addEventListener('close', () => {
+    let v = blattVon;
+    const ersatz = blattZurueck;
+    blattVon = null;
+    blattZurueck = null;
+    if ((!v || !document.contains(v)) && ersatz) v = ersatz();
+    if (v && document.contains(v) && typeof v.focus === 'function') v.focus({ preventScroll: true });
+  });
 
   /** Text für Vorleseprogramme ansagen (VoiceOver). Erst leeren, dann kurz danach füllen, damit auch ein gleicher Text erneut kommt. */
   let ansageUhr = null;
