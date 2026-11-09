@@ -131,7 +131,7 @@ test('PWA: SATE-Look (schwarz, Systemschrift, Courier New als Akzent, eine Akzen
   assert.match(css, /@media \(prefers-reduced-motion: reduce\)/, 'Bewegung abschaltbar');
   assert.doesNotMatch(css, /border: 2px solid var\(--weiss\)/, 'keine weiß umrandeten Kästen mehr');
   // Reiter mit Symbol und Text
-  for (const r of ['uebersicht', 'verkaeufe', 'lager', 'eintragen']) {
+  for (const r of ['uebersicht', 'verkaeufe', 'eintragen', 'kunden', 'lager']) {
     assert.match(h, new RegExp('<button id="reiter-' + r + '"[^>]*>\\s*<svg class="icon"[^>]*aria-hidden="true"'), 'Symbol im Reiter ' + r);
   }
   assert.match(css, /color-scheme: dark;/);

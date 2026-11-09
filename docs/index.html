@@ -92,19 +92,10 @@
         </section>
 
         <section id="ansicht-verkaeufe" class="ansicht" role="tabpanel" aria-labelledby="reiter-verkaeufe">
-          <h1 class="titel"><strong>Verkäufe</strong> &amp; Kunden</h1>
+          <h1 class="titel"><strong>Verkäufe</strong></h1>
           <div id="verkaeufe-inhalt"></div>
         </section>
 
-        <section id="ansicht-lager" class="ansicht" role="tabpanel" aria-labelledby="reiter-lager">
-          <h1 class="titel"><strong>Lager</strong> &amp; Verlauf</h1>
-          <div id="lager-inhalt"></div>
-          <h2><strong>Verlauf</strong></h2>
-          <div id="verlauf-inhalt"></div>
-          <div id="abfuellungen-inhalt"></div>
-          <!-- „Verkäufe zuordnen“: einklappbar, Kopf mit Anzahl (ansichten.js) -->
-          <div id="zuordnen-inhalt"></div>
-        </section>
 
         <section id="ansicht-eintragen" class="ansicht" role="tabpanel" aria-labelledby="reiter-eintragen">
           <h1 class="titel"><strong>Neu</strong> eintragen</h1>
@@ -171,6 +162,21 @@
           <!-- Zuletzt eingetragen (aus dem Verlauf), damit niemand doppelt bucht -->
           <div id="zuletzt-inhalt"></div>
         </section>
+
+        <section id="ansicht-kunden" class="ansicht" role="tabpanel" aria-labelledby="reiter-kunden">
+          <h1 class="titel"><strong>Kunden</strong></h1>
+          <div id="kunden-inhalt"></div>
+        </section>
+
+        <section id="ansicht-lager" class="ansicht" role="tabpanel" aria-labelledby="reiter-lager">
+          <h1 class="titel"><strong>Lager</strong> &amp; Verlauf</h1>
+          <div id="lager-inhalt"></div>
+          <h2 id="verlauf-anker"><strong>Verlauf</strong></h2>
+          <div id="verlauf-inhalt"></div>
+          <div id="abfuellungen-inhalt"></div>
+          <!-- „Verkäufe zuordnen“: einklappbar, Kopf mit Anzahl (ansichten.js) -->
+          <div id="zuordnen-inhalt"></div>
+        </section>
       </div>
     </div>
 
@@ -182,19 +188,24 @@
   <nav id="leiste" class="leiste" role="tablist" aria-label="Ansichten" hidden>
     <button id="reiter-uebersicht" type="button" role="tab" data-ansicht="uebersicht" aria-controls="ansicht-uebersicht">
       <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M3.5 10.5 12 3.5l8.5 7"/><path d="M5.5 9v11h4.5v-6h4v6h4.5V9"/></svg>
-      <span>Übersicht</span>
+      <span>Start</span>
     </button>
     <button id="reiter-verkaeufe" type="button" role="tab" data-ansicht="verkaeufe" aria-controls="ansicht-verkaeufe">
       <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="4" y="12" width="4" height="8" rx="1"/><rect x="10" y="7" width="4" height="13" rx="1"/><rect x="16" y="3.5" width="4" height="16.5" rx="1"/></svg>
       <span>Verkäufe</span>
     </button>
+    <!-- Eintragen: die Hauptaktion, groß und gelb in der Mitte (seit v23) -->
+    <button id="reiter-eintragen" type="button" role="tab" data-ansicht="eintragen" aria-controls="ansicht-eintragen" class="reiter-plus">
+      <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 5.5v13M5.5 12h13"/></svg>
+      <span>Eintragen</span>
+    </button>
+    <button id="reiter-kunden" type="button" role="tab" data-ansicht="kunden" aria-controls="ansicht-kunden">
+      <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c.6-3.6 3.2-5.5 6.5-5.5s5.9 1.9 6.5 5.5"/><path d="M15.5 4.8a3.5 3.5 0 0 1 0 6.4"/><path d="M18 14.9c2 .8 3.2 2.5 3.5 5.1"/></svg>
+      <span>Kunden</span>
+    </button>
     <button id="reiter-lager" type="button" role="tab" data-ansicht="lager" aria-controls="ansicht-lager">
       <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M3.5 7.5 12 3.5l8.5 4v9L12 20.5l-8.5-4z"/><path d="M3.5 7.5 12 11.5l8.5-4"/><path d="M12 11.5v9"/></svg>
       <span>Lager</span>
-    </button>
-    <button id="reiter-eintragen" type="button" role="tab" data-ansicht="eintragen" aria-controls="ansicht-eintragen">
-      <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="8.5"/><path d="M12 8v8M8 12h8"/></svg>
-      <span>Eintragen</span>
     </button>
   </nav>
 

@@ -206,3 +206,50 @@ test('standText: kurzer Stand zum Teilen, ohne Kundennamen', () => {
   assert.match(jan, /\(überfällig\)/);
   assert.match(jan, /Dieses Jahr: 0 Flaschen\n/);
 });
+
+test('prognoseSaison: jeder Monat wie der gleiche Monat ein Jahr vorher, laufender Monat nur der Rest', () => {
+  const w = (m) => ({ '2025-11': { flaschen: 300 }, '2025-12': { flaschen: 500 }, '2026-01': { flaschen: 200 } })[m] || { flaschen: 1000 };
+  // 9. Nov: im November schon 100 verkauft (Vorjahr 300 → noch 200), Dezember 500, Januar 200, ab Februar 1000/Monat
+  const p = H.prognoseSaison(1500, '2026-11-09', w, 999, 100);
+  assert.deepStrictEqual(p.punkte.slice(0, 4), [{ datum: '2026-11-09', bestand: 1500 }, { datum: '2026-11-30', bestand: 1300 },
+    { datum: '2026-12-31', bestand: 800 }, { datum: '2027-01-31', bestand: 600 }]);
+  assert.strictEqual(p.leer, '2027-02-17', '600 von 1000 im Februar → nach 60 % der 28 Tage');
+  assert.deepStrictEqual(p.punkte[p.punkte.length - 1], { datum: '2027-02-17', bestand: 0 });
+  // schon im laufenden Monat leer: anteilig ab heute
+  assert.strictEqual(H.prognoseSaison(100, '2026-11-09', w, 0, 0).leer, '2026-11-16', '100 von 300 → ein Drittel der 21 Resttage');
+  // fehlender Vorjahresmonat: Ø; reicht länger als 18 Monate: leer null
+  assert.strictEqual(H.prognoseSaison(10, '2026-11-09', () => null, 5, 0).leer, '2026-12-31', 'je 5 im November und Dezember');
+  assert.strictEqual(H.prognoseSaison(1e9, '2026-11-09', w, 1, 0).leer, null);
+  assert.strictEqual(H.prognoseSaison(0, '2026-11-09', w, 1, 0), null);
+  assert.strictEqual(H.prognoseSaison(100, 'kaputt', w, 1, 0), null);
+  // Gutschrift-Monat (negativ) zählt als 0
+  assert.strictEqual(H.prognoseSaison(50, '2026-11-30', (m) => (m === '2025-12' ? { flaschen: -24 } : { flaschen: 100 }), 0, 100).punkte[2].bestand, 50);
+});
+
+test('aktivitaet: Rechnungen und Buchungen gemischt, neueste zuerst, Storno-Gegenzeilen weg', () => {
+  const rechnungen = [{ rechnung: 'RE2', datum: '2026-11-06', kunde: 'Forum-WI', flaschen: 600 }, { rechnung: 'RE1', datum: '2026-10-08', kunde: 'A', flaschen: 24 }];
+  const eintraege = [{ art: 'Storno', datum: '2026-11-08', stornoVon: 'L1' }, { art: 'Promo', id: 'L1', datum: '2026-11-08', storniert: true },
+    { art: 'Inventur', id: 'L0', datum: '2026-11-06' }, { art: 'Bruch', id: 'L9', datum: 'kaputt' }];
+  const a = H.aktivitaet(rechnungen, eintraege, 5);
+  assert.deepStrictEqual(a.map((x) => x.typ + ':' + (x.art || x.rechnung)), ['buchung:Promo', 'buchung:Inventur', 'rechnung:RE2', 'rechnung:RE1']);
+  assert.strictEqual(H.aktivitaet(rechnungen, eintraege, 2).length, 2);
+  assert.deepStrictEqual(H.aktivitaet(null, null), []);
+});
+
+test('letzteBestellungen: je Kunde die letzte Lieferung, Gutschriften zählen nicht, Altzeilen am Monatsende', () => {
+  const v = H.verkaufZeilen({ zeilen: zeilen() }, '2026-11-09');
+  const l = H.letzteBestellungen(v, '2026-11-09');
+  assert.deepStrictEqual(l['bar eins'], { monat: '2026-10', datum: '2026-10-08', tage: 32 });
+  assert.deepStrictEqual(l['späti'], { monat: '2026-10', datum: '2026-10-20', tage: 20 }, 'Gutschrift vom 30.10. zählt nicht');
+  assert.deepStrictEqual(l['start aktion'], { monat: '2025-03', datum: '', tage: H.tageZwischen('2025-03-31', '2026-11-09') });
+  assert.deepStrictEqual(Object.keys(H.letzteBestellungen([], '2026-11-09')), []);
+});
+
+test('Codex v23: Prognose ab 12 Monaten voraus wiederholt das Saisonprofil, Aktivität ohne Zukunft', () => {
+  // 1.11.2026, Bestand 1.350, Nov 2025 – Okt 2026 je 100: nach 12 Monaten weiter je 100 (nicht 0)
+  const w = (m) => (m >= '2025-11' && m <= '2026-10' ? { flaschen: 100 } : { flaschen: 0 });
+  const p = H.prognoseSaison(1350, '2026-11-01', w, 0, 0);
+  assert.strictEqual(p.leer, '2027-12-16', '13,5 Monate zu je 100 (Dezember zur Hälfte, aufgerundet)');
+  const zukunft = H.aktivitaet([{ rechnung: 'RE9', datum: '2026-11-10', kunde: 'Morgen', flaschen: 1 }, { rechnung: 'RE8', datum: '2026-11-09', kunde: 'Heute', flaschen: 1 }], [], 5, '2026-11-09');
+  assert.deepStrictEqual(zukunft.map((x) => x.rechnung), ['RE8']);
+});

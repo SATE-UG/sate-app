@@ -320,6 +320,86 @@
     return (Number(heute.slice(0, 4)) - (monat === 1 ? 1 : 0)) + '-12-31';
   }
 
+  /**
+   * Letzte Bestellung je Kunde (Zeilen mit Flaschen > 0; ohne Rechnungsdatum zählt das Monatsende) → Objekt
+   * schluessel → { monat, datum, tage (seit heute; ohne gültiges `heute` null) }.
+   */
+  function letzteBestellungen(zeilen, heute) {
+    const aus = Object.create(null);
+    (zeilen || []).forEach((z) => {
+      if (!(z.flaschen > 0)) return;
+      const tag = zeilenTag(z);
+      const alt = aus[z.schluessel];
+      if (!alt || tag > alt.tag) aus[z.schluessel] = { monat: z.monat, datum: z.datum, tag: tag };
+    });
+    Object.keys(aus).forEach((k) => {
+      aus[k].tage = datumGueltig(heute) ? tageZwischen(aus[k].tag, heute) : null;
+      delete aus[k].tag;
+    });
+    return aus;
+  }
+
+  /** Tage eines Monats (`JJJJ-MM`). */
+  function monatsTage(m) {
+    return new Date(Date.UTC(Number(m.slice(0, 4)), Number(m.slice(5, 7)), 0)).getUTCDate();
+  }
+
+  /**
+   * Bestandsprognose „Saison wie im Vorjahr“ (Start-Karte): Ab `heute` (`JJJJ-MM-TT`) mit `bestand` Flaschen geht jeder
+   * Monat so viel weg wie im gleichen Monat ein Jahr vorher (`werte` aus monatsWerte; ab 12 Monaten voraus der gleiche
+   * Monat zwei Jahre vorher usw.; fehlt der Monat: `proMonat`, negative Monate zählen als 0). Im laufenden Monat nur, was gegenüber dem Vorjahresmonat noch fehlt (`bisher` = schon
+   * verkauft). Höchstens `maxMonate` (Standard 18) weit. Rückgabe { punkte: [{datum, bestand}] (heute, dann Monatsenden,
+   * zuletzt der Tag „leer“), leer (`JJJJ-MM-TT` oder null, wenn es länger reicht) } oder null ohne Bestand.
+   */
+  function prognoseSaison(bestand, heute, werte, proMonat, bisher, maxMonate) {
+    if (!istZahl(bestand) || bestand <= 0 || !datumGueltig(heute) || typeof werte !== 'function') return null;
+    const max = maxMonate > 0 ? maxMonate : 18;
+    const ersatz = istZahl(proMonat) && proMonat > 0 ? proMonat : 0;
+    const jetzt = heute.slice(0, 7);
+    // Vergleichsmonat: ein Jahr vorher; liegt der selbst noch nicht hinter uns (ab 12 Monaten voraus), noch ein Jahr
+    // früher – so wiederholt sich das zuletzt bekannte Saisonprofil, statt künftige Monate als verkaufsfrei zu zählen
+    const erwartet = (m) => {
+      let r = monatPlus(m, -12);
+      while (r >= jetzt) r = monatPlus(r, -12);
+      const v = werte(r);
+      return Math.max(0, v && istZahl(v.flaschen) ? v.flaschen : ersatz);
+    };
+    const punkte = [{ datum: heute, bestand: runde(bestand) }];
+    let rest = bestand;
+    let m = heute.slice(0, 7);
+    let tagAb = Number(heute.slice(8, 10)); // im laufenden Monat ab heute
+    for (let i = 0; i <= max; i++) {
+      const tage = monatsTage(m);
+      const ab = i === 0 ? tagAb : 0;
+      const weg = i === 0 ? Math.max(0, erwartet(m) - (istZahl(bisher) ? Math.max(bisher, 0) : 0)) : erwartet(m);
+      if (weg >= rest && weg > 0) {
+        // Leer in diesem Monat: Tag anteilig zwischen `ab` und Monatsende
+        const tag = Math.min(tage, Math.max(ab + 1, ab + Math.ceil((tage - ab) * (rest / weg))));
+        const leer = m + '-' + (tag < 10 ? '0' : '') + tag;
+        punkte.push({ datum: leer, bestand: 0 });
+        return { punkte: punkte, leer: leer };
+      }
+      rest -= weg;
+      punkte.push({ datum: m + '-' + tage, bestand: runde(rest) });
+      m = monatPlus(m, 1);
+      tagAb = 0;
+    }
+    return { punkte: punkte, leer: null };
+  }
+
+  /**
+   * „Was ist passiert“ (Start): Rechnungen (`verkaufListe` der Schnittstelle) und Buchungen (Verlauf, ohne Storno-
+   * Gegenzeilen) gemischt, neueste zuerst; am gleichen Tag erst Buchungen, dann Rechnungen; mit `heute` nichts aus der
+   * Zukunft. Rückgabe höchstens `n` (Standard 5) Einträge { typ: 'rechnung' | 'buchung', datum, ... das Original }.
+   */
+  function aktivitaet(rechnungen, eintraege, n, heute) {
+    const bisHeute = (x) => x && datumGueltig(x.datum) && (!datumGueltig(heute) || x.datum <= heute);
+    const r = (Array.isArray(rechnungen) ? rechnungen : []).filter(bisHeute).map((x) => Object.assign({ typ: 'rechnung' }, x));
+    const b = verlaufOhneStorno(eintraege).filter(bisHeute).map((x, i) => Object.assign({ typ: 'buchung', reihe: i }, x));
+    return b.concat(r).sort((x, y) => (x.datum < y.datum ? 1 : x.datum > y.datum ? -1 : 0) ||
+      (x.typ === y.typ ? (x.reihe || 0) - (y.reihe || 0) : x.typ === 'buchung' ? -1 : 1)).slice(0, n > 0 ? n : 5);
+  }
+
   /** Text für die Bestätigung nach dem Eintragen, z. B. „Umlagerung: 48 Flaschen von Lager Süd nach Lager Nord“. */
   function buchungText(b) {
     const fl = zahlFormat(b.flaschen, 0) + (b.flaschen === 1 ? ' Flasche' : ' Flaschen');
@@ -873,7 +953,7 @@
     relativZeit, monatPlus, veraenderung, prozentText, richtung, monatsTrend, reiterPosition, ziehRichtung, gummiband,
     MAX_FLASCHEN, datumKurz, monateAnzahl, zeitraumKurz, monatBisher, kistenKurz, anteileSinnvoll, hinweiseOrdnen, verlaufOhneStorno, schrittWert,
     kundeSchluessel, verkaufZeilen, monatsWerte, jahresVergleich, kumuliert, zeitraumAuswerten, kundeDetails, nachfassen,
-    bestellungenZaehlen, wannText, abstandText, monatName, wochentagText, dauerText, datumAbkuerzungen, buchungVorschau, standText, inventurAm, jahresStichtag,
+    bestellungenZaehlen, wannText, abstandText, monatName, wochentagText, dauerText, datumAbkuerzungen, buchungVorschau, standText, inventurAm, jahresStichtag, prognoseSaison, aktivitaet, monatsTage, letzteBestellungen,
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = hilfen;
   else wurzel.SATE_HILFEN = hilfen;

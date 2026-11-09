@@ -32,7 +32,11 @@
       diagramm: 'flaschen',
       zeitraum: 'jahr',
       monatWahl: null,   // Verkäufe: gewählter Monat (`JJJJ-MM`, auch im Vorjahr), null = letzter voller Monat
-      alleKunden: false, // Verkäufe: alle Kunden statt Top 10
+      alleKunden: false, // Kunden: alle statt der ersten 20
+      kundenZeitraum: 'jahr', // Kunden: 'jahr' | 'vorjahr' | 'gesamt'
+      kundenSuche: '',   // Kunden: Suchtext
+      kundenKanal: '',   // Kunden: nur dieser Kanal ('' = alle)
+      kundenSortierung: 'menge', // Kunden: 'menge' | 'zuletzt' | 'name'
       alleNachfassen: false,
       zuordnenOffen: false, // Lager: „Verkäufe zuordnen“ aufgeklappt?
       verlaufAlle: false,   // Lager: ganzen Verlauf statt der letzten 10 zeigen
@@ -89,6 +93,9 @@
     fehler: [['circle', { cx: 12, cy: 12, r: 9 }], ['path', { d: 'M12 7.5v5.5' }], ['path', { d: 'M12 16.4v.1' }]],
     info: [['circle', { cx: 12, cy: 12, r: 9 }], ['path', { d: 'M12 11v5.5' }], ['path', { d: 'M12 7.6v.1' }]],
     flasche: [['path', { d: FLASCHE }]],
+    kunden: [['circle', { cx: 9, cy: 8, r: 3.5 }], ['path', { d: 'M2.5 20c.6-3.6 3.2-5.5 6.5-5.5s5.9 1.9 6.5 5.5' }], ['path', { d: 'M15.5 4.8a3.5 3.5 0 0 1 0 6.4' }],
+      ['path', { d: 'M18 14.9c2 .8 3.2 2.5 3.5 5.1' }]],
+    rechnung: [['path', { d: 'M6 3.5h12v17l-2-1.3-2 1.3-2-1.3-2 1.3-2-1.3-2 1.3z' }], ['path', { d: 'M9 8h6M9 11.5h6M9 15h3.5' }]],
   };
   /** Symbol als SVG-Knoten (für Vorleseprogramme versteckt). */
   S.icon = function (name, klasse) {
@@ -243,7 +250,7 @@
     const b = S.el('blatt');
     if (!b || typeof b.showModal !== 'function') return false;
     S.el('blatt-titel').textContent = titel;
-    S.el('blatt-inhalt').replaceChildren(...[].concat(inhalt).filter(Boolean));
+    S.fuellen(S.el('blatt-inhalt'), inhalt); // verschachtelte Listen flach, null fällt weg
     blattZurueck = typeof zurueck === 'function' ? zurueck : null;
     if (!b.open) {
       blattVon = document.activeElement;

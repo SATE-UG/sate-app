@@ -101,101 +101,180 @@
       wozu ? h('span', { class: 'trend-wozu', text: ' ' + wozu }) : null);
   }
 
-  /** Trend-Zeile für einen Monat (Vormonat, Vorjahresmonat). Laufender Monat: nur Hinweis, kein unfairer Vergleich. */
-  function trendZeile(t) {
-    if (!t) return null;
-    if (t.laufend) return h('p', { class: 'trend-zeile trend-hinweis', text: 'Bisher, Stand bis heute. Vergleich, sobald der Monat vorbei ist.' });
-    const chips = [];
-    if (t.vormonat) chips.push(trendChip(t.vormonat, 'zum Vormonat (' + H.monatFormat(t.vormonat.monat) + ')'));
-    if (t.vorjahr) chips.push(trendChip(t.vorjahr, 'zum Vorjahresmonat'));
-    if (!chips.length) return h('p', { class: 'trend-zeile trend-hinweis', text: 'Kein Vergleich möglich (Vergleichsmonat ohne Verkäufe oder nicht in den Daten).' });
-    return h('p', { class: 'trend-zeile' }, chips);
-  }
+  // Start (seit v23 neu gedacht) ------------------------------------------------------------------------------------
+  // Nur das Wichtigste auf einen Blick: Bestellstatus mit Prognose, vier Kennzahlen (jede springt in ihre Details),
+  // Kunden-Hinweis, „Zuletzt passiert“ (Rechnungen und Buchungen gemischt). Lager-Liste und Verkaufs-Details stehen in
+  // ihren Reitern, damit hier nichts doppelt steht.
 
-  // Übersicht ---------------------------------------------------------------------------------------------------
+  /** `JJJJ-MM-TT` → fortlaufende Tageszahl (für Abstände auf der Zeitachse). */
+  const tagNr = (t) => Date.UTC(Number(t.slice(0, 4)), Number(t.slice(5, 7)) - 1, Number(t.slice(8, 10))) / 86400000;
 
   /**
-   * Zeitstrahl in der Bestell-Karte: Heute → Spätestens bestellen → Leer (nach Datum geordnet, gleich verteilt), auf den
-   * Strecken dazwischen die Dauer. Vor dem Bestelltermin ist die erste Strecke hell, danach (überfällig) gelb.
+   * Bestandsprognose als kleines Liniendiagramm über die nächsten Monate: gelb die Rechnung der App (gerade Linie bis
+   * „leer“ am Tag der Schnittstelle), grau gestrichelt „wie im Vorjahr“ (H.prognoseSaison), senkrecht gestrichelt der
+   * Bestelltermin. Ohne Bestand oder ohne Ende: null.
    */
-  function zeitstrahl(b, heute) {
-    if (!H.datumGueltig(b.leerAm) || !H.datumGueltig(b.spaetestensBestellen) || !H.datumGueltig(heute)) return null;
-    const punkte = [
-      { art: 'heute', name: 'Heute', datum: heute },
-      { art: 'bestellen', name: 'Bestellen', datum: b.spaetestensBestellen },
-      { art: 'leer', name: 'Leer', datum: b.leerAm },
-    ].sort((x, y) => (x.datum < y.datum ? -1 : x.datum > y.datum ? 1 : (x.art === 'heute' ? -1 : 1)));
-    const strecken = [0, 1].map((i) => {
-      const von = punkte[i];
-      const bis = punkte[i + 1];
-      const tage = H.tageZwischen(von.datum, bis.datum);
-      const klasse = von.art === 'heute' ? 'strecke-jetzt' : bis.art === 'heute' ? 'strecke-vorbei' : 'strecke-vorlauf';
-      return { klasse: klasse, text: H.dauerText(tage) };
-    });
-    return h('div', { class: 'zeitstrahl', 'aria-hidden': 'true' },
-      h('div', { class: 'zeitstrahl-linie' },
-        punkte.map((p, i) => [
-          h('span', { class: 'zs-punkt zs-' + p.art }),
-          i < 2 ? h('span', { class: 'zs-strecke ' + strecken[i].klasse }, h('span', { class: 'zs-dauer', text: strecken[i].text })) : null,
-        ])),
-      h('div', { class: 'zeitstrahl-namen' }, punkte.map((p) => h('span', { class: 'zs-name zs-name-' + p.art },
-        h('strong', { text: p.name }), h('span', { text: H.datumKurz(p.datum) })))));
-  }
-
-  /** Monate vor dem Diagramm-Zeitraum (für den Vorjahresmonat), fehlt bei älteren Server-Versionen. */
-  function vergleichsmonate() {
-    const v = Z.daten && Z.daten.verkaeufe ? Z.daten.verkaeufe.vergleichsmonate : null;
-    return Array.isArray(v) ? v : null;
-  }
-
-  /** Kleine Balken (Sparkline) der Monate, Monat `i` gelb, der laufende gestrichelt. */
-  function sparkline(monate, i) {
-    const B = 104;
-    const HH = 40;
-    const werte = monate.map((m) => (typeof m.flaschen === 'number' && isFinite(m.flaschen) ? m.flaschen : 0));
-    const max = Math.max.apply(null, [1].concat(werte));
-    const min = Math.min.apply(null, [0].concat(werte));
-    const massstab = (HH - 2) / (max - min);
-    const null0 = 1 + max * massstab; // Nulllinie; Gutschrift-Monate (negativ) gehen nach unten
-    const platz = B / monate.length;
-    const bb = Math.max(platz - 2.5, 2);
+  function prognoseDiagramm(b, k, bestand, saison, heute) {
+    const M = { breite: 340, hoehe: 128, links: 6, rechts: 8, oben: 22, unten: 20 };
+    const leerA = H.datumGueltig(b.leerAm) && b.leerAm > heute ? b.leerAm : null;
+    const enden = [leerA, saison ? saison.punkte[saison.punkte.length - 1].datum : null].filter(Boolean).sort();
+    if (!enden.length || !(bestand > 0)) return null;
+    const ende = H.tagePlus(enden[enden.length - 1], 14);
+    const x0 = tagNr(heute);
+    const breite = Math.max(tagNr(ende) - x0, 1);
     const rund = (z) => Math.round(z * 100) / 100;
-    return s('svg', { viewBox: '0 0 ' + B + ' ' + HH, class: 'sparkline', 'aria-hidden': 'true', focusable: 'false' },
-      werte.map((w, j) => {
-        const hh = Math.max(Math.abs(w) * massstab, w !== 0 ? 2 : 1);
-        return s('rect', { x: rund(j * platz + (platz - bb) / 2), y: rund(w < 0 ? null0 : null0 - hh),
-          width: rund(bb), height: rund(hh), rx: Math.min(1.5, bb / 2),
-          class: w < 0 ? 'spark-minus' : j === i ? 'spark-gewaehlt' : j === monate.length - 1 ? 'spark-laufend' : 'spark' });
-      }));
+    const X = (t) => rund(M.links + ((tagNr(t) - x0) / breite) * (M.breite - M.links - M.rechts));
+    const Y = (w) => rund(M.oben + (1 - Math.max(0, Math.min(w, bestand)) / bestand) * (M.hoehe - M.oben - M.unten));
+    const svg = s('svg', { viewBox: '0 0 ' + M.breite + ' ' + M.hoehe, class: 'diagramm prognose', 'aria-hidden': 'true', focusable: 'false' });
+    const basis = Y(0);
+    svg.append(s('line', { x1: M.links, x2: M.breite - M.rechts, y1: basis, y2: basis, class: 'achse' }));
+    // Monatsanfänge als kleine Striche, höchstens sieben beschriftet
+    const monate = [];
+    for (let m = H.monatPlus(heute.slice(0, 7), 1); m + '-01' <= ende; m = H.monatPlus(m, 1)) monate.push(m);
+    const jeder = Math.max(1, Math.ceil(monate.length / 7));
+    monate.forEach((m, i) => {
+      const x = X(m + '-01');
+      svg.append(s('line', { x1: x, x2: x, y1: basis, y2: basis + 3, class: 'achse' }));
+      if (i % jeder === 0) svg.append(s('text', { x: x, y: M.hoehe - 4, 'text-anchor': 'middle', class: 'monat', text: H.monatFormat(m) }));
+    });
+    // Bestelltermin: senkrechte Linie mit Beschriftung (überfällig: heute)
+    if (H.datumGueltig(b.spaetestensBestellen)) {
+      const tag = b.spaetestensBestellen < heute ? heute : b.spaetestensBestellen;
+      if (tag <= ende) {
+        const x = X(tag);
+        svg.append(s('line', { x1: x, x2: x, y1: M.oben - 4, y2: basis, class: 'marke-bestellen' }));
+        svg.append(s('text', { x: Math.min(Math.max(x, 26), M.breite - 26), y: M.oben - 9, 'text-anchor': 'middle', class: 'marke-text',
+          text: b.spaetestensBestellen < heute ? 'jetzt bestellen' : 'bestellen' }));
+      }
+    }
+    if (saison && saison.punkte.length > 1) {
+      svg.append(s('path', { d: saison.punkte.map((p, i) => (i ? 'L' : 'M') + X(p.datum) + ' ' + Y(p.bestand)).join(' '), class: 'linie-vorjahr' }));
+      if (saison.leer) svg.append(s('circle', { cx: X(saison.leer), cy: basis, r: 3, class: 'punkt-vorjahr' }));
+    }
+    if (leerA) {
+      const ziel = typeof k.mindestbestand === 'number' && k.mindestbestand > 0 ? k.mindestbestand : 0;
+      svg.append(s('path', { d: 'M' + X(heute) + ' ' + Y(bestand) + ' L' + X(leerA) + ' ' + Y(ziel), class: 'linie-dieses' }));
+      svg.append(s('circle', { cx: X(leerA), cy: Y(ziel), r: 3.5, class: 'punkt-dieses' }));
+    }
+    svg.append(s('circle', { cx: X(heute), cy: Y(bestand), r: 4, class: 'punkt-heute' }));
+    svg.append(s('text', { x: X(heute) + 8, y: Y(bestand) - 7, class: 'wert-label start-wert', text: H.zahlFormat(bestand, 0) }));
+    return svg;
   }
 
-  /** Karte „Letzter voller Monat: N Flaschen, ±x % …“ mit Sparkline; antippen öffnet Verkäufe mit diesem Monat. */
-  function letzterMonatKarte(monate) {
-    if (monate.length < 2) return null;
-    const i = monate.length - 2;
-    const t = H.monatsTrend(monate, i, 'flaschen', vergleichsmonate());
-    if (!t) return null;
-    const vergleich = t.vorjahr || t.vormonat;
-    return h('button', {
-      type: 'button', class: 'karte trend-karte',
-      onclick: () => {
-        Z.monatWahl = t.monat;
-        Z.diagramm = 'flaschen';
-        S.ansichten.verkaeufe();
-        S.ansichtZeigen('verkaeufe');
-        const ziel = S.el('monate-anker');
-        if (ziel) ziel.scrollIntoView({ block: 'start', behavior: 'smooth' });
-      },
-    },
-    h('span', { class: 'trend-karte-text' },
-      h('span', { class: 'kachel-label', text: 'Letzter voller Monat · ' + H.monatFormat(t.monat, true) }),
-      h('span', { class: 'trend-karte-reihe' },
-        h('span', { class: 'trend-karte-wert' }, H.zahlFormat(t.wert, 0), h('span', { class: 'einheit', text: t.wert === 1 ? ' Flasche' : ' Flaschen' })),
-        sparkline(monate, i)),
-      vergleich
-        ? h('span', { class: 'trend-zeile' }, trendChip(vergleich, t.vorjahr ? 'zum Vorjahresmonat' : 'zum Vormonat'))
-        : h('span', { class: 'trend-zeile trend-hinweis', text: 'Kein Vergleich möglich.' })),
-    h('span', { class: 'chevron', 'aria-hidden': 'true', text: '›' }));
+  /** Bestell-Karte: Status, Termin groß, Prognose mit Legende, darunter Reichweite und Annahmen. */
+  function bestellKarte(u, a) {
+    const k = u.kennzahlen;
+    const b = u.bestellung;
+    const heute = a.heute;
+    const st = H.bestellStufe(b.status);
+    const stufe = st.stufe || 'leer';
+    const bisBestellen = H.datumGueltig(b.spaetestensBestellen) ? H.tageZwischen(heute, b.spaetestensBestellen) : null;
+    const bestand = typeof k.gesamtbestand === 'number' ? k.gesamtbestand : null;
+    const laufend = a.jv ? a.jv.monate.find((m) => m.laufend) : null;
+    const saison = bestand > 0 ? H.prognoseSaison(bestand, heute, a.werte, k.abverkaufProMonat, laufend && laufend.dieses ? laufend.dieses.flaschen : 0) : null;
+    const diagramm = prognoseDiagramm(b, k, bestand, saison, heute);
+    const annahmen = [typeof k.abverkaufProMonat === 'number' ? 'Ø ' + H.zahlFormat(k.abverkaufProMonat, 0) + ' Flaschen im Monat' : '',
+      H.kistenFormat(b.vorlaufMonate) + ' Monate Vorlauf', H.kistenFormat(b.pufferWochen) + ' Wochen Puffer'].filter(Boolean);
+    const saisonText = saison ? (saison.leer ? 'leer ' + H.datumText(saison.leer) : 'reicht über ' + H.monatFormat(saison.punkte[saison.punkte.length - 1].datum.slice(0, 7), true) + ' hinaus') : '';
+    return h('section', { class: 'karte bestellung stufe-' + stufe, 'aria-label': 'Bestellstatus' },
+      h('div', { class: 'bestellung-kopf' },
+        h('span', { class: 'pill pill-' + stufe }, h('span', { class: 'punkt', 'aria-hidden': 'true' }), st.text),
+        bisBestellen === null ? null : h('span', { class: 'bestellung-frist', text: bisBestellen > 1 ? 'noch ' + H.zahlFormat(bisBestellen, 0) + ' Tage'
+          : bisBestellen === 1 ? 'bis morgen' : bisBestellen === 0 ? 'heute' : 'seit ' + H.zahlFormat(-bisBestellen, 0) + (bisBestellen === -1 ? ' Tag' : ' Tagen') + ' fällig' })),
+      b.spaetestensBestellen
+        ? [h('p', { class: 'kachel-label', text: 'Spätestens bestellen bis' }), h('p', { class: 'bestellung-datum', text: H.datumText(b.spaetestensBestellen) })]
+        : h('p', { class: 'bestellung-fehlt', text: 'Dafür fehlen Bestand oder Verkäufe der letzten Monate.' }),
+      diagramm,
+      diagramm ? h('div', { class: 'legende prognose-legende' },
+        H.datumGueltig(b.leerAm) ? h('span', {}, h('span', { class: 'zeichen zeichen-linie', 'aria-hidden': 'true' }), 'Rechnung der App: leer ' + H.datumText(b.leerAm)) : null,
+        saison ? h('span', {}, h('span', { class: 'zeichen zeichen-linie-vorjahr', 'aria-hidden': 'true' }), 'Wie im Vorjahr: ' + saisonText) : null) : null,
+      h('p', { class: 'nur-vorlesen', text: (H.datumGueltig(b.leerAm) ? 'Laut Rechnung der App leer etwa am ' + H.datumText(b.leerAm) + '. ' : '') +
+        (saison ? 'Wenn jeder Monat so läuft wie vor einem Jahr: ' + saisonText + '.' : '') }),
+      h('div', { class: 'bestellung-fuss' },
+        typeof b.reichweite === 'number' ? h('p', { class: 'reichweite-zeile' }, 'Reichweite ', h('strong', { text: H.zahlFormat(b.reichweite, 1) + ' Monate' })) : null,
+        h('p', { class: 'kachel-zusatz annahmen' }, annahmen.map((t, i) => [i ? ' · ' : null, h('span', { class: 'am-stueck', text: t })]))));
+  }
+
+  /** Kennzahl als Knopf (springt in die Details): Label mit Pfeil, große Zahl, Zusatz, optional Chip oder Balken. */
+  function kennzahl(label, wert, zusatz, extra, beiKlick, vorlesen) {
+    return h('button', { type: 'button', class: 'kachel kachel-knopf', onclick: beiKlick, 'aria-label': vorlesen },
+      h('span', { class: 'kachel-label' }, label, h('span', { class: 'kachel-pfeil', 'aria-hidden': 'true', text: '›' })),
+      h('span', { class: 'kachel-wert', text: wert }),
+      zusatz ? h('span', { class: 'kachel-zusatz', text: zusatz }) : null,
+      extra);
+  }
+
+  /** Verkäufe öffnen, optional mit einem Monat (dann zur Karte „Pro Monat“ scrollen). */
+  function zuVerkaeufen(monat) {
+    Z.diagramm = 'flaschen';
+    if (monat) Z.monatWahl = monat;
+    S.ansichten.verkaeufe();
+    S.ansichtZeigen('verkaeufe');
+    if (monat) {
+      const ziel = S.el('monate-anker');
+      if (ziel) ziel.scrollIntoView({ block: 'start', behavior: 'smooth' });
+    } else {
+      S.nachOben('verkaeufe');
+    }
+  }
+
+  function kennzahlen(u, a) {
+    const k = u.kennzahlen;
+    const jv = a.jv;
+    const proKiste = typeof k.flaschenProKiste === 'number' && k.flaschenProKiste > 0 ? k.flaschenProKiste : null;
+    const geschaetzt = k.gesamtQuelle !== 'inventur';
+    const gezaehlt = u.lager.filter((l) => l.bestand !== null).length;
+    const vg = jv && jv.vergleich;
+    const pJahr = vg ? H.veraenderung(vg.dieses.flaschen, vg.vorjahr.flaschen) : null;
+    const laufend = jv ? jv.monate.find((m) => m.laufend) : null;
+    // Letzter voller Monat: in diesem Jahr, im Januar der Dezember aus dem Vorjahr
+    const lfm = H.monatPlus(a.heute.slice(0, 7), -1);
+    const lm = (jv ? jv.monate.find((m) => m.monat === lfm) : null) || (a.jvVorjahr ? a.jvVorjahr.monate.find((m) => m.monat === lfm) : null);
+    const pMonat = lm && lm.dieses && lm.vorjahr ? H.veraenderung(lm.dieses.flaschen, lm.vorjahr.flaschen) : null;
+    const bisher = laufend && laufend.dieses ? laufend.dieses.flaschen : 0;
+    const vjMonat = laufend && laufend.vorjahr ? laufend.vorjahr.flaschen : null;
+    const fortschritt = vjMonat > 0 ? h('span', { class: 'mini-fortschritt', 'aria-hidden': 'true' }, prozent(h('span', { class: 'mini-fuell' + (bisher >= vjMonat ? ' voll' : '') }), (bisher / vjMonat) * 100)) : null;
+    const zuLager = () => { S.ansichtZeigen('lager'); S.nachOben('lager'); };
+    return h('div', { class: 'kacheln' },
+      kennzahl('Bestand', H.zahlFormat(k.gesamtbestand, 0), 'Flaschen · ' + (geschaetzt ? 'geschätzt' : 'gezählt'),
+        h('span', { class: 'kachel-zusatz' }, verteilungMini(u.lager) || (u.lager.length ? gezaehlt + ' von ' + u.lager.length + ' Lagern gezählt' : H.kistenKurz(k.gesamtbestand, proKiste, geschaetzt))),
+        zuLager, 'Bestand ' + flaschen(k.gesamtbestand) + (geschaetzt ? ', geschätzt' : ', gezählt') + '. Lager öffnen'),
+      jv ? kennzahl('Dieses Jahr', H.zahlFormat(jv.bisher.flaschen, 0), 'Flaschen',
+        pJahr !== null ? h('span', { class: 'trend-zeile' }, trendChip({ prozent: pJahr }, 'zum Vorjahr'))
+          : jv.vorjahrGesamt ? h('span', { class: 'kachel-zusatz', text: 'Vorjahr gesamt ' + H.zahlFormat(jv.vorjahrGesamt.flaschen, 0) }) : null,
+        () => zuVerkaeufen(null), 'Dieses Jahr ' + flaschen(jv.bisher.flaschen) + (pJahr === null ? '' : ', ' + H.prozentText(pJahr) + ' zum Vorjahr') + '. Verkäufe öffnen') : null,
+      lm && lm.dieses ? kennzahl(H.monatName(lm.monat), H.zahlFormat(lm.dieses.flaschen, 0), 'Flaschen',
+        pMonat !== null ? h('span', { class: 'trend-zeile' }, trendChip({ prozent: pMonat }, 'zum Vorjahr')) : null,
+        () => zuVerkaeufen(lm.monat), H.monatName(lm.monat) + ': ' + flaschen(lm.dieses.flaschen) + (pMonat === null ? '' : ', ' + H.prozentText(pMonat) + ' zum Vorjahresmonat') + '. Monat öffnen') : null,
+      laufend ? kennzahl(H.monatName(laufend.monat) + ' bisher', H.zahlFormat(bisher, 0), 'Flaschen bis heute',
+        vjMonat !== null ? h('span', { class: 'kachel-zusatz fortschritt-text' }, fortschritt, 'Vorjahr: ' + H.zahlFormat(vjMonat, 0) + ' im ganzen Monat') : null,
+        () => zuVerkaeufen(laufend.monat), H.monatName(laufend.monat) + ' bisher ' + flaschen(bisher) + (vjMonat !== null ? ', Vorjahr ganzer Monat ' + flaschen(vjMonat) : '') + '. Monat öffnen') : null);
+  }
+
+  /** Bestand nach Lager als kleiner geteilter Balken (ab zwei gezählten Lagern), sonst null. */
+  function verteilungMini(lager) {
+    if (!H.anteileSinnvoll(lager)) return null;
+    const mit = lager.filter((l) => typeof l.bestand === 'number' && l.bestand > 0);
+    const summe = mit.reduce((x, l) => x + l.bestand, 0);
+    return h('span', { class: 'verteilung-balken mini', 'aria-hidden': 'true' }, mit.map((l, i) => prozent(h('span', { class: 'vt-teil vt-' + (i % 4) }), (l.bestand / summe) * 100)));
+  }
+
+  /** Hinweis auf den Kunden-Reiter: Kunden dieses Jahr, neue, „lange nichts bestellt“ (nur mit Verkaufszeilen). */
+  function kundenHinweis(a) {
+    if (!a.zeilen || !a.jv) return null;
+    const jahr = a.heute.slice(0, 4);
+    const z = H.zeitraumAuswerten(a.zeilen, jahr + '-01', a.heute.slice(0, 7));
+    const neu = z.kunden.filter((x) => x.erster >= jahr + '-01').length;
+    const lange = H.nachfassen(a.zeilen, a.heute).length;
+    if (!z.kunden.length && !lange) return null;
+    const teile = [z.kunden.length ? '' : 'noch keine Bestellung dieses Jahr', neu && neu < z.kunden.length ? neu + ' neu' : '',
+      lange ? lange + (lange === 1 ? ' bestellt lange nichts' : ' bestellen lange nichts') : ''].filter(Boolean);
+    return h('button', { type: 'button', class: 'karte zeilen-karte', onclick: () => { S.ansichtZeigen('kunden'); S.nachOben('kunden'); } },
+      h('span', { class: 'karte-symbol', 'aria-hidden': 'true' }, S.icon('kunden')),
+      h('span', { class: 'zeilen-karte-text' },
+        h('strong', { text: z.kunden.length ? z.kunden.length + (z.kunden.length === 1 ? ' Kunde' : ' Kunden') + ' dieses Jahr' : 'Kunden' }),
+        teile.length ? h('span', { text: teile.join(' · ') }) : null),
+      h('span', { class: 'chevron', 'aria-hidden': 'true', text: '›' }));
   }
 
   /**
@@ -214,10 +293,38 @@
       h('span', { class: 'chevron', 'aria-hidden': 'true', text: '›' }));
   }
 
-  /** Kachel als Knopf (öffnet eine Ansicht); sonst wie kachel(). */
-  function kachelKnopf(inhalt, beiKlick, vorlesen) {
-    return h('button', { type: 'button', class: 'kachel kachel-knopf', onclick: beiKlick, 'aria-label': vorlesen }, inhalt);
+  /** Eine Zeile „Zuletzt passiert“: Rechnung (Kunde, Flaschen) oder Buchung (Art, Lager, wer). */
+  function aktivitaetZeile(x) {
+    if (x.typ === 'rechnung') {
+      return h('li', { class: 'aktiv-zeile' },
+        h('span', { class: 'verlauf-icon rechnung-icon' }, S.icon('rechnung')),
+        h('span', { class: 'aktiv-text' }, h('span', { class: 'aktiv-titel', text: x.kunde || 'Rechnung' }),
+          h('span', { class: 'nebenzeile', text: ['Rechnung', x.kanal, H.datumKurz(x.datum)].filter(Boolean).join(' · ') })),
+        h('span', { class: 'aktiv-wert', text: H.zahlFormat(x.flaschen, 0) + ' Fl.' }));
+    }
+    return h('li', { class: 'aktiv-zeile' + (x.storniert ? ' storniert' : '') },
+      h('span', { class: 'verlauf-icon' }, S.icon(ART_ICON[x.art] || 'info')),
+      h('span', { class: 'aktiv-text' }, h('span', { class: 'aktiv-titel' }, x.art || '?', x.storniert ? h('span', { class: 'badge badge-storno', text: 'storniert' }) : null),
+        h('span', { class: 'nebenzeile', text: [x.art === 'Umlagerung' ? x.standort + ' → ' + (x.nach || '?') : x.standort, H.datumKurz(x.datum), x.wer ? 'von ' + x.wer : '']
+          .filter(Boolean).join(' · ') })),
+      typeof x.flaschen === 'number' ? h('span', { class: 'aktiv-wert', text: H.zahlFormat(x.flaschen, 0) + ' Fl.' }) : null);
   }
+
+  /** „Zuletzt passiert“ auf dem Start: die letzten fünf Rechnungen und Buchungen (lädt den Verlauf mit). */
+  S.aktivitaetZeigen = function () {
+    const ziel = S.el('aktivitaet-inhalt');
+    if (!ziel) return;
+    const u = Z.daten;
+    if (!u) return ziel.replaceChildren();
+    const liste = H.aktivitaet(u.verkaufListe, Z.verlauf ? Z.verlauf.eintraege : [], 5, auswertung().heute);
+    S.fuellen(ziel,
+      h('div', { class: 'h2-zeile' }, ueberschrift('h2', 'Zuletzt', 'passiert'),
+        h('button', { type: 'button', class: 'text-link h2-link', text: 'Alle Buchungen ›', onclick: () => { S.ansichtZeigen('lager'); S.verlaufZeigenOben(); } })),
+      liste.length
+        ? h('div', { class: 'karte liste-karte' }, h('ul', { class: 'liste', role: 'list' }, liste.map(aktivitaetZeile)))
+        : Z.verlaufLaedt ? skelett(['zeile']) : h('p', { class: 'hinweis', text: 'Noch nichts passiert in den letzten Wochen.' }),
+      Z.verlaufFehler ? h('p', { class: 'hinweis', text: 'Buchungen gerade nicht geladen, gezeigt werden nur Rechnungen.' }) : null);
+  };
 
   S.ansichten.uebersicht = function () {
     S.el('name').textContent = Z.name || '';
@@ -225,81 +332,20 @@
     const u = Z.daten;
     S.el('datum-zeile').textContent = u && H.datumGueltig(u.heute) ? H.wochentagText(u.heute) : '';
     if (!u) return platzhalter(ziel, ['gross', 'reihe', 'reihe', 'zeile']);
-    const k = u.kennzahlen;
-    const b = u.bestellung;
-    const st = H.bestellStufe(b.status);
-    const stufe = st.stufe || 'leer';
     const a = auswertung();
-    const heute = a.heute;
-    const proKiste = typeof k.flaschenProKiste === 'number' && k.flaschenProKiste > 0 ? k.flaschenProKiste : null;
-    const summe = u.lager.reduce((x, l) => x + (typeof l.bestand === 'number' && l.bestand > 0 ? l.bestand : 0), 0);
-    const mitAnteil = H.anteileSinnvoll(u.lager); // ein einziger gezählter Standort hätte immer 100 %
-    const geschaetzt = k.gesamtQuelle !== 'inventur';
     const hw = H.hinweiseOrdnen(u.hinweise);
-    const jv = a.jv;
-    const laufend = jv ? jv.monate.find((m) => m.laufend) : null;
-    const bisher = H.monatBisher(u.verkaeufe.monate, heute);
-    const bisBestellen = H.datumGueltig(b.spaetestensBestellen) ? H.tageZwischen(heute, b.spaetestensBestellen) : null;
-    const vg = jv && jv.vergleich;
-    const pJahr = vg ? H.veraenderung(vg.dieses.flaschen, vg.vorjahr.flaschen) : null;
-    const zuVerkaeufen = () => { Z.diagramm = 'flaschen'; S.ansichten.verkaeufe(); S.ansichtZeigen('verkaeufe'); S.nachOben('verkaeufe'); };
-    // Fuß der Bestell-Karte: Reichweite hervorgehoben, darunter kurz die Annahmen (statt eines langen grauen Satzes).
-    // Jede Annahme bricht nur als Ganzes um.
-    const annahmen = [typeof k.abverkaufProMonat === 'number' ? 'Ø ' + H.zahlFormat(k.abverkaufProMonat, 0) + ' Flaschen im Monat' : '',
-      H.kistenFormat(b.vorlaufMonate) + ' Monate Vorlauf', H.kistenFormat(b.pufferWochen) + ' Wochen Puffer'].filter(Boolean);
-
-    // Fehlende Teile (null) überspringen, sonst schreibt append „null“ als Text
-    ziel.append(...[
-      h('section', { class: 'karte bestellung stufe-' + stufe, 'aria-label': 'Bestellstatus' },
-        h('div', { class: 'bestellung-kopf' },
-          h('span', { class: 'pill pill-' + stufe }, h('span', { class: 'punkt', 'aria-hidden': 'true' }), st.text),
-          bisBestellen === null ? null : h('span', { class: 'bestellung-frist', text: bisBestellen > 1 ? 'noch ' + H.zahlFormat(bisBestellen, 0) + ' Tage'
-            : bisBestellen === 1 ? 'bis morgen' : bisBestellen === 0 ? 'heute' : 'seit ' + H.zahlFormat(-bisBestellen, 0) + (bisBestellen === -1 ? ' Tag' : ' Tagen') + ' fällig' })),
-        b.spaetestensBestellen
-          ? [h('p', { class: 'kachel-label', text: 'Spätestens bestellen bis' }),
-            h('p', { class: 'bestellung-datum', text: H.datumText(b.spaetestensBestellen) })]
-          : h('p', { class: 'bestellung-fehlt', text: 'Dafür fehlen Bestand oder Verkäufe der letzten Monate.' }),
-        zeitstrahl(b, heute),
-        b.leerAm ? h('p', { class: 'nur-vorlesen', text: 'Leer etwa am ' + H.datumText(b.leerAm) + ', Reichweite ' + H.zahlFormat(b.reichweite, 1) + ' Monate.' }) : null,
-        h('div', { class: 'bestellung-fuss' },
-          typeof b.reichweite === 'number'
-            ? h('p', { class: 'reichweite-zeile' }, 'Reichweite ', h('strong', { text: H.zahlFormat(b.reichweite, 1) + ' Monate' })) : null,
-          h('p', { class: 'kachel-zusatz annahmen' }, annahmen.map((t, i) => [i ? ' · ' : null, h('span', { class: 'am-stueck', text: t })])))),
-      h('div', { class: 'kacheln' },
-        kachel('Bestand', H.zahlFormat(k.gesamtbestand, 0), 'Flaschen', geschaetzt ? 'geschätzt' : 'gezählt', 'flasche',
-          H.kistenKurz(k.gesamtbestand, proKiste, geschaetzt)),
-        jv ? kachelKnopf([
-          h('span', { class: 'kachel-label' }, 'Dieses Jahr', h('span', { class: 'kachel-pfeil', 'aria-hidden': 'true', text: '›' })),
-          h('span', { class: 'kachel-wert', text: H.zahlFormat(jv.bisher.flaschen, 0) }),
-          h('span', { class: 'kachel-zusatz', text: 'Flaschen' }),
-          pJahr !== null ? h('span', { class: 'trend-zeile' }, trendChip({ prozent: pJahr }, 'zum Vorjahr'))
-            : jv.vorjahrGesamt ? h('span', { class: 'kachel-zusatz', text: 'Vorjahr gesamt: ' + H.zahlFormat(jv.vorjahrGesamt.flaschen, 0) }) : null],
-        zuVerkaeufen, 'Dieses Jahr ' + flaschen(jv.bisher.flaschen) + (pJahr === null ? '' : ', ' + H.prozentText(pJahr) + ' zum Vorjahr') + '. Verkäufe öffnen')
-          : kachel('Reichweite', H.zahlFormat(b.reichweite, 1), 'Monate', 'ab heute'),
-        kachel('Ø pro Monat', H.zahlFormat(k.abverkaufProMonat, 0), 'Flaschen',
-          typeof k.abverkaufProMonat === 'number' ? H.zeitraumKurz(k.abverkaufVon, k.abverkaufBis) : 'noch unbekannt'),
-        // Laufender Monat ohne Trend: er ist erst bis heute gezählt; zum Einordnen der ganze Vorjahresmonat
-        kachel('Dieser Monat', bisher ? H.zahlFormat(bisher.flaschen, 0) : '–', bisher && bisher.flaschen === 1 ? 'Flasche' : 'Flaschen', 'bis heute', null,
-          laufend && laufend.vorjahr ? 'Vorjahresmonat: ' + H.zahlFormat(laufend.vorjahr.flaschen, 0) : null)),
-      // „Noch keine Inventur …“ der Schnittstelle als freundlicher Satz direkt unter dem Bestand
-      hw.bestand ? h('p', { class: 'notiz' }, S.icon('info', 'notiz-icon'), h('span', { text: hw.bestand })) : null,
-      inventurHinweis(u, heute),
-      letzterMonatKarte(u.verkaeufe.monate),
-      h('div', { class: 'h2-zeile' }, ueberschrift('h2', 'Standorte'),
-        h('button', { type: 'button', class: 'text-link h2-link', text: 'Zum Lager ›', 'aria-label': 'Zum Lager',
-          onclick: () => { S.ansichtZeigen('lager'); S.nachOben('lager'); } })),
-      h('div', { class: 'karte liste-karte' }, h('ul', { class: 'liste', role: 'list' }, u.lager.map((l) => h('li', { class: 'standort-zeile' },
-        h('div', { class: 'zeile' },
-          h('span', { class: 'zeile-name' }, l.standort,
-            h('span', { class: 'zeile-unter', text: l.bestand === null ? 'noch nicht gezählt' : 'Inventur ' + H.datumKurz(l.letzteInventur) +
-              (H.kistenKurz(l.bestand, proKiste, false) ? ' · ' + H.kistenKurz(l.bestand, proKiste, false) : '') })),
-          l.bestand === null ? h('span', { class: 'zeile-leise', text: '–' }) : h('span', { class: 'zeile-wert', text: flaschen(l.bestand) })),
-        l.bestand === null || !mitAnteil ? null : anteil(summe > 0 ? (Math.max(l.bestand, 0) / summe) * 100 : 0))))),
-      // Übrige Hinweise (z. B. unlesbare Zeilen im Sheet) unverändert, aber klein und dezent
+    S.fuellen(ziel,
+      bestellKarte(u, a),
+      kennzahlen(u, a),
+      inventurHinweis(u, a.heute),
+      kundenHinweis(a),
+      h('div', { id: 'aktivitaet-inhalt' }),
+      // Übrige Hinweise aus dem Sheet (z. B. unlesbare Zeilen) klein und dezent am Ende
       hw.andere.length
         ? h('div', { class: 'karte info-karte', role: 'note', 'aria-label': 'Hinweise aus dem Sheet' }, S.icon('info', 'info-icon'),
           h('div', {}, h('p', { class: 'info-titel', text: 'Aus dem Sheet' }), h('ul', { class: 'hinweise', role: 'list' }, hw.andere.map((t) => h('li', { text: t })))))
-        : null].filter(Boolean));
+        : null);
+    S.aktivitaetZeigen();
   };
 
   // Verkäufe ----------------------------------------------------------------------------------------------------
@@ -686,73 +732,27 @@
         h('span', { class: 'rang-umsatz', text: H.euroFormat(k.umsatz) }))))));
   }
 
-  const KUNDEN_ANFANG = 10;
-
-  /** Kundenliste (Top 10, aufklappbar auf alle). `neuAb` = ab diesem Monat gilt ein Kunde als neu (oder null). */
-  function kundenListe(z, neuAb) {
-    if (!z.kunden.length) return h('div', { class: 'karte' }, h('p', { class: 'leer', text: 'Keine Verkäufe in diesem Zeitraum.' }));
-    const alle = !!Z.alleKunden;
-    const liste = alle ? z.kunden : z.kunden.slice(0, KUNDEN_ANFANG);
-    return [
-      h('div', { class: 'karte liste-karte' }, h('ol', { class: 'liste rangliste', role: 'list' }, liste.map((k, i) => h('li', { class: 'rang-zeile kunde-zeile' },
-        h('button', { type: 'button', class: 'zeilen-knopf', 'aria-label': k.kunde + ', ' + flaschen(k.flaschen) + ', ' + H.euroFormat(k.umsatz) + '. Details',
-          'data-kunde': k.schluessel, onclick: () => S.kundeZeigen(k.schluessel) },
-        h('span', { class: 'rang-nr' + (i < 3 ? ' vorne' : ''), text: String(i + 1), 'aria-hidden': 'true' }),
-        h('span', { class: 'rang-name' }, h('span', { class: 'rang-titel kunde-name', text: k.kunde }),
-          h('span', { class: 'rang-unter' }, k.kanal, neuAb && k.erster >= neuAb ? h('span', { class: 'badge badge-neu', text: 'neu' }) : null)),
-        h('span', { class: 'rang-zahlen' }, h('span', { class: 'rang-flaschen', text: flaschen(k.flaschen) }),
-          h('span', { class: 'rang-umsatz', text: H.euroFormat(k.umsatz) })),
-        h('span', { class: 'chevron klein', 'aria-hidden': 'true', text: '›' })))))),
-      z.kunden.length > KUNDEN_ANFANG
-        ? h('button', { type: 'button', class: 'knopf mehr-knopf', 'aria-expanded': alle ? 'true' : 'false',
-          text: alle ? 'Nur die Top 10 zeigen' : 'Alle ' + z.kunden.length + ' Kunden zeigen',
-          onclick: () => { Z.alleKunden = !alle; S.ansichten.verkaeufe(); } })
-        : null,
-    ];
-  }
-
-  function nachfassenListe(a) {
-    const liste = H.nachfassen(a.zeilen, a.heute);
-    if (!liste.length) return null;
-    const alle = !!Z.alleNachfassen;
-    const zeigen = alle ? liste : liste.slice(0, 5);
-    return [
-      ueberschrift('h2', 'Lange', 'nichts bestellt'),
-      h('p', { class: 'hinweis', text: 'Kunden mit mindestens zwei Bestellungen, die seit über drei Monaten nichts bestellt haben. Vielleicht mal nachfragen?' }),
-      h('div', { class: 'karte liste-karte' }, h('ul', { class: 'liste', role: 'list' }, zeigen.map((k) => h('li', { class: 'kunde-zeile' },
-        h('button', { type: 'button', class: 'zeilen-knopf', 'data-kunde': k.schluessel, onclick: () => S.kundeZeigen(k.schluessel),
-          'aria-label': k.kunde + ', zuletzt ' + H.wannText(k.letzte) + ', ' + k.bestellungen + ' Bestellungen. Details' },
-        h('span', { class: 'rang-name' }, h('span', { class: 'rang-titel kunde-name', text: k.kunde }),
-          h('span', { class: 'rang-unter', text: 'zuletzt ' + H.wannText(k.letzte) + ' · ' + H.abstandText(k.tage) })),
-        h('span', { class: 'rang-zahlen' }, h('span', { class: 'rang-flaschen', text: k.bestellungen + ' Bestellungen' }),
-          h('span', { class: 'rang-umsatz', text: flaschen(k.flaschen) + ' gesamt' })),
-        h('span', { class: 'chevron klein', 'aria-hidden': 'true', text: '›' })))))),
-      liste.length > 5
-        ? h('button', { type: 'button', class: 'knopf mehr-knopf', 'aria-expanded': alle ? 'true' : 'false',
-          text: alle ? 'Weniger zeigen' : 'Alle ' + liste.length + ' zeigen', onclick: () => { Z.alleNachfassen = !alle; S.ansichten.verkaeufe(); } })
-        : null,
-    ];
-  }
-
-  function kanaeleUndKunden(a) {
+  /** Kanäle eines Zeitraums für die Verkäufe (Umschalter, Summen, Liste); die Kunden haben seit v23 einen eigenen Reiter. */
+  function kanaeleTeil(a) {
     const u = Z.daten;
     if (Z.zeitraum !== 'vorjahr' && Z.zeitraum !== 'gesamt') Z.zeitraum = 'jahr';
     const teile = [
-      ueberschrift('h2', 'Kanäle', 'und Kunden'),
+      ueberschrift('h2', 'Kanäle'),
       umschalter('Zeitraum', [['jahr', 'Dieses Jahr'], ['vorjahr', 'Vorjahr'], ['gesamt', 'Gesamt']], Z.zeitraum,
-        (w) => { Z.zeitraum = w; Z.alleKunden = false; S.ansichten.verkaeufe(); }),
+        (w) => { Z.zeitraum = w; S.ansichten.verkaeufe(); }),
     ];
+    const zuKunden = h('button', { type: 'button', class: 'karte zeilen-karte', onclick: () => { S.ansichtZeigen('kunden'); S.nachOben('kunden'); } },
+      h('span', { class: 'karte-symbol', 'aria-hidden': 'true' }, S.icon('kunden')),
+      h('span', { class: 'zeilen-karte-text' }, h('strong', { text: 'Kunden' }), h('span', { text: 'Alle Kunden, Suche und Details' })),
+      h('span', { class: 'chevron', 'aria-hidden': 'true', text: '›' }));
     if (!a.zeilen) {
-      // Ältere Schnittstelle: fertige Summen, Top 10, keine Details
+      // Ältere Schnittstelle: fertige Summen und Kanäle wie geliefert
       const z = u.verkaeufe[Z.zeitraum];
       return teile.concat([
         h('p', { class: 'zeitraum-text', text: Z.zeitraum === 'gesamt' ? 'Seit ' + H.monatFormat(z.von, true) : H.zeitraumFormat(z.von, z.bis) }),
         summenZeile([['Flaschen', H.zahlFormat(z.flaschen, 0), null], ['Umsatz', H.euroFormat(z.umsatz), null]]),
-        h('h3', { text: 'Kanäle' }),
-        rangliste(z.kanaele.map((x) => ({ name: x.kanal, flaschen: x.flaschen, umsatz: x.umsatz }))
-          .sort((x, y) => y.flaschen - x.flaschen), true, false),
-        h('h3', { text: 'Top 10 Kunden' }),
-        rangliste(z.kunden.map((x) => ({ name: x.kunde, flaschen: x.flaschen, umsatz: x.umsatz })), false, true)]);
+        rangliste(z.kanaele.map((x) => ({ name: x.kanal, flaschen: x.flaschen, umsatz: x.umsatz })).sort((x, y) => y.flaschen - x.flaschen), true, false),
+        zuKunden]);
     }
     const gr = zeitraumGrenzen(a, Z.zeitraum);
     const z = H.zeitraumAuswerten(a.zeilen, gr.von, gr.bis);
@@ -762,22 +762,16 @@
       // Anfang Januar: noch nichts in diesem Jahr, das Vorjahr ist dann die interessante Ansicht
       return teile.concat([h('p', { class: 'zeitraum-text', text: H.zeitraumFormat(z.von, z.bis) }),
         leerKarte('Noch keine Verkäufe in diesem Jahr', 'Sobald die ersten Rechnungen im Sheet stehen, siehst du sie hier.', 'Vorjahr zeigen',
-          () => { Z.zeitraum = 'vorjahr'; S.ansichten.verkaeufe(); })]);
+          () => { Z.zeitraum = 'vorjahr'; S.ansichten.verkaeufe(); }), zuKunden]);
     }
-    // Neu = erster Kauf überhaupt in diesem Zeitraum; nur zeigen, wenn nicht ohnehin alle neu sind (Startjahr)
-    const neu = Z.zeitraum !== 'gesamt' ? z.kunden.filter((k) => k.erster >= gr.von).length : 0;
-    const neuAb = neu > 0 && neu < z.kunden.length ? gr.von : null;
     const chip = (g) => (mitVergleich ? H.veraenderung(mitVergleich.jetzt[g], mitVergleich.vor[g]) : null);
     return teile.concat([
       h('p', { class: 'zeitraum-text', text: Z.zeitraum === 'gesamt' ? 'Seit ' + H.monatFormat(z.von, true) : H.zeitraumFormat(z.von, z.bis) }),
       summenZeile([['Flaschen', H.zahlFormat(z.flaschen, 0), chip('flaschen')], ['Umsatz', H.euroFormat(z.umsatz), chip('umsatz')],
         ['Kunden', H.zahlFormat(z.kunden.length, 0), null]]),
       mitVergleich ? h('p', { class: 'hinweis vergleich-text', text: gr.vgl.text + ' (volle Monate).' }) : null,
-      h('h3', { text: 'Kanäle' }),
       kanalListe(z, mitVergleich),
-      // Anzahl steht schon in der Summenzeile; hier nur, wie viele neu sind
-      h('h3', {}, 'Kunden', neuAb ? h('span', { class: 'h3-zusatz', text: '· ' + neu + ' neu' }) : null)],
-    kundenListe(z, neuAb));
+      zuKunden]);
   }
 
   S.ansichten.verkaeufe = function () {
@@ -787,11 +781,151 @@
     const a = auswertung();
     if (!a.jv) return ziel.append(leerKarte('Keine Verkäufe lesbar', 'Die Antwort der Schnittstelle enthält keine Monate.'));
     const g = Z.diagramm === 'umsatz' ? 'umsatz' : 'flaschen';
-    ziel.append(...[
+    S.fuellen(ziel,
       umschalter('Diagramm', [['flaschen', 'Flaschen'], ['umsatz', 'Umsatz']], g, (w) => { Z.diagramm = w; S.ansichten.verkaeufe(); }),
       jahrKarte(a, g),
       h('h2', { id: 'monate-anker' }, h('strong', { text: 'Pro' }), ' Monat'),
-    ].concat(monateKarte(a, g), kanaeleUndKunden(a), a.zeilen ? nachfassenListe(a) || [] : []).filter(Boolean));
+      monateKarte(a, g),
+      kanaeleTeil(a));
+  };
+
+  // Kunden (eigener Reiter seit v23) --------------------------------------------------------------------------------
+  // Oben „Nachfassen“, dann Zeitraum, Suche, Sortierung, Kanal-Filter und die Liste aller Kunden (mit Veränderung zum
+  // Vorjahr, „neu“, zuletzt bestellt). Antippen öffnet das Kunden-Blatt. Die Liste wird beim Tippen in der Suche allein
+  // neu gezeichnet, damit die Tastatur offen bleibt.
+
+  const KUNDEN_ANFANG = 20;
+
+  /** „Lange nichts bestellt“ als Karte mit den ersten drei (aufklappbar). */
+  function nachfassenKarte(a) {
+    const liste = H.nachfassen(a.zeilen, a.heute);
+    if (!liste.length) return null;
+    const alle = !!Z.alleNachfassen;
+    const zeigen = alle ? liste : liste.slice(0, 3);
+    return [
+      h('div', { class: 'h2-zeile' }, ueberschrift('h2', 'Nachfassen')),
+      h('p', { class: 'hinweis', text: 'Haben schon öfter bestellt, aber seit über drei Monaten nicht mehr. Vielleicht mal nachfragen?' }),
+      h('div', { class: 'karte liste-karte' }, h('ul', { class: 'liste', role: 'list' }, zeigen.map((k) => h('li', { class: 'kunde-zeile' },
+        h('button', { type: 'button', class: 'zeilen-knopf', 'data-kunde': k.schluessel, onclick: () => S.kundeZeigen(k.schluessel),
+          'aria-label': k.kunde + ', zuletzt ' + H.wannText(k.letzte) + ', ' + k.bestellungen + ' Bestellungen. Details' },
+        h('span', { class: 'rang-name' }, h('span', { class: 'rang-titel kunde-name', text: k.kunde }),
+          h('span', { class: 'rang-unter', text: 'zuletzt ' + H.wannText(k.letzte) + ' · ' + H.abstandText(k.tage) })),
+        h('span', { class: 'rang-zahlen' }, h('span', { class: 'rang-flaschen', text: k.bestellungen + ' Bestellungen' }),
+          h('span', { class: 'rang-umsatz', text: flaschen(k.flaschen) + ' gesamt' })),
+        h('span', { class: 'chevron klein', 'aria-hidden': 'true', text: '›' })))))),
+      liste.length > 3
+        ? h('button', { type: 'button', class: 'knopf mehr-knopf', 'aria-expanded': alle ? 'true' : 'false',
+          text: alle ? 'Weniger zeigen' : 'Alle ' + liste.length + ' zeigen', onclick: () => { Z.alleNachfassen = !alle; S.ansichten.kunden(); } })
+        : null,
+    ];
+  }
+
+  /** Daten der Kundenliste für den gewählten Zeitraum: Kunden, Vergleich (Prozent je Kunde), neu ab, letzte Bestellung. */
+  function kundenDaten(a) {
+    const gr = zeitraumGrenzen(a, Z.kundenZeitraum);
+    // Kanäle für die Chips aus allen Zeilen; mit Kanal-Filter zählt je Kunde nur, was über diesen Kanal lief
+    const kanaele = H.zeitraumAuswerten(a.zeilen, gr.von, gr.bis).kanaele.map((k) => k.kanal);
+    if (Z.kundenKanal && kanaele.indexOf(Z.kundenKanal) < 0) Z.kundenKanal = '';
+    const basis = Z.kundenKanal ? a.zeilen.filter((x) => x.kanal === Z.kundenKanal) : a.zeilen;
+    const z = H.zeitraumAuswerten(basis, gr.von, gr.bis);
+    const vorher = Object.create(null);
+    const jetzt = Object.create(null);
+    if (gr.vgl) {
+      H.zeitraumAuswerten(basis, gr.vgl.vonVor, gr.vgl.bisVor).kunden.forEach((k) => { vorher[k.schluessel] = k.flaschen; });
+      H.zeitraumAuswerten(basis, gr.vgl.von, gr.vgl.bis).kunden.forEach((k) => { jetzt[k.schluessel] = k.flaschen; });
+    }
+    const neu = Z.kundenZeitraum !== 'gesamt' ? z.kunden.filter((k) => k.erster >= gr.von).length : 0;
+    return { gr: gr, z: z, kanaele: kanaele, vorher: gr.vgl ? vorher : null, jetzt: jetzt, neuAb: neu > 0 && neu < z.kunden.length ? gr.von : null,
+      letzte: H.letzteBestellungen(a.zeilen, a.heute) };
+  }
+
+  /** Nur die Liste neu zeichnen (Suche, Sortierung, Kanal, „alle zeigen“). */
+  function kundenListeZeigen(a, d) {
+    const ziel = S.el('kunden-liste');
+    if (!ziel) return;
+    const suche = H.kundeSchluessel(Z.kundenSuche);
+    let liste = d.z.kunden.filter((k) => !suche || k.schluessel.indexOf(suche) >= 0); // Kanal ist schon in kundenDaten gefiltert
+    const rang = Object.create(null);
+    d.z.kunden.forEach((k, i) => { rang[k.schluessel] = i + 1; });
+    if (Z.kundenSortierung === 'zuletzt') {
+      const tag = (k) => (d.letzte[k.schluessel] ? -d.letzte[k.schluessel].tage : -1e9);
+      liste = liste.slice().sort((x, y) => tag(y) - tag(x) || y.flaschen - x.flaschen);
+    } else if (Z.kundenSortierung === 'name') {
+      liste = liste.slice().sort((x, y) => x.kunde.localeCompare(y.kunde, 'de'));
+    }
+    const summe = liste.reduce((x, k) => x + k.flaschen, 0);
+    const alle = !!Z.alleKunden || !!suche;
+    const zeigen = alle ? liste : liste.slice(0, KUNDEN_ANFANG);
+    S.fuellen(ziel,
+      h('p', { class: 'zeitraum-text', role: 'status', text: liste.length + (liste.length === 1 ? ' Kunde' : ' Kunden') + ' · ' + flaschen(summe) }),
+      liste.length
+        ? h('div', { class: 'karte liste-karte' }, h('ul', { class: 'liste rangliste', role: 'list' }, zeigen.map((k) => {
+          const l = d.letzte[k.schluessel];
+          const neu = d.neuAb && k.erster >= d.neuAb;
+          const p = d.vorher && d.vorher[k.schluessel] > 0 ? H.veraenderung(d.jetzt[k.schluessel] || 0, d.vorher[k.schluessel]) : null;
+          return h('li', { class: 'rang-zeile kunde-zeile' },
+            h('button', { type: 'button', class: 'zeilen-knopf', 'data-kunde': k.schluessel, onclick: () => S.kundeZeigen(k.schluessel),
+              'aria-label': k.kunde + ', ' + flaschen(k.flaschen) + ', ' + H.euroFormat(k.umsatz) + (l ? ', zuletzt ' + H.wannText(l) : '') + '. Details' },
+            Z.kundenSortierung === 'menge' && !suche
+              ? h('span', { class: 'rang-nr' + (rang[k.schluessel] <= 3 ? ' vorne' : ''), text: String(rang[k.schluessel]), 'aria-hidden': 'true' }) : null,
+            h('span', { class: 'rang-name' }, h('span', { class: 'rang-titel kunde-name', text: k.kunde }),
+              h('span', { class: 'rang-unter' }, [k.kanal, l ? H.abstandText(l.tage) : ''].filter(Boolean).join(' · '),
+                neu ? h('span', { class: 'badge badge-neu', text: 'neu' }) : null)),
+            h('span', { class: 'rang-zahlen' }, h('span', { class: 'rang-flaschen', text: flaschen(k.flaschen) }),
+              p !== null ? trendChip({ prozent: p }, '') : h('span', { class: 'rang-umsatz', text: H.euroFormat(k.umsatz) })),
+            h('span', { class: 'chevron klein', 'aria-hidden': 'true', text: '›' })));
+        })))
+        : h('div', { class: 'karte' }, h('p', { class: 'leer', text: suche ? 'Kein Kunde passt zu „' + Z.kundenSuche + '“.' : 'Keine Verkäufe in diesem Zeitraum.' })),
+      !alle && liste.length > KUNDEN_ANFANG
+        ? h('button', { type: 'button', class: 'knopf mehr-knopf', text: 'Alle ' + liste.length + ' Kunden zeigen',
+          onclick: () => { Z.alleKunden = true; kundenListeZeigen(a, d); } })
+        : null,
+      d.vorher ? h('p', { class: 'hinweis liste-fuss', text: 'Prozent: ' + d.gr.vgl.text + ' (volle Monate).' }) : null);
+  }
+
+  S.ansichten.kunden = function () {
+    const ziel = leeren('kunden-inhalt');
+    const u = Z.daten;
+    if (!u) return platzhalter(ziel, ['segment', 'zeile', 'zeile', 'zeile']);
+    const a = auswertung();
+    if (['jahr', 'vorjahr', 'gesamt'].indexOf(Z.kundenZeitraum) < 0) Z.kundenZeitraum = 'jahr';
+    const umschalten = umschalter('Kunden-Zeitraum', [['jahr', 'Dieses Jahr'], ['vorjahr', 'Vorjahr'], ['gesamt', 'Gesamt']], Z.kundenZeitraum,
+      (w) => { Z.kundenZeitraum = w; Z.alleKunden = false; S.ansichten.kunden(); });
+    if (!a.zeilen) {
+      // Ältere Schnittstelle: nur die Top 10 wie geliefert
+      const z = u.verkaeufe[Z.kundenZeitraum];
+      return S.fuellen(ziel, umschalten,
+        h('p', { class: 'notiz' }, S.icon('info', 'notiz-icon'), h('span', { text: 'Suche, alle Kunden und Kunden-Details kommen mit dem nächsten Update der Schnittstelle.' })),
+        h('h3', { class: 'gruppe', text: 'Top 10' }),
+        rangliste(z.kunden.map((x) => ({ name: x.kunde, flaschen: x.flaschen, umsatz: x.umsatz })), false, true));
+    }
+    const d = kundenDaten(a);
+    const kanaele = d.kanaele;
+    const suche = h('input', { type: 'search', id: 'kunden-suche', class: 'suche', placeholder: 'Kunde suchen', autocomplete: 'off', autocorrect: 'off',
+      spellcheck: 'false', enterkeyhint: 'search', 'aria-label': 'Kunde suchen', value: Z.kundenSuche || '' });
+    suche.addEventListener('input', () => { Z.kundenSuche = suche.value; kundenListeZeigen(a, d); });
+    const chips = h('div', { class: 'filter-chips', role: 'group', 'aria-label': 'Nach Kanal filtern' },
+      [''].concat(kanaele).map((k) => h('button', { type: 'button', class: 'chip', 'aria-pressed': (Z.kundenKanal || '') === k ? 'true' : 'false', text: k || 'Alle',
+        'data-kanal': k, onclick: () => {
+          Z.kundenKanal = k;
+          Z.alleKunden = false;
+          S.ansichten.kunden();
+          // Die Ansicht ist neu gebaut: Fokus zurück auf denselben Chip (Tastatur, VoiceOver)
+          const neu = Array.from(document.querySelectorAll('#kunden-inhalt .filter-chips .chip')).find((x) => x.getAttribute('data-kanal') === k);
+          if (neu) neu.focus({ preventScroll: true });
+        } })));
+    S.fuellen(ziel,
+      nachfassenKarte(a),
+      h('h2', {}, h('strong', { text: 'Alle' }), ' Kunden'),
+      umschalten,
+      h('div', { class: 'such-zeile' }, suche,
+        h('label', { class: 'nur-vorlesen', for: 'kunden-sortierung', text: 'Sortieren nach' }),
+        h('select', { id: 'kunden-sortierung', class: 'sortierung', onchange: (ev) => { Z.kundenSortierung = ev.currentTarget.value; kundenListeZeigen(a, d); } },
+          [['menge', 'Meiste Flaschen'], ['zuletzt', 'Zuletzt bestellt'], ['name', 'A–Z']].map(([w, t]) => h('option', { value: w, text: t })))),
+      chips,
+      h('div', { id: 'kunden-liste' }));
+    S.el('kunden-sortierung').value = Z.kundenSortierung || 'menge';
+    kundenListeZeigen(a, d);
   };
 
   // Kunden-Details (Blatt von unten) ----------------------------------------------------------------------------
@@ -841,7 +975,7 @@
       ['Kunde seit', H.wannText(d.erste)],
     ];
     // Nach dem Schließen zurück auf den Knopf dieses Kunden, auch wenn die Liste inzwischen neu gebaut wurde
-    const zurueck = () => Array.from(document.querySelectorAll('#ansicht-verkaeufe [data-kunde]')).find((x) => x.dataset.kunde === schluessel) || null;
+    const zurueck = () => Array.from(document.querySelectorAll('#app [data-kunde]')).find((x) => x.dataset.kunde === schluessel) || null;
     S.blattZeigen(d.kunde, [
       h('p', { class: 'blatt-unter', text: d.kanaele.join(', ') }),
       h('div', { class: 'blatt-zahlen' }, summe('Dieses Jahr', d.jahr), summe('Vorjahr', d.vorjahr), summe('Gesamt', d.gesamt)),
@@ -896,24 +1030,58 @@
       h('div', { class: 'rw-zeile rw-summe' }, h('dt', { text: 'Bestand jetzt' }), h('dd', { text: '= ' + H.zahlFormat(l.bestand, 0) })));
   }
 
-  /** Gezählter Standort: Bestand, Kisten, letzte Inventur, Schwund, Rechenweg; oben rechts klein „Neu zählen“. */
-  function lagerKarte(l) {
-    const pk = Z.daten && Z.daten.kennzahlen ? Z.daten.kennzahlen.flaschenProKiste : null;
-    const kistenText = H.kistenKurz(l.bestand, pk, false);
-    return h('div', { class: 'karte lager-karte' },
-      h('div', { class: 'karte-kopf' }, h('h3', { text: l.standort }),
-        h('button', { type: 'button', class: 'knopf klein leise-knopf', text: 'Neu zählen', 'aria-label': 'Neu zählen: ' + l.standort,
-          onclick: () => inventurStarten(l.standort) })),
-      h('div', { class: 'lager-werte' },
-        h('div', {},
-          h('p', { class: 'kachel-label', text: 'Bestand' }),
-          h('p', { class: 'kachel-wert', text: H.zahlFormat(l.bestand, 0) }),
-          h('p', { class: 'kachel-zusatz', text: 'Flaschen' + (kistenText ? ' · ' + kistenText : '') })),
-        h('div', {},
-          h('p', { class: 'kachel-label', text: 'Letzte Inventur' }),
-          h('p', { class: 'lager-datum', text: H.datumText(l.letzteInventur) }),
-          h('p', { class: 'kachel-zusatz', text: schwundText(l) }))),
-      rechenweg(l));
+  /** Lager als Liste (seit v23): Name, Inventur bzw. „noch nicht gezählt“, Bestand; antippen öffnet das Lager-Blatt. */
+  function lagerListe(u) {
+    const pk = u.kennzahlen ? u.kennzahlen.flaschenProKiste : null;
+    return h('div', { class: 'karte liste-karte' }, h('ul', { class: 'liste', role: 'list' }, u.lager.map((l) => {
+      const kisten = H.kistenKurz(l.bestand, pk, false);
+      return h('li', { class: 'kunde-zeile' },
+        h('button', { type: 'button', class: 'zeilen-knopf', 'data-lager': l.standort, onclick: () => lagerZeigen(l.standort),
+          'aria-label': l.standort + (l.bestand === null ? ', noch nicht gezählt' : ', ' + flaschen(l.bestand)) + '. Details' },
+        h('span', { class: 'rang-name' }, h('span', { class: 'rang-titel', text: l.standort }),
+          h('span', { class: 'rang-unter', text: l.bestand === null ? 'noch nicht gezählt' : 'Inventur ' + H.datumKurz(l.letzteInventur) + (kisten ? ' · ' + kisten : '') })),
+        l.bestand === null
+          ? h('span', { class: 'badge badge-zaehlen', text: 'zählen' })
+          : h('span', { class: 'rang-zahlen' }, h('span', { class: 'rang-flaschen', text: flaschen(l.bestand) })),
+        h('span', { class: 'chevron klein', 'aria-hidden': 'true', text: '›' })));
+    })));
+  }
+
+  /** Eine Buchung kurz für Listen in Blättern: Art · Menge, darunter Weg/Datum/wer. */
+  function buchungZeile(e) {
+    return h('li', { class: 'aktiv-zeile' + (e.storniert ? ' storniert' : '') },
+      h('span', { class: 'verlauf-icon' }, S.icon(ART_ICON[e.art] || 'info')),
+      h('span', { class: 'aktiv-text' }, h('span', { class: 'aktiv-titel' }, e.art || '?', e.storniert ? h('span', { class: 'badge badge-storno', text: 'storniert' }) : null),
+        h('span', { class: 'nebenzeile', text: [e.art === 'Umlagerung' ? e.standort + ' → ' + (e.nach || '?') : '', H.datumKurz(e.datum), e.wer ? 'von ' + e.wer : '']
+          .filter(Boolean).join(' · ') })),
+      typeof e.flaschen === 'number' ? h('span', { class: 'aktiv-wert', text: H.zahlFormat(e.flaschen, 0) + ' Fl.' }) : null);
+  }
+
+  /** Lager-Blatt: Bestand, letzte Inventur, Schwund, Rechenweg, Knöpfe „Neu zählen“/„Umlagerung von hier“, letzte Buchungen. */
+  function lagerZeigen(standort) {
+    const l = Z.daten ? Z.daten.lager.find((x) => x.standort === standort) : null;
+    if (!l) return;
+    const pk = Z.daten.kennzahlen ? Z.daten.kennzahlen.flaschenProKiste : null;
+    const buchungen = (Z.verlauf ? H.verlaufOhneStorno(Z.verlauf.eintraege) : []).filter((e) => e.standort === standort || e.nach === standort).slice(0, 6);
+    const eintragen = (art) => {
+      S.blattSchliessen();
+      if (!S.eintragenVorbelegen || !S.eintragenVorbelegen(art, standort)) return;
+      S.ansichtZeigen('eintragen');
+      S.nachOben('eintragen');
+    };
+    const zahl = (label, wert, zusatz) => h('div', { class: 'blatt-zahl' }, h('p', { class: 'kachel-label', text: label }),
+      h('p', { class: 'blatt-wert', text: wert }), zusatz ? h('p', { class: 'kachel-zusatz', text: zusatz }) : null);
+    S.blattZeigen(standort, [
+      l.bestand === null
+        ? h('p', { class: 'blatt-unter', text: 'Noch nicht gezählt. Einmal zählen und als Inventur eintragen, dann rechnet die App hier den Bestand.' })
+        : [h('div', { class: 'blatt-zahlen zwei' }, zahl('Bestand', H.zahlFormat(l.bestand, 0), 'Flaschen' + (H.kistenKurz(l.bestand, pk, false) ? ' · ' + H.kistenKurz(l.bestand, pk, false) : '')),
+          zahl('Letzte Inventur', H.datumText(l.letzteInventur), schwundText(l))),
+        rechenweg(l)],
+      h('div', { class: 'blatt-knoepfe' },
+        h('button', { type: 'button', class: 'knopf haupt', text: l.bestand === null ? 'Inventur eintragen' : 'Neu zählen', onclick: () => eintragen('Inventur') }),
+        l.bestand === null ? null : h('button', { type: 'button', class: 'knopf', text: 'Umlagerung von hier', onclick: () => eintragen('Umlagerung') })),
+      buchungen.length ? [h('p', { class: 'blatt-titel-klein', text: 'Letzte Buchungen' }), h('ul', { class: 'liste blatt-liste', role: 'list' }, buchungen.map(buchungZeile))] : null,
+    ], () => Array.from(document.querySelectorAll('#app [data-lager]')).find((x) => x.dataset.lager === standort) || null);
   }
 
   /** Anteile der gezählten Lager als ein geteilter Balken mit Legende (ab zwei Lagern mit Bestand). */
@@ -977,18 +1145,6 @@
           : h('button', { type: 'button', class: 'knopf klein', text: datum ? 'Eintragen' : 'ab 31.12.', disabled: !datum,
             'aria-label': datum ? 'Jahresinventur eintragen: ' + l.standort : 'Jahresinventur ' + l.standort + ': eintragen ab dem 31.12.',
             onclick: () => inventurStarten(l.standort, datum) })))));
-  }
-
-  /** Noch nicht gezählte Standorte: eine Erklärung, dann je eine Zeile mit „Inventur eintragen“. */
-  function offeneLager(liste, keinerGezaehlt) {
-    return [
-      h('p', { class: 'hinweis offen-text', text: (keinerGezaehlt ? 'Noch kein Lager gezählt.' : 'Noch nicht gezählt:') +
-        ' Einmal zählen und als Inventur eintragen, dann rechnet die App dort den Bestand.' }),
-      h('div', { class: 'karte liste-karte' }, h('ul', { class: 'liste', role: 'list' }, liste.map((l) => h('li', { class: 'offen-zeile' },
-        h('span', { class: 'zeile-name', text: l.standort }),
-        h('button', { type: 'button', class: 'knopf klein', text: 'Inventur eintragen', 'aria-label': 'Inventur eintragen: ' + l.standort,
-          onclick: () => inventurStarten(l.standort) }))))),
-    ];
   }
 
   /** Abfüllungen (Tab Abfüllungen), neueste zuerst, darunter die Summe. */
@@ -1138,16 +1294,19 @@
         r.gemischt ? h('p', { class: 'nebenzeile warnung', text: 'Achtung: Teile dieser Rechnung zählen bei verschiedenen Standorten.' }) : null))))));
   }
 
+  /** Vom Start („Alle Buchungen“) direkt zum Verlauf im Lager. */
+  S.verlaufZeigenOben = function () {
+    const ziel = S.el('verlauf-anker');
+    if (ziel) setTimeout(() => ziel.scrollIntoView({ block: 'start', behavior: 'smooth' }), 350);
+  };
+
   S.ansichten.lager = function () {
     const ziel = leeren('lager-inhalt');
     if (!Z.daten) platzhalter(ziel, ['gross', 'gross']);
     else {
-      const gezaehlt = Z.daten.lager.filter((l) => l.bestand !== null);
-      const offen = Z.daten.lager.filter((l) => l.bestand === null);
-      const jahresinventur = jahresinventurKarte(Z.daten, auswertung().heute);
-      ziel.append(...[gesamtKarte(Z.daten), jahresinventur].filter(Boolean), ...gezaehlt.map(lagerKarte));
-      // Im Dezember/Januar listet die Jahresinventur schon alle Lager mit Knopf
-      if (offen.length && !jahresinventur) ziel.append(...offeneLager(offen, !gezaehlt.length));
+      // Seit v23: Gesamt-Karte, im Dezember/Januar die Jahresinventur, dann die Lager als Liste (Details im Blatt)
+      S.fuellen(ziel, gesamtKarte(Z.daten), jahresinventurKarte(Z.daten, auswertung().heute),
+        h('h2', {}, h('strong', { text: 'Lager' })), lagerListe(Z.daten));
     }
     verlaufZeigen();
     abfuellungenZeigen();

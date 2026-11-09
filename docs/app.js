@@ -7,7 +7,8 @@
   const H = S.H;
   const Z = S.zustand;
   const K = S.SCHLUESSEL;
-  const ANSICHTEN = ['uebersicht', 'verkaeufe', 'lager', 'eintragen'];
+  // Reihenfolge wie die Reiter (seit v23: Start, Verkäufe, + Eintragen in der Mitte, Kunden, Lager)
+  const ANSICHTEN = ['uebersicht', 'verkaeufe', 'eintragen', 'kunden', 'lager'];
 
   const el = S.el;
   const eingabe = el('code');
@@ -150,8 +151,8 @@
       S.ansagen(el('reiter-' + a).textContent.trim() + ', Reiter ' + (ANSICHTEN.indexOf(a) + 1) + ' von ' + ANSICHTEN.length);
     }
     if (a === 'verkaeufe' && typeof S.diagrammeZeigen === 'function') S.diagrammeZeigen();
-    // Lager zeigt den Verlauf, Eintragen „Zuletzt eingetragen“ daraus
-    if ((a === 'lager' || a === 'eintragen') && (Z.verlaufVeraltet || !Z.verlauf) && !Z.verlaufLaedt) S.verlaufLaden();
+    // Lager zeigt den Verlauf, Eintragen „Zuletzt eingetragen“ und Start „Zuletzt passiert“ daraus
+    if ((a === 'lager' || a === 'eintragen' || a === 'uebersicht') && (Z.verlaufVeraltet || !Z.verlauf) && !Z.verlaufLaedt) S.verlaufLaden();
   }
 
   /**
@@ -306,7 +307,7 @@
   S.aktualisieren = function () {
     const sitzung = Z.sitzung;
     const teile = [S.laden()];
-    if (Z.ansicht === 'lager' || Z.ansicht === 'eintragen') teile.push(S.verlaufLaden());
+    if (Z.ansicht === 'lager' || Z.ansicht === 'eintragen' || Z.ansicht === 'uebersicht') teile.push(S.verlaufLaden());
     return Promise.all(teile).then(() => {
       if (sitzung !== Z.sitzung || !Z.code) return;
       if (!el('fehler').hidden) return S.ansagen(el('fehler').textContent);
@@ -324,6 +325,7 @@
     Z.verlaufFehler = '';
     S.ansichten.lager();
     if (typeof S.zuletztZeigen === 'function') S.zuletztZeigen();
+    if (typeof S.aktivitaetZeigen === 'function') S.aktivitaetZeigen();
     const e = await S.anfrage('verlauf');
     if (nr !== verlaufNr || !Z.code) return; // inzwischen neu angestoßen oder abgemeldet
     Z.verlaufLaedt = false;
@@ -339,6 +341,7 @@
     }
     S.ansichten.lager();
     if (typeof S.zuletztZeigen === 'function') S.zuletztZeigen();
+    if (typeof S.aktivitaetZeigen === 'function') S.aktivitaetZeigen();
   };
 
   /**
@@ -354,7 +357,7 @@
     abgemeldet = true;
     verlaufNr++;
     Object.assign(Z, { code: '', name: '', daten: null, frisch: false, laedt: false, verlauf: null, verlaufLaedt: false,
-      verlaufFehler: '', verlaufVeraltet: true, monatWahl: null, alleKunden: false, alleNachfassen: false, verlaufAlle: false, zuordnenOffen: false, offline: false, ladenNachholen: false, sitzung: Z.sitzung + 1 });
+      verlaufFehler: '', verlaufVeraltet: true, diagramm: 'flaschen', zeitraum: 'jahr', monatWahl: null, alleKunden: false, kundenZeitraum: 'jahr', kundenSuche: '', kundenKanal: '', kundenSortierung: 'menge', alleNachfassen: false, verlaufAlle: false, zuordnenOffen: false, offline: false, ladenNachholen: false, sitzung: Z.sitzung + 1 });
     meldung('');
     S.frageSchliessen();
     S.blattSchliessen();
