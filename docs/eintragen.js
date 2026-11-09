@@ -275,7 +275,8 @@
         h('button', { type: 'button', class: 'text-link', text: 'Nochmal', onclick: () => S.verlaufLaden() }))
       : Z.verlaufLaedt && liste.length ? h('p', { class: 'status-zeile laedt', text: 'Lädt neu …' }) : null;
     if (!liste.length) return ziel.replaceChildren(...(zustand ? [h('h2', {}, h('strong', { text: 'Zuletzt' }), ' eingetragen'), zustand] : []));
-    ziel.replaceChildren(
+    // Fehlende Teile (null) herausfiltern, sonst schreibt replaceChildren „null“ als Text (gesehen auf Marks iPhone, v21)
+    ziel.replaceChildren(...[
       h('h2', {}, h('strong', { text: 'Zuletzt' }), ' eingetragen'),
       zustand,
       h('div', { class: 'karte liste-karte' }, h('ul', { class: 'liste', role: 'list' }, liste.map((e) => h('li', { class: 'zuletzt-zeile' + (e.storniert ? ' storniert' : '') },
@@ -285,7 +286,7 @@
           h('span', { class: 'nebenzeile', text: [typeof e.flaschen === 'number' ? H.zahlFormat(e.flaschen, 0) + ' Fl.' : '',
             e.art === 'Umlagerung' ? e.standort + ' → ' + (e.nach || '?') : e.standort, H.datumKurz(e.datum), e.wer ? 'von ' + e.wer : '']
             .filter(Boolean).join(' · ') })))))),
-      h('button', { type: 'button', class: 'knopf mehr-knopf', text: 'Ganzer Verlauf im Lager', onclick: () => { S.ansichtZeigen('lager'); } }));
+      h('button', { type: 'button', class: 'knopf mehr-knopf', text: 'Ganzer Verlauf im Lager', onclick: () => { S.ansichtZeigen('lager'); } })].filter(Boolean));
   }
   S.zuletztZeigen = zuletztZeigen;
 

@@ -61,6 +61,17 @@
     return e;
   }
   S.h = (tag, attrs, ...kinder) => knoten(null, tag, attrs, kinder);
+  /** Inhalt eines Elements ersetzen; null/false/undefined fallen weg (replaceChildren schriebe sonst „null“), Listen flach. */
+  S.fuellen = function (el, ...kinder) {
+    const flach = [];
+    const rein = (k) => {
+      if (k === null || k === undefined || k === false) return;
+      if (Array.isArray(k)) k.forEach(rein); else flach.push(typeof k === 'string' ? document.createTextNode(k) : k);
+    };
+    kinder.forEach(rein);
+    el.replaceChildren(...flach);
+    return el;
+  };
   S.s = (tag, attrs, ...kinder) => knoten(SVG_NS, tag, attrs, kinder);
 
   // Symbole (selbst gezeichnet, 24×24, nur Linien in currentColor; die Reiter-Symbole stehen fest in index.html) ----

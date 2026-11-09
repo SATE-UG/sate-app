@@ -233,7 +233,14 @@ h2 {
   font-variant-numeric: tabular-nums;
 }
 .bestellung-fehlt { margin: 0 0 16px; font-size: 16px; }
-.bestellung > .kachel-zusatz { margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--linie); }
+.bestellung-fuss { margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--linie); }
+.reichweite-zeile { font-size: 15px; color: var(--leise); margin: 0 0 3px; }
+.reichweite-zeile strong { color: var(--text); font-weight: 600; font-variant-numeric: tabular-nums; }
+.am-stueck { white-space: nowrap; }
+/* Überschrift mit Link rechts (z. B. „Standorte“ → „Zum Lager ›“) */
+.h2-zeile { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin: 32px 0 12px; }
+.h2-zeile h2 { margin: 0; }
+.text-link.h2-link { min-height: 44px; padding: 0 2px; color: var(--akzent); font-weight: 500; }
 .bestellung-datum + .zeitstrahl { margin-top: -6px; }
 
 /* Begrüßung: Datum klein unter „Hallo Mark“ */
@@ -289,15 +296,6 @@ h2 {
 .pill-jetzt { background: var(--akzent); color: #000000; }
 .pill-leer { color: var(--leise); }
 
-.reichweite-text { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; font-size: 13px; color: var(--leise); margin: 0 0 8px; }
-.reichweite-text strong { color: var(--text); font-weight: 600; font-variant-numeric: tabular-nums; }
-.reichweite-legende { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
-.grenze-zeichen { width: 2px; height: 12px; border-radius: 1px; background: var(--leise); }
-.fortschritt { position: relative; height: 8px; border-radius: 4px; background: var(--feld); }
-.fortschritt-fuell { height: 100%; border-radius: 4px; background: var(--text); transition: width 0.4s ease; }
-.fortschritt.stufe-bald .fortschritt-fuell, .fortschritt.stufe-jetzt .fortschritt-fuell { background: var(--akzent); }
-.fortschritt-grenze { position: absolute; top: -3px; bottom: -3px; width: 2px; margin-left: -1px; border-radius: 1px; background: var(--leise); }
-.reichweite-skala { display: flex; justify-content: space-between; font-size: 11px; color: var(--leise); margin-top: 6px; }
 
 /* Listen in Karten (Standorte, Kanäle, Verlauf …) */
 .liste { list-style: none; margin: 0; padding: 0; }
@@ -469,6 +467,19 @@ h2 {
 .zeitraum-text { font-size: 13px; color: var(--leise); margin: 0 4px 8px; font-variant-numeric: tabular-nums; }
 .vergleich-text { margin: -2px 4px 0; font-size: 13px; }
 .info-leer { color: var(--leise); }
+/* Vergleich eines Monats: zwei Zellen nebeneinander (Vorjahresmonat, Vormonat), Prozent farbig, Basiswert leise */
+.vergleich-raster { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px; margin: 12px 0 2px; }
+.vg-zelle { display: flex; flex-direction: column; gap: 1px; padding: 9px 12px; border-radius: var(--radius-klein); background: var(--feld); min-width: 0; }
+.vg-label { font-size: 12px; color: var(--leise); }
+.vg-wert { font-size: 19px; font-weight: 700; line-height: 1.25; font-variant-numeric: tabular-nums; color: var(--text); }
+.vg-wert.trend-hoch .trend-pfeil, .vg-wert.trend-hoch .trend-zahl { color: var(--gruen); }
+.vg-wert.trend-runter .trend-pfeil, .vg-wert.trend-runter .trend-zahl { color: var(--rot); }
+.vg-basis { font-size: 12px; color: var(--leise); font-variant-numeric: tabular-nums; }
+/* Summen eines Zeitraums (Kanäle und Kunden): kompakt nebeneinander */
+.karte.summen { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 8px; padding: 14px 16px; }
+.summe-zelle { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; min-width: 0; }
+.summe-wert { font-size: 20px; font-weight: 700; line-height: 1.2; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.summe-zelle .trend { margin-top: 4px; padding: 1px 8px; font-size: 12px; white-space: nowrap; }
 .jahr-karte { padding: 16px 16px 14px; }
 .jahr-karte .diagramm { margin: 14px -8px 0; width: calc(100% + 16px); }
 .jahr-karte .legende { margin: 8px 0 0; }

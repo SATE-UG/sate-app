@@ -243,9 +243,10 @@
     const vg = jv && jv.vergleich;
     const pJahr = vg ? H.veraenderung(vg.dieses.flaschen, vg.vorjahr.flaschen) : null;
     const zuVerkaeufen = () => { Z.diagramm = 'flaschen'; S.ansichten.verkaeufe(); S.ansichtZeigen('verkaeufe'); S.nachOben('verkaeufe'); };
-    const annahme = 'Rechnet mit Ø ' + H.zahlFormat(k.abverkaufProMonat, 0) + ' Flaschen pro Monat (' +
-      (H.zeitraumKurz(k.abverkaufVon, k.abverkaufBis) || 'letzte Monate') + '), ' + H.kistenFormat(b.vorlaufMonate) + ' Monaten Vorlauf beim Abfüller und ' +
-      H.kistenFormat(b.pufferWochen) + ' Wochen Puffer.';
+    // Fuß der Bestell-Karte: Reichweite hervorgehoben, darunter kurz die Annahmen (statt eines langen grauen Satzes).
+    // Jede Annahme bricht nur als Ganzes um.
+    const annahmen = [typeof k.abverkaufProMonat === 'number' ? 'Ø ' + H.zahlFormat(k.abverkaufProMonat, 0) + ' Flaschen im Monat' : '',
+      H.kistenFormat(b.vorlaufMonate) + ' Monate Vorlauf', H.kistenFormat(b.pufferWochen) + ' Wochen Puffer'].filter(Boolean);
 
     // Fehlende Teile (null) überspringen, sonst schreibt append „null“ als Text
     ziel.append(...[
@@ -260,7 +261,10 @@
           : h('p', { class: 'bestellung-fehlt', text: 'Dafür fehlen Bestand oder Verkäufe der letzten Monate.' }),
         zeitstrahl(b, heute),
         b.leerAm ? h('p', { class: 'nur-vorlesen', text: 'Leer etwa am ' + H.datumText(b.leerAm) + ', Reichweite ' + H.zahlFormat(b.reichweite, 1) + ' Monate.' }) : null,
-        h('p', { class: 'kachel-zusatz', text: (typeof b.reichweite === 'number' ? 'Reichweite ' + H.zahlFormat(b.reichweite, 1) + ' Monate. ' : '') + annahme })),
+        h('div', { class: 'bestellung-fuss' },
+          typeof b.reichweite === 'number'
+            ? h('p', { class: 'reichweite-zeile' }, 'Reichweite ', h('strong', { text: H.zahlFormat(b.reichweite, 1) + ' Monate' })) : null,
+          h('p', { class: 'kachel-zusatz annahmen' }, annahmen.map((t, i) => [i ? ' · ' : null, h('span', { class: 'am-stueck', text: t })])))),
       h('div', { class: 'kacheln' },
         kachel('Bestand', H.zahlFormat(k.gesamtbestand, 0), 'Flaschen', geschaetzt ? 'geschätzt' : 'gezählt', 'flasche',
           H.kistenKurz(k.gesamtbestand, proKiste, geschaetzt)),
@@ -281,7 +285,9 @@
       hw.bestand ? h('p', { class: 'notiz' }, S.icon('info', 'notiz-icon'), h('span', { text: hw.bestand })) : null,
       inventurHinweis(u, heute),
       letzterMonatKarte(u.verkaeufe.monate),
-      ueberschrift('h2', 'Standorte'),
+      h('div', { class: 'h2-zeile' }, ueberschrift('h2', 'Standorte'),
+        h('button', { type: 'button', class: 'text-link h2-link', text: 'Zum Lager ›', 'aria-label': 'Zum Lager',
+          onclick: () => { S.ansichtZeigen('lager'); S.nachOben('lager'); } })),
       h('div', { class: 'karte liste-karte' }, h('ul', { class: 'liste', role: 'list' }, u.lager.map((l) => h('li', { class: 'standort-zeile' },
         h('div', { class: 'zeile' },
           h('span', { class: 'zeile-name' }, l.standort,
@@ -427,8 +433,8 @@
       grosseZahl('info-wert', jv.bisher[g], g),
       vg
         ? h('p', { class: 'trend-zeile' }, p === null ? null : trendChip({ prozent: p }, 'zum Vorjahr'),
-          h('span', { class: 'trend-hinweis', text: monateVonBis(jahrAnfang(jetzt), vg.bis) + ' verglichen: ' + H.zahlFormat(vg.dieses[g], 0) +
-            ' gegenüber ' + H.zahlFormat(vg.vorjahr[g], 0) + (g === 'umsatz' ? ' €' : '') }))
+          h('span', { class: 'trend-hinweis', text: monateVonBis(jahrAnfang(jetzt), vg.bis) + ': ' + mitEinheit(vg.dieses[g], g) +
+            ', im Vorjahr ' + mitEinheit(vg.vorjahr[g], g) }))
         : h('p', { class: 'trend-zeile trend-hinweis', text: 'Der Vergleich mit dem Vorjahr startet, sobald der erste Monat vorbei ist.' }),
       h('p', { class: 'nur-vorlesen', text: vorleser }),
       animieren(kumulDiagramm(jv, g), 'kumul|' + g),
@@ -469,26 +475,41 @@
       vorjahr: vorjahr, index: Number(text.slice(5, 7)) - 1 };
   }
 
+  /** Vergleichs-Zelle: kleines Label, Pfeil und Prozent farbig, darunter der Vergleichswert. */
+  function vergleichZelle(label, p, wert, g) {
+    const r = H.richtung(p);
+    return h('div', { class: 'vg-zelle' },
+      h('span', { class: 'vg-label', text: label }),
+      h('span', { class: 'vg-wert trend-' + r },
+        h('span', { class: 'trend-pfeil', 'aria-hidden': 'true', text: r === 'hoch' ? '↑ ' : r === 'runter' ? '↓ ' : '→ ' }),
+        h('span', { class: 'trend-zahl', text: H.prozentText(p) })),
+      h('span', { class: 'vg-basis', text: mitEinheit(wert, g) }));
+  }
+
   function monatInfo(info, a, mj, i, g) {
     const m = mj.jv.monate[i];
-    const vor = a.werte(H.monatPlus(m.monat, -1));
-    const chips = [];
+    const vorMonat = a.werte(H.monatPlus(m.monat, -1));
+    const zellen = [];
+    let vorjahrInZelle = false;
     if (m.dieses && !m.laufend) {
       const pj = m.vorjahr ? H.veraenderung(m.dieses[g], m.vorjahr[g]) : null;
-      const pm = vor ? H.veraenderung(m.dieses[g], vor[g]) : null;
-      if (pj !== null) chips.push(trendChip({ prozent: pj }, 'zum Vorjahresmonat'));
-      if (pm !== null) chips.push(trendChip({ prozent: pm }, 'zum Vormonat'));
+      const pm = vorMonat ? H.veraenderung(m.dieses[g], vorMonat[g]) : null;
+      if (pj !== null) zellen.push(vergleichZelle(mj.vorjahr ? 'zum Monat im Jahr davor' : 'zum Vorjahresmonat', pj, m.vorjahr[g], g));
+      if (pm !== null) zellen.push(vergleichZelle('zum Vormonat', pm, vorMonat[g], g));
+      vorjahrInZelle = pj !== null;
     }
     const andere = g === 'umsatz' ? 'flaschen' : 'umsatz';
-    const vj = m.vorjahr ? mj.vergleich + ' ' + (m.laufend ? 'ganzer Monat ' : '') + mitEinheit(m.vorjahr[g], g) : mj.vergleich + ' ohne Daten';
-    info.replaceChildren(
+    // Unter der großen Zahl: die andere Größe; der Vorjahreswert nur, wenn ihn keine Kachel schon zeigt
+    const vj = m.vorjahr ? mj.vergleich + (m.laufend ? ' ganzer Monat ' : ' ') + mitEinheit(m.vorjahr[g], g) : mj.vergleich + ' ohne Daten';
+    const zusatz = [m.dieses ? mitEinheit(m.dieses[andere], andere) : '', vorjahrInZelle ? '' : vj].filter(Boolean).join(' · ');
+    S.fuellen(info,
       h('p', { class: 'kachel-label' }, H.monatName(m.monat),
         mj.vorjahr ? h('span', { class: 'badge klein-badge', text: 'Vorjahr' }) : null,
         m.laufend ? h('span', { class: 'badge klein-badge', text: 'bisher' }) : null,
         m.zukunft ? h('span', { class: 'badge klein-badge', text: 'kommt noch' }) : null),
       m.dieses ? grosseZahl('info-wert', m.dieses[g], g) : h('p', { class: 'info-wert info-leer', text: '–' }),
-      h('p', { class: 'kachel-zusatz', text: (m.dieses ? mitEinheit(m.dieses[andere], andere) + ' · ' : '') + vj }),
-      chips.length ? h('p', { class: 'trend-zeile' }, chips)
+      zusatz ? h('p', { class: 'kachel-zusatz', text: zusatz }) : null,
+      zellen.length ? h('div', { class: 'vergleich-raster' }, zellen)
         : m.laufend ? h('p', { class: 'trend-zeile trend-hinweis', text: 'Läuft noch, verglichen wird, sobald der Monat vorbei ist.' })
           : m.zukunft ? h('p', { class: 'trend-zeile trend-hinweis', text: 'So viel war es im Vorjahr – gut zum Planen.' }) : null);
   }
@@ -611,6 +632,14 @@
         h('span', { class: 'rang-umsatz', text: H.euroFormat(z.umsatz) }))))));
   }
 
+  /** Summen eines Zeitraums kompakt in einer Karte: [[Label, Wert, Prozent oder null], …] nebeneinander. */
+  function summenZeile(werte) {
+    return h('div', { class: 'karte summen' }, werte.map(([label, wert, p]) => h('div', { class: 'summe-zelle' },
+      h('span', { class: 'kachel-label', text: label }),
+      h('span', { class: 'summe-wert', text: wert }),
+      p === null || p === undefined ? null : trendChip({ prozent: p }, ''))));
+  }
+
   /** Zeitraum des Umschalters: von/bis (Monate) und womit verglichen wird (gleiche Monate im Jahr davor). */
   function zeitraumGrenzen(a, welcher) {
     const jetzt = a.heute.slice(0, 7);
@@ -718,10 +747,10 @@
       const z = u.verkaeufe[Z.zeitraum];
       return teile.concat([
         h('p', { class: 'zeitraum-text', text: Z.zeitraum === 'gesamt' ? 'Seit ' + H.monatFormat(z.von, true) : H.zeitraumFormat(z.von, z.bis) }),
-        h('div', { class: 'kacheln' }, kachel('Verkauft', H.zahlFormat(z.flaschen, 0), z.flaschen === 1 ? 'Flasche' : 'Flaschen', null),
-          kachel('Umsatz', H.zahlFormat(z.umsatz, 0), 'Euro', null)),
+        summenZeile([['Flaschen', H.zahlFormat(z.flaschen, 0), null], ['Umsatz', H.euroFormat(z.umsatz), null]]),
         h('h3', { text: 'Kanäle' }),
-        rangliste(z.kanaele.map((x) => ({ name: x.kanal, flaschen: x.flaschen, umsatz: x.umsatz })), true, false),
+        rangliste(z.kanaele.map((x) => ({ name: x.kanal, flaschen: x.flaschen, umsatz: x.umsatz }))
+          .sort((x, y) => y.flaschen - x.flaschen), true, false),
         h('h3', { text: 'Top 10 Kunden' }),
         rangliste(z.kunden.map((x) => ({ name: x.kunde, flaschen: x.flaschen, umsatz: x.umsatz })), false, true)]);
     }
@@ -739,20 +768,15 @@
     const neu = Z.zeitraum !== 'gesamt' ? z.kunden.filter((k) => k.erster >= gr.von).length : 0;
     const neuAb = neu > 0 && neu < z.kunden.length ? gr.von : null;
     const chip = (g) => (mitVergleich ? H.veraenderung(mitVergleich.jetzt[g], mitVergleich.vor[g]) : null);
-    const kpi = (label, wert, einheit, g) => {
-      const p = chip(g);
-      return h('div', { class: 'kachel' }, h('p', { class: 'kachel-label', text: label }), h('p', { class: 'kachel-wert', text: wert }),
-        h('p', { class: 'kachel-zusatz', text: einheit }), p === null ? null : h('p', { class: 'trend-zeile' }, trendChip({ prozent: p }, '')));
-    };
     return teile.concat([
       h('p', { class: 'zeitraum-text', text: Z.zeitraum === 'gesamt' ? 'Seit ' + H.monatFormat(z.von, true) : H.zeitraumFormat(z.von, z.bis) }),
-      h('div', { class: 'kacheln' },
-        kpi('Verkauft', H.zahlFormat(z.flaschen, 0), z.flaschen === 1 ? 'Flasche' : 'Flaschen', 'flaschen'),
-        kpi('Umsatz', H.zahlFormat(z.umsatz, 0), 'Euro', 'umsatz')),
+      summenZeile([['Flaschen', H.zahlFormat(z.flaschen, 0), chip('flaschen')], ['Umsatz', H.euroFormat(z.umsatz), chip('umsatz')],
+        ['Kunden', H.zahlFormat(z.kunden.length, 0), null]]),
       mitVergleich ? h('p', { class: 'hinweis vergleich-text', text: gr.vgl.text + ' (volle Monate).' }) : null,
       h('h3', { text: 'Kanäle' }),
       kanalListe(z, mitVergleich),
-      h('h3', {}, 'Kunden', h('span', { class: 'h3-zusatz', text: '· ' + z.kunden.length + (neuAb ? ', davon ' + neu + ' neu' : '') }))],
+      // Anzahl steht schon in der Summenzeile; hier nur, wie viele neu sind
+      h('h3', {}, 'Kunden', neuAb ? h('span', { class: 'h3-zusatz', text: '· ' + neu + ' neu' }) : null)],
     kundenListe(z, neuAb));
   }
 
@@ -919,7 +943,7 @@
       grosseZahl('info-wert', k.gesamtbestand, 'flaschen'),
       formel
         ? h('p', { class: 'kachel-zusatz', text: 'Abgefüllt ' + H.zahlFormat(k.abgefuellt, 0) + ' minus verkauft ' + H.zahlFormat(k.verkauft, 0) +
-          '. Promo, Eigenverbrauch und Bruch stecken da nicht drin – den echten Bestand zeigt die Inventur.' })
+          '. Promo, Eigenverbrauch und Bruch fehlen darin, den echten Bestand zeigt die Inventur.' })
         : geschaetzt ? h('p', { class: 'kachel-zusatz', text: 'Aus Abfüllungen minus Verkäufe – den echten Bestand zeigt die Inventur.' }) : null,
       n ? h('div', { class: 'inventur-stand' },
         h('div', { class: 'inventur-schritte', 'aria-hidden': 'true' }, u.lager.map((l) => h('span', { class: 'schritt-punkt' + (l.bestand !== null ? ' fertig' : '') }))),
@@ -984,6 +1008,7 @@
   }
 
   const VERLAUF_ANFANG = 10;
+  const VERLAUF_SERVER_MAX = 30; // so viele Zeilen schickt die Aktion `verlauf` höchstens (api/src/Konfig.js VERLAUF_ANZAHL)
 
   /** Eine Zeile im Verlauf in Worten, z. B. „48 Flaschen: Lager Süd → Lager Nord“. */
   function verlaufText(e) {
@@ -1047,7 +1072,9 @@
       ziel.append(h('button', { type: 'button', class: 'knopf mehr-knopf', 'aria-expanded': alle ? 'true' : 'false',
         text: alle ? 'Weniger zeigen' : 'Alle ' + liste.length + ' Einträge zeigen', onclick: () => { Z.verlaufAlle = !alle; verlaufZeigen(); } }));
     }
-    ziel.append(h('p', { class: 'hinweis liste-fuss', text: zeigen.length === 1 ? 'Der letzte Eintrag.' : 'Die letzten ' + zeigen.length + ' Einträge, neueste zuerst. Ältere stehen im Sheet (Tab Lager-Log).' }));
+    const voll = v.eintraege.length >= VERLAUF_SERVER_MAX; // dann gibt es vermutlich ältere Zeilen
+    ziel.append(h('p', { class: 'hinweis liste-fuss', text: (zeigen.length === 1 ? 'Der letzte Eintrag.' : 'Die letzten ' + zeigen.length + ' Einträge, neueste zuerst.') +
+      (voll ? ' Ältere stehen im Sheet (Tab Lager-Log).' : '') }));
   }
 
   async function zuordnen(r, standort, auswahl) {
