@@ -101,6 +101,8 @@ const TAGE_PRO_MONAT = 365.25 / 12;
 const MAX_HINWEISE = 20;
 /** Top-Kunden in der Auswertung. */
 const TOP_KUNDEN = 10;
+/** Wie viele Inventuren pro Standort die Übersicht mitschickt (Jahresinventur zum 31.12. trotz späterer Zählung). */
+const INVENTUREN_ANZAHL = 6;
 
 // Schreib-Logik (Task 5) ----------------------------------------------------------------------------------
 

@@ -189,3 +189,20 @@ test('Codex-Befunde: Rechnungen statt Tage, spätere Monate, Lücken, gezeigtes 
   assert.deepStrictEqual(vj.vergleich.vorjahr, { flaschen: 1222, umsatz: 1285 });
   assert.strictEqual(H.jahresVergleich(w, '2026-11-09').jahr, 2026);
 });
+
+test('standText: kurzer Stand zum Teilen, ohne Kundennamen', () => {
+  const v = H.verkaufZeilen({ zeilen: zeilen() }, '2026-11-09');
+  const jv = H.jahresVergleich(H.monatsWerte({}, v), '2026-11-09');
+  const u = { kennzahlen: { gesamtbestand: 8353, gesamtQuelle: 'rechnerisch' }, bestellung: { spaetestensBestellen: '2027-02-14' } };
+  const t = H.standText(u, jv, '2026-11-09');
+  assert.strictEqual(t.split('\n')[0], 'SATE – Stand 9. Nov 2026');
+  assert.match(t, /Bestand: 8\.353 Flaschen \(geschätzt\)/);
+  assert.match(t, /Spätestens bestellen bis: 14\. Feb 2027 \(noch 97 Tage\)/);
+  assert.match(t, /Dieses Jahr: 602 Flaschen \(−71 % zum Vorjahr, Jan–Okt\)/);
+  assert.match(t, /Oktober: 108 Flaschen \(\+116 % zum Vorjahresmonat\)/);
+  assert.ok(t.endsWith('Trink SATE!'));
+  assert.doesNotMatch(t, /Bar Eins|Späti|Fest/, 'keine Kunden');
+  const jan = H.standText({ kennzahlen: {}, bestellung: { spaetestensBestellen: '2027-01-01' } }, H.jahresVergleich(H.monatsWerte({}, v), '2027-01-05'), '2027-01-05');
+  assert.match(jan, /\(überfällig\)/);
+  assert.match(jan, /Dieses Jahr: 0 Flaschen\n/);
+});

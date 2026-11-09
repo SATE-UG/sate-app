@@ -117,6 +117,7 @@ button, .leiste, .segment, .art-kachel, .banner, .ziehen, .ort-wahl {
 }
 body:not(.mit-leiste) .kopf { display: none; }
 .logo { display: block; height: 22px; width: auto; }
+.kopf-knoepfe { display: flex; gap: 10px; }
 
 .rund {
   width: 36px;
@@ -250,12 +251,24 @@ h2 {
 .kachel-knopf:active { transform: scale(0.97); background: #242426; }
 .kachel-knopf:focus-visible { outline: 2px solid var(--akzent); outline-offset: 2px; }
 
+/* Hinweis-Karte (z. B. Jahresinventur): gelber Rahmen, Symbol, Text, Pfeil */
+.hinweis-karte { width: 100%; display: flex; align-items: center; gap: 12px; border: 0; color: var(--text); font: inherit; text-align: left;
+  cursor: pointer; -webkit-appearance: none; appearance: none; box-shadow: inset 0 0 0 1.5px var(--akzent-weich);
+  transition: transform 0.1s ease, background-color 0.1s ease; }
+.hinweis-karte:active { transform: scale(0.98); background: #242426; }
+.hinweis-karte:focus-visible { outline: 2px solid var(--akzent); outline-offset: 2px; }
+.hinweis-symbol { flex: none; width: 36px; height: 36px; display: grid; place-items: center; border-radius: 10px; background: var(--akzent-weich); color: var(--akzent); }
+.hinweis-symbol .icon { width: 20px; height: 20px; }
+.hinweis-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; font-size: 14px; color: var(--leise); }
+.hinweis-text strong { color: var(--text); font-size: 15px; font-weight: 600; }
+
 /* Sparkline in der Karte „Letzter voller Monat“ */
 .trend-karte-reihe { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; width: 100%; }
 .sparkline { flex: none; width: 104px; height: 36px; margin-bottom: 2px; }
 .sparkline .spark { fill: #6C6C70; }
 .sparkline .spark-gewaehlt { fill: var(--akzent); }
 .sparkline .spark-laufend { fill: rgba(255, 255, 255, 0.1); }
+.sparkline .spark-minus { fill: var(--rot); }
 
 /* Standorte: Inventurdatum und Kisten klein unter dem Namen */
 .zeile-unter { display: block; font-size: 13px; color: var(--leise); margin-top: 2px; font-variant-numeric: tabular-nums; }
@@ -377,7 +390,8 @@ h2 {
   background: var(--karte);
 }
 .segment button {
-  min-height: 36px;
+  position: relative;
+  min-height: 40px;
   padding: 4px 6px;
   border: 0;
   border-radius: 9px;
@@ -394,11 +408,17 @@ h2 {
   transition: background-color 0.2s ease, color 0.2s ease, opacity 0.1s ease;
 }
 .segment button:active { opacity: 0.7; }
+.segment button::after { content: ''; position: absolute; inset: -3px 0; } /* Tippfläche 46 px hoch */
 .segment button[aria-pressed="true"] { background: #F2F2F2; color: #000000; box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4); }
 .segment button:focus-visible { outline: 2px solid var(--akzent); outline-offset: 1px; }
 
-/* Verkäufe: Diagramm-Karte (SVG aus ansichten.js) */
-.diagramm-karte { padding: 16px 8px 14px; }
+/* Verkäufe: Diagramm-Karte (SVG aus ansichten.js), oben rechts Pfeile zum Blättern */
+.diagramm-karte { position: relative; padding: 16px 8px 14px; }
+.monat-schritte { position: absolute; top: 12px; right: 12px; display: flex; gap: 8px; }
+.monat-schritte .rund { background: var(--feld); }
+.monat-schritte .rund:disabled { opacity: 0.35; }
+.monat-schritte .rund:disabled .icon, .monat-schritte .rund:disabled .pfeil-text { animation: none; }
+.pfeil-text { font-size: 24px; line-height: 1; margin-top: -3px; }
 .balken-info { padding: 0 8px 6px; min-height: 118px; }
 .info-wert { margin: 4px 0 2px; font-size: 34px; font-weight: 700; line-height: 1.1; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
 .diagramm { display: block; width: 100%; height: auto; overflow: visible; touch-action: manipulation; }
@@ -417,7 +437,16 @@ h2 {
 .diagramm .gewaehlt .balken-vorjahr { fill: #8E8E93; }
 .diagramm .laufend.gewaehlt .balken-dieses { fill: var(--akzent-weich); stroke: var(--akzent); }
 .diagramm .gewaehlt .monat { fill: var(--akzent); font-weight: 700; }
-.diagramm .balken-dieses.negativ, .diagramm .balken-vorjahr.negativ { fill: var(--rot); } /* Gutschriften unter der Nulllinie */
+.diagramm .balken-dieses.negativ, .diagramm .balken-vorjahr.negativ, .diagramm .balken-laufend.negativ { fill: var(--rot); stroke: none; } /* Gutschriften unter der Nulllinie */
+/* Erstes Zeigen: Balken wachsen von der Nulllinie, Linien und Flächen blenden ein (siehe animieren() in ansichten.js) */
+.rein-anim .balken-dieses, .rein-anim .balken-vorjahr { transform-box: fill-box; transform-origin: 50% 100%; animation: wachsen 0.55s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+.rein-anim .balken-dieses.negativ, .rein-anim .balken-vorjahr.negativ { transform-origin: 50% 0%; }
+.rein-anim .paar:nth-child(n+6) .balken-dieses, .rein-anim .paar:nth-child(n+6) .balken-vorjahr { animation-delay: 0.04s; }
+.rein-anim .paar:nth-child(n+10) .balken-dieses, .rein-anim .paar:nth-child(n+10) .balken-vorjahr { animation-delay: 0.08s; }
+.rein-anim .linie-dieses, .rein-anim .linie-vorjahr, .rein-anim .flaeche-dieses, .rein-anim .punkt-dieses, .rein-anim .punkt-vorjahr { animation: blenden 0.6s ease-out both; }
+@keyframes wachsen { from { transform: scaleY(0); } to { transform: none; } }
+@keyframes blenden { from { opacity: 0; } to { opacity: 1; } }
+
 /* Dieses Jahr kumuliert: gelbe Linie mit Fläche, Vorjahr grau gestrichelt */
 .diagramm .linie-dieses { fill: none; stroke: var(--akzent); stroke-width: 2.25; stroke-linejoin: round; stroke-linecap: round; }
 .diagramm .flaeche-dieses { fill: url(#kumul-flaeche); stroke: none; }
@@ -469,6 +498,10 @@ h2 {
 .zeilen-knopf:active { opacity: 0.55; }
 .zeilen-knopf:focus-visible { outline: 2px solid var(--akzent); outline-offset: 2px; border-radius: 8px; }
 .rang-unter { display: block; font-size: 13px; color: var(--leise); margin-top: 1px; overflow-wrap: anywhere; }
+.rang-unter .badge { margin-left: 6px; }
+/* Lange Kundennamen: höchstens zwei Zeilen, deutsche Silbentrennung, der volle Name steht im Kunden-Blatt */
+.kunde-name { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; overflow-wrap: break-word;
+  -webkit-hyphens: auto; hyphens: auto; }
 .rang-titel .badge, .rang-titel .trend { margin-left: 8px; vertical-align: 1px; }
 .rang-titel .trend { padding: 1px 8px; font-size: 12px; }
 .chevron.klein { font-size: 22px; margin-left: -4px; }
@@ -506,6 +539,43 @@ h2 {
 .lager-werte { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
 .lager-werte > div { min-width: 0; }
 .lager-datum { margin: 6px 0 4px; font-size: 22px; font-weight: 600; line-height: 1.2; font-variant-numeric: tabular-nums; }
+/* Bestand gesamt (Lager): Zahl, geschätzt/gezählt, wie viele Lager gezählt, Verteilung als geteilter Balken */
+.gesamt-karte .karte-kopf { margin-bottom: 4px; }
+.gesamt-karte .kachel-zusatz { margin-top: 4px; }
+.badge-gut { background: rgba(108, 211, 138, 0.16); color: var(--gruen); }
+.inventur-stand { display: flex; align-items: center; gap: 10px; margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--linie); }
+.inventur-stand .kachel-zusatz { margin: 0; }
+.inventur-schritte { display: flex; gap: 4px; flex: none; }
+.schritt-punkt { width: 18px; height: 6px; border-radius: 3px; background: var(--feld-aktiv); }
+.schritt-punkt.fertig { background: var(--gruen); }
+.verteilung { margin-top: 14px; }
+.verteilung-balken { display: flex; height: 10px; border-radius: 5px; overflow: hidden; background: var(--feld); gap: 2px; }
+.vt-teil { display: block; height: 100%; min-width: 3px; }
+.vt-0 { background: #F2F2F7; }
+.vt-1 { background: #AEAEB2; }
+.vt-2 { background: #6C6C70; }
+.vt-3 { background: var(--akzent); }
+.verteilung-legende { list-style: none; margin: 10px 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 13px; color: var(--leise); }
+.verteilung-legende li { display: inline-flex; align-items: center; gap: 6px; }
+.vt-punkt { width: 8px; height: 8px; border-radius: 50%; }
+.vt-wert { color: var(--text); font-weight: 600; font-variant-numeric: tabular-nums; }
+
+/* Jahresinventur (Dezember/Januar): Liste mit Haken oder Knopf */
+.jahresinventur { box-shadow: inset 0 0 0 1.5px var(--akzent-weich); }
+.jahresinventur .karte-kopf { margin-bottom: 6px; }
+.jahresinventur > .kachel-zusatz { margin: 0 0 6px; }
+.jahresinventur .liste > li:last-child { padding-bottom: 2px; }
+.haken { display: inline-grid; place-items: center; width: 22px; height: 22px; margin-right: 10px; border-radius: 50%; vertical-align: -5px;
+  box-shadow: inset 0 0 0 1.5px var(--feld-aktiv); font-size: 13px; font-weight: 700; }
+.haken.fertig { background: var(--gruen); box-shadow: none; color: #000000; }
+
+/* Rechenweg im Standort: gezählt, ± Bewegungen, = Bestand */
+.rechenweg { margin: 14px 0 0; padding-top: 10px; border-top: 1px solid var(--linie); font-size: 13px; }
+.rw-zeile { display: flex; justify-content: space-between; gap: 12px; padding: 3px 0; color: var(--leise); }
+.rw-zeile dd { margin: 0; font-variant-numeric: tabular-nums; color: var(--text); white-space: nowrap; }
+.rw-summe { margin-top: 4px; padding-top: 6px; border-top: 1px solid var(--linie); color: var(--text); font-weight: 600; }
+.rechenweg-leer { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--linie); }
+
 /* Noch nicht gezählte Lager: eine Zeile pro Standort mit „Inventur eintragen“ */
 .offen-text { margin: 4px 4px 8px; }
 .liste > li.offen-zeile { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 0; }
@@ -569,7 +639,7 @@ button.klapp-kopf:active { transform: scale(0.98); background: #242426; }
   width: auto;
   max-width: 62%;
   flex: none;
-  min-height: 36px;
+  min-height: 44px;
   padding: 6px 30px 6px 12px;
   border-radius: 999px;
   font-size: 16px; /* ≥ 16px, sonst zoomt iOS */
@@ -650,19 +720,50 @@ select:disabled, input:disabled, textarea:disabled { opacity: 0.5; }
   text-align: right; font-variant-numeric: tabular-nums; }
 .summe.summe-fehler { font-size: 15px; font-weight: 500; color: var(--rot); text-align: left; letter-spacing: 0; }
 .buchen-offen { margin: 10px 4px 0; text-align: center; font-size: 13px; }
+/* Bestand laut App unter dem Standort, Vorschau (danach/Abweichung) unter der Summe, Datums-Abkürzungen */
+.feld-hinweis { margin: 8px 2px 0; font-size: 13px; color: var(--leise); }
+.vorschau { margin: 8px 0 0; font-size: 14px; font-weight: 600; color: var(--akzent); text-align: right; font-variant-numeric: tabular-nums; }
+.datum-chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.chip {
+  min-height: 34px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--feld);
+  color: var(--text);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  -webkit-appearance: none;
+  appearance: none;
+  position: relative;
+  transition: background-color 0.15s ease, color 0.15s ease, transform 0.1s ease;
+}
+.chip::after { content: ''; position: absolute; inset: -5px 0; } /* Tippfläche 44 px hoch */
+.chip:active { transform: scale(0.96); }
+.chip[aria-pressed="true"] { background: #F2F2F2; color: #000000; }
+.chip:focus-visible { outline: 2px solid var(--akzent); outline-offset: 2px; }
+.chip:disabled { opacity: 0.45; }
+/* Zuletzt eingetragen */
+.liste > li.zuletzt-zeile { display: grid; grid-template-columns: 32px 1fr; align-items: center; gap: 12px; padding: 11px 0; }
+.zuletzt-text { min-width: 0; display: flex; flex-direction: column; }
+.zuletzt-text .verlauf-art { font-size: 15px; }
+.zuletzt-zeile.storniert .verlauf-art { color: var(--leise); }
+#zuletzt-inhalt h2 { margin-top: 28px; }
 
-/* Art als Kacheln mit Symbol */
-.arten { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+/* Art als Kacheln: Symbol links, Name und Kurztext rechts (zwei Spalten) */
+.arten { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
 .art { position: relative; margin: 0; min-width: 0; }
 .art input { position: absolute; opacity: 0; width: 1px; height: 1px; min-height: 0; pointer-events: none; }
 .art-kachel {
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   align-items: center;
-  justify-content: center;
-  gap: 7px;
-  min-height: 84px;
-  padding: 12px 4px 10px;
+  justify-content: flex-start;
+  gap: 10px;
+  min-height: 62px;
+  padding: 10px;
   border-radius: 14px;
   background: var(--karte);
   box-shadow: inset 0 0 0 1.5px transparent;
@@ -672,10 +773,17 @@ select:disabled, input:disabled, textarea:disabled { opacity: 0.5; }
   transition: background-color 0.15s ease, box-shadow 0.15s ease, color 0.15s ease, transform 0.1s ease;
 }
 .art:active .art-kachel { transform: scale(0.96); background-color: var(--feld); }
-.art-kachel .icon { width: 26px; height: 26px; color: var(--leise); transition: color 0.15s ease; }
-.art-name { font-size: 13px; font-weight: 600; text-align: center; line-height: 1.2; -webkit-hyphens: auto; hyphens: auto; overflow-wrap: anywhere; }
+.art-symbol { flex: none; width: 32px; height: 32px; display: grid; place-items: center; border-radius: 10px; background: var(--feld);
+  transition: background-color 0.15s ease; }
+.art-kachel .icon { width: 20px; height: 20px; color: var(--text); transition: color 0.15s ease; }
+.art-texte { min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.art-name { font-size: 14px; font-weight: 600; line-height: 1.2; letter-spacing: -0.01em; overflow-wrap: anywhere; }
+.art-kurz { font-size: 12px; line-height: 1.25; color: var(--leise); overflow-wrap: anywhere; }
+.art input:checked + .art-kachel .art-symbol { background: var(--akzent); }
+.art input:checked + .art-kachel .art-symbol .icon { color: #000000; }
+.art input:checked + .art-kachel .art-kurz { color: var(--akzent); opacity: 0.85; }
 .art input:checked + .art-kachel { background: var(--akzent-weich); box-shadow: inset 0 0 0 1.5px var(--akzent); color: var(--akzent); }
-.art input:checked + .art-kachel .icon { color: var(--akzent); }
+
 .art input:focus-visible + .art-kachel { outline: 2px solid var(--text); outline-offset: 2px; }
 .art input:disabled + .art-kachel { opacity: 0.5; }
 .art-text { margin: 12px 4px 16px; }
@@ -917,7 +1025,8 @@ html.luecke-unten .leiste { padding-bottom: 6px; }
 .blatt::backdrop { background: rgba(0, 0, 0, 0.6); }
 .blatt-kopf { flex: none; display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 18px 16px 6px 20px; }
 .blatt-kopf::before { content: ''; position: absolute; top: 6px; left: 50%; width: 36px; height: 5px; margin-left: -18px; border-radius: 3px; background: rgba(255, 255, 255, 0.22); }
-.blatt-titel { margin: 4px 0 0; font-family: var(--schrift); font-size: 22px; font-weight: 700; line-height: 1.2; overflow-wrap: anywhere; }
+.blatt-titel { margin: 4px 0 0; font-family: var(--schrift); font-size: 22px; font-weight: 700; line-height: 1.2; overflow-wrap: break-word;
+  -webkit-hyphens: auto; hyphens: auto; }
 .blatt .rund { background: var(--feld); flex: none; }
 .blatt-inhalt {
   flex: 1;
@@ -933,6 +1042,7 @@ html.luecke-unten .leiste { padding-bottom: 6px; }
 .blatt-zahlen { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 0 0 20px; }
 .blatt-zahl { background: var(--feld); border-radius: var(--radius-klein); padding: 10px 12px; min-width: 0; }
 .blatt-wert { margin: 4px 0 0; font-size: 22px; font-weight: 700; line-height: 1.15; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.blatt-euro { margin-top: 2px; color: var(--text); font-weight: 500; white-space: nowrap; }
 .blatt-titel-klein { font-size: 13px; font-weight: 600; color: var(--leise); text-transform: uppercase; letter-spacing: 0.06em; margin: 20px 0 8px; }
 .blatt .diagramm.mini { margin: 0 0 4px; }
 .fakten { margin: 16px 0 0; display: grid; gap: 0; }

@@ -374,3 +374,58 @@ test('Feinschliff: Verlauf ohne Storno-Gegenzeilen, Stepper-Werte', () => {
   assert.strictEqual(H.schrittWert('100', 1, 100), '100', 'nicht über den Höchstwert');
   assert.strictEqual(H.schrittWert('5', 1), '6', 'ohne Höchstwert: 50.000');
 });
+
+test('datumAbkuerzungen und buchungVorschau', () => {
+  assert.deepStrictEqual(H.datumAbkuerzungen('2026-11-09'), [{ text: 'Heute', datum: '2026-11-09' }, { text: 'Gestern', datum: '2026-11-08' },
+    { text: '31. Okt', datum: '2026-10-31' }]);
+  assert.strictEqual(H.datumAbkuerzungen('2026-11-11').length, 2, 'ab dem 11. kein Monatsende mehr');
+  assert.deepStrictEqual(H.datumAbkuerzungen('2027-01-01').map((c) => c.datum), ['2027-01-01', '2026-12-31'], 'am 1. ist gestern schon das Monatsende');
+  assert.deepStrictEqual(H.datumAbkuerzungen('2027-01-02').map((c) => c.text), ['Heute', 'Gestern', '31. Dez']);
+  assert.deepStrictEqual(H.datumAbkuerzungen('kaputt'), []);
+  assert.strictEqual(H.buchungVorschau('Inventur', 300, 288), 'Abweichung zur App: +12 Flaschen.');
+  assert.strictEqual(H.buchungVorschau('Inventur', 287, 288), 'Abweichung zur App: −1 Flasche.');
+  assert.strictEqual(H.buchungVorschau('Inventur', 288, 288), 'Passt genau zum Bestand laut App.');
+  assert.strictEqual(H.buchungVorschau('Abfüllung', 1000, 288), 'Danach: 1.288 Flaschen.');
+  assert.strictEqual(H.buchungVorschau('Bruch', 1, 2), 'Danach: 1 Flasche.');
+  assert.strictEqual(H.buchungVorschau('Umlagerung', 48, 288, 10, 'Dave Berlin', 'Mark Berlin'), 'Danach Mark Berlin: 240 Flaschen, Dave Berlin: 58 Flaschen.');
+  assert.strictEqual(H.buchungVorschau('Umlagerung', 48, 288, null, 'Dave Berlin', 'Mark Berlin'), 'Danach Mark Berlin: 240 Flaschen.');
+  assert.strictEqual(H.buchungVorschau('Umlagerung', 48, null, 10, 'Dave Berlin', 'Mark Berlin'), 'Danach Dave Berlin: 58 Flaschen.');
+  assert.strictEqual(H.buchungVorschau('Umlagerung', 48, null, null, 'Dave Berlin', 'Mark Berlin'), '');
+  assert.strictEqual(H.buchungVorschau('Promo', 5, null), '');
+  assert.strictEqual(H.buchungVorschau('Quatsch', 5, 10), '');
+});
+
+test('wochentagText, dauerText, achseMitMinus, achsenText mit max', () => {
+  assert.strictEqual(H.wochentagText('2026-11-09'), 'Montag, 9. November');
+  assert.strictEqual(H.wochentagText('2027-01-01'), 'Freitag, 1. Januar');
+  assert.strictEqual(H.wochentagText('x'), '');
+  assert.strictEqual(H.dauerText(1), '1 Tag');
+  assert.strictEqual(H.dauerText(13), '13 Tage');
+  assert.strictEqual(H.dauerText(35), '5 Wochen');
+  assert.strictEqual(H.dauerText(97), '3,2 Monate');
+  assert.strictEqual(H.dauerText(61), '2 Monate');
+  assert.strictEqual(H.dauerText(-1), '');
+  assert.deepStrictEqual(H.achseMitMinus([0, 1800, 2400]), { unten: 0, oben: 3000, schritt: 1000, striche: [0, 1000, 2000, 3000] }, 'wie achse()');
+  const m = H.achseMitMinus([-24, 300]);
+  assert.ok(m.unten < 0 && m.striche.includes(0) && m.oben >= 300);
+  assert.deepStrictEqual(H.achseMitMinus([]), { unten: 0, oben: 1, schritt: 1, striche: [0, 1] });
+  assert.strictEqual(H.achsenText(5000, 15000), '5 Tsd.');
+  assert.strictEqual(H.achsenText(5000, 6000), '5.000');
+  assert.strictEqual(H.achsenText(0, 15000), '0');
+});
+
+test('inventurAm und jahresStichtag (Jahresinventur zum 31.12.)', () => {
+  const l = { letzteInventur: '2027-01-05', gezaehlt: 300, inventuren: [{ datum: '2027-01-05', flaschen: 300 }, { datum: '2026-12-31', flaschen: 310 }] };
+  assert.deepStrictEqual(H.inventurAm(l, '2026-12-31'), { datum: '2026-12-31', flaschen: 310 }, 'auch wenn danach nochmal gezählt wurde');
+  assert.strictEqual(H.inventurAm(l, '2026-12-30'), null);
+  assert.strictEqual(H.inventurAm({ letzteInventur: '2027-01-05', gezaehlt: 300, inventuren: [{ datum: '2027-01-05', flaschen: 300 }] }, '2026-12-31'), null,
+    'Januar-Zählung ist keine Jahresinventur');
+  assert.deepStrictEqual(H.inventurAm({ letzteInventur: '2026-12-31', gezaehlt: 5 }, '2026-12-31'), { datum: '2026-12-31', flaschen: 5 }, 'ältere Antwort');
+  assert.strictEqual(H.inventurAm({ letzteInventur: null, gezaehlt: null, inventuren: [] }, '2026-12-31'), null);
+  assert.strictEqual(H.jahresStichtag('2026-12-01'), '2026-12-31');
+  assert.strictEqual(H.jahresStichtag('2026-12-31'), '2026-12-31');
+  assert.strictEqual(H.jahresStichtag('2027-01-01'), '2026-12-31');
+  assert.strictEqual(H.jahresStichtag('2027-01-31'), '2026-12-31');
+  assert.strictEqual(H.jahresStichtag('2027-02-01'), '');
+  assert.strictEqual(H.jahresStichtag('2026-11-30'), '');
+});

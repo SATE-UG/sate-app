@@ -36,6 +36,7 @@
       alleKunden: false, // Verkäufe: alle Kunden statt Top 10
       alleNachfassen: false,
       zuordnenOffen: false, // Lager: „Verkäufe zuordnen“ aufgeklappt?
+      verlaufAlle: false,   // Lager: ganzen Verlauf statt der letzten 10 zeigen
     },
     ansichten: {},
   };

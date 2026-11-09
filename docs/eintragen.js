@@ -23,6 +23,9 @@
   const fehlerFeld = S.el('buchen-fehler');
   const offenFeld = S.el('buchen-offen');
   const summeFeld = S.el('b-summe');
+  const bestandFeld = S.el('b-bestand');
+  const vorschauFeld = S.el('b-vorschau');
+  const chipsFeld = S.el('b-datum-chips');
 
   // Doppelklick-Schutz: dieselbe ID, bis das Formular geändert oder erfolgreich gespeichert wird. So landet ein
   // erneutes Tippen nach einer Zeitüberschreitung nicht doppelt im Lager-Log (der Server erkennt die ID wieder).
@@ -37,7 +40,8 @@
   const radios = H.ARTEN.map((a, i) => {
     const r = h('input', { type: 'radio', name: 'art', value: a.art, id: 'art-' + i });
     S.el('arten').append(h('label', { class: 'art', for: 'art-' + i },
-      r, h('span', { class: 'art-kachel' }, S.icon(ART_ICON[a.art]), h('span', { class: 'art-name', text: a.art }))));
+      r, h('span', { class: 'art-kachel' }, h('span', { class: 'art-symbol' }, S.icon(ART_ICON[a.art])),
+        h('span', { class: 'art-texte' }, h('span', { class: 'art-name', text: a.art }), h('span', { class: 'art-kurz', text: a.kurz || '' })))));
     return r;
   });
 
@@ -87,6 +91,58 @@
     if (summeFeld.classList) summeFeld.classList.toggle('summe-fehler', !!r.fehler);
   }
 
+  /** Lager-Eintrag eines Standorts aus der Antwort (oder null). */
+  function lagerVon(ort) {
+    return Z.daten && ort ? Z.daten.lager.find((x) => x.standort === ort) || null : null;
+  }
+  /** Bestand laut App an einem Standort (null: noch nicht gezählt oder unbekannt). */
+  function bestandVon(ort) {
+    const l = lagerVon(ort);
+    return l && typeof l.bestand === 'number' ? l.bestand : null;
+  }
+
+  /**
+   * Unter dem Standort „Bestand laut App“, unter der Menge der Bestand danach bzw. bei Inventur die Abweichung. Wie die
+   * Schnittstelle: Eine Buchung am oder vor dem Tag der letzten Inventur eines Standorts ändert dessen Bestand nicht mehr
+   * (die Zählung enthält sie schon). Eine Inventur vergleicht nur mit heute gezählt (zurückdatiert fehlen Bewegungen).
+   */
+  function vorschauZeigen() {
+    const a = art();
+    const ort = standortSel.value;
+    const b = bestandVon(ort);
+    bestandFeld.textContent = !a || !ort ? '' : b === null ? 'Hier gibt es noch keine Inventur, die App kennt den Bestand nicht.'
+      : 'Bestand laut App (heute): ' + H.zahlFormat(b, 0) + (b === 1 ? ' Flasche' : ' Flaschen');
+    bestandFeld.hidden = !bestandFeld.textContent;
+    const r = H.flaschenAusEingabe(kisten.value, einzel.value, proKiste());
+    const tag = datum.value;
+    let text = '';
+    if (a && !r.fehler && !r.leer && H.datumGueltig(tag)) {
+      const vorZaehlung = (l) => !!l && H.datumGueltig(l.letzteInventur) && tag <= l.letzteInventur;
+      const nach = a === 'Umlagerung' ? nachSel.value : '';
+      if (a === 'Inventur') {
+        text = tag === H.heuteBerlin() ? H.buchungVorschau(a, r.flaschen, b) : '';
+      } else if (vorZaehlung(lagerVon(ort)) && (a !== 'Umlagerung' || !nach || vorZaehlung(lagerVon(nach)))) {
+        text = 'Ändert den Bestand nicht mehr: ' + (a === 'Umlagerung' && nach ? 'beide Lager wurden' : 'hier wurde') + ' danach gezählt.';
+      } else {
+        text = H.buchungVorschau(a, r.flaschen, vorZaehlung(lagerVon(ort)) ? null : b,
+          vorZaehlung(lagerVon(nach)) ? null : bestandVon(nach), nach, ort);
+      }
+    }
+    vorschauFeld.textContent = text;
+    vorschauFeld.hidden = !text;
+  }
+
+  /** Abkürzungen unter dem Datum (Heute, Gestern, Monatsende), die gewählte hervorgehoben. */
+  function chipsZeigen() {
+    const heute = H.heuteBerlin();
+    const liste = H.datumAbkuerzungen(heute).filter((c) => c.datum >= datum.min && c.datum <= datum.max);
+    chipsFeld.replaceChildren(...liste.map((c) => h('button', {
+      type: 'button', class: 'chip', 'aria-pressed': datum.value === c.datum ? 'true' : 'false', text: c.text,
+      'aria-label': c.text + ', ' + H.datumText(c.datum), disabled: gesperrt,
+      onclick: () => { datum.value = c.datum; geaendert(datum); },
+    })));
+  }
+
   /** Was fehlt noch zum Speichern? Gleiche Prüfung wie vor dem Senden. Rückgabe: Text oder ''. */
   function offen() {
     if (!Z.daten) return 'Noch keine Daten geladen. Bitte oben rechts neu laden.';
@@ -124,6 +180,7 @@
   function sperren(ja) {
     gesperrt = ja;
     form.querySelectorAll('input, select, textarea, button').forEach((x) => { x.disabled = ja; });
+    if (!ja) chipsZeigen();
     senden.textContent = ja ? 'Speichert …' : 'Speichern';
     if (!ja) pruefen();
   }
@@ -136,6 +193,8 @@
     datumGrenzen(true);
     artAnpassen();
     summeZeigen();
+    vorschauZeigen();
+    chipsZeigen();
     pruefen();
   }
 
@@ -146,6 +205,8 @@
     if (ziel && ziel.name === 'art') artAnpassen();
     if (ziel === standortSel) standortAuto = false;
     summeZeigen();
+    vorschauZeigen();
+    chipsZeigen();
     pruefen();
   }
 
@@ -159,10 +220,10 @@
   };
 
   /**
-   * Formular vorbelegen, z. B. aus dem Lager „Inventur eintragen“: Art und Standort wählen. Andere Eingaben bleiben,
-   * der Entwurf (anfrageId) ist danach neu.
+   * Formular vorbelegen, z. B. aus dem Lager „Inventur eintragen“: Art und Standort wählen, optional das Datum (z. B. der
+   * Stichtag 31.12., nur innerhalb der erlaubten Grenzen). Andere Eingaben bleiben, der Entwurf (anfrageId) ist danach neu.
    */
-  S.eintragenVorbelegen = function (a, standort) {
+  S.eintragenVorbelegen = function (a, standort, tag) {
     const r = radios.find((x) => x.value === a);
     if (!r || Z.schreibt) return false;
     radios.forEach((x) => { x.checked = x === r; });
@@ -170,6 +231,8 @@
       standortSel.value = standort;
       standortAuto = false;
     }
+    datumGrenzen(false);
+    if (H.datumGueltig(tag) && tag >= datum.min && tag <= datum.max) datum.value = tag;
     geaendert({ name: 'art' });
     return true;
   };
@@ -195,8 +258,36 @@
     S.el('b-flaschen-label').textContent = pk > 0 ? 'Einzelne Flaschen' : 'Flaschen';
     datumGrenzen(false);
     summeZeigen();
+    vorschauZeigen();
+    chipsZeigen();
     pruefen();
+    zuletztZeigen();
   };
+
+  /** „Zuletzt eingetragen“: die letzten drei Einträge aus dem Verlauf (ohne Stornos), damit niemand doppelt bucht. */
+  function zuletztZeigen() {
+    const ziel = S.el('zuletzt-inhalt');
+    const v = Z.verlauf;
+    const liste = v ? H.verlaufOhneStorno(v.eintraege).slice(0, 3) : [];
+    // Zustand dazu: lädt gerade neu, oder das Laden ist gescheitert (dann ggf. alter Stand mit Hinweis)
+    const zustand = Z.verlaufFehler
+      ? h('p', { class: 'fehler zuletzt-fehler' }, 'Verlauf nicht geladen: ' + Z.verlaufFehler + ' ',
+        h('button', { type: 'button', class: 'text-link', text: 'Nochmal', onclick: () => S.verlaufLaden() }))
+      : Z.verlaufLaedt && liste.length ? h('p', { class: 'status-zeile laedt', text: 'Lädt neu …' }) : null;
+    if (!liste.length) return ziel.replaceChildren(...(zustand ? [h('h2', {}, h('strong', { text: 'Zuletzt' }), ' eingetragen'), zustand] : []));
+    ziel.replaceChildren(
+      h('h2', {}, h('strong', { text: 'Zuletzt' }), ' eingetragen'),
+      zustand,
+      h('div', { class: 'karte liste-karte' }, h('ul', { class: 'liste', role: 'list' }, liste.map((e) => h('li', { class: 'zuletzt-zeile' + (e.storniert ? ' storniert' : '') },
+        h('span', { class: 'verlauf-icon' }, S.icon(ART_ICON[e.art] || 'info')),
+        h('span', { class: 'zuletzt-text' },
+          h('span', { class: 'verlauf-art', text: e.art + (e.storniert ? ' (storniert)' : '') }),
+          h('span', { class: 'nebenzeile', text: [typeof e.flaschen === 'number' ? H.zahlFormat(e.flaschen, 0) + ' Fl.' : '',
+            e.art === 'Umlagerung' ? e.standort + ' → ' + (e.nach || '?') : e.standort, H.datumKurz(e.datum), e.wer ? 'von ' + e.wer : '']
+            .filter(Boolean).join(' · ') })))))),
+      h('button', { type: 'button', class: 'knopf mehr-knopf', text: 'Ganzer Verlauf im Lager', onclick: () => { S.ansichtZeigen('lager'); } }));
+  }
+  S.zuletztZeigen = zuletztZeigen;
 
   // Stepper −/+: Kisten bzw. Flaschen um eins ändern (0 bis Höchstwert). Unter 1 bleibt das Feld leer, außer bei Inventur (0 zählt).
   [[kisten, 'b-kisten'], [einzel, 'b-flaschen']].forEach(([feld, id]) => {
@@ -243,6 +334,7 @@
       S.melden((e.daten.wiederholt ? 'War schon gespeichert: ' : 'Gespeichert: ') + H.buchungText(b) + '.', false, e.daten.hinweise);
       leeren();
       S.nachOben('eintragen');
+      if (typeof S.verlaufLaden === 'function') S.verlaufLaden(); // „Zuletzt eingetragen“ auffrischen
     } else if (e.art === 'abgebrochen') {
       fehler('Nicht gespeichert.');
     } else if (e.art === 'fehler') {
@@ -252,5 +344,6 @@
 
   datumGrenzen(true);
   artAnpassen();
+  chipsZeigen();
   pruefen();
 })();

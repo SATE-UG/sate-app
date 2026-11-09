@@ -303,6 +303,7 @@ function spaeterErfasst_(a, b) {
  * Rückgabe { standorte: [{standort, bestand, letzteInventur, gezaehlt, schwund, seitInventur}], hinweise }.
  * bestand/letzteInventur/schwund = null, solange es keine Inventur gibt (Schwund auch bei der ersten Inventur).
  * seitInventur = { verkauft, zugaenge, abgaenge } nach dem Inventurtag (Umlagerung hin = Zugang, weg = Abgang).
+ * inventuren = die letzten INVENTUREN_ANZAHL Inventuren und alle zum 31.12. [{datum, flaschen}], neueste zuerst (ohne: []).
  */
 function lagerBerechnen(buchungen, verkaeufe, e, heute) {
   const hinweise = [];
@@ -356,13 +357,17 @@ function lagerBerechnen(buchungen, verkaeufe, e, heute) {
   };
   const standorte = e.standorte.map((s) => {
     const tage = Object.keys(inventuren[s]).sort();
-    if (!tage.length) return { standort: s, bestand: null, letzteInventur: null, gezaehlt: null, schwund: null, seitInventur: null };
+    if (!tage.length) return { standort: s, bestand: null, letzteInventur: null, gezaehlt: null, schwund: null, seitInventur: null, inventuren: [] };
     const letzte = inventuren[s][tage[tage.length - 1]];
     const vorige = tage.length > 1 ? inventuren[s][tage[tage.length - 2]] : null;
     const schwund = vorige ? runde_(vorige.flaschen + summe(s, vorige.datum, letzte.datum) - letzte.flaschen, 2) : null;
     return {
       standort: s, bestand: runde_(letzte.flaschen + summe(s, letzte.datum, null), 2), letzteInventur: letzte.datum,
       gezaehlt: letzte.flaschen, schwund: schwund, seitInventur: seit(s, letzte.datum),
+      // Die letzten Inventuren plus jede Jahresende-Inventur (31.12.), neueste zuerst: so bleibt die Jahresinventur
+      // sichtbar, auch wenn danach öfter gezählt wurde
+      inventuren: tage.filter((t, i) => i >= tage.length - INVENTUREN_ANZAHL || t.slice(5) === '12-31').reverse()
+        .map((t) => ({ datum: t, flaschen: inventuren[s][t].flaschen })),
     };
   });
   return { standorte: standorte, hinweise: hinweise };

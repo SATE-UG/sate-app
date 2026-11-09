@@ -15,12 +15,12 @@
 
   /** Arten zum Eintragen (Reihenfolge der Knöpfe) mit kurzer Erklärung. Storno nur über den Verlauf. */
   const ARTEN = [
-    { art: 'Inventur', text: 'Gezählt: so viele Flaschen stehen gerade da. Ab dann rechnet die App von dieser Zahl aus.' },
-    { art: 'Umlagerung', text: 'Flaschen von einem Standort zu einem anderen gebracht.' },
-    { art: 'Promo', text: 'Verschenkt fürs Marketing, z. B. Proben, Events, Gewinnspiele.' },
-    { art: 'Eigenverbrauch', text: 'Vom Team selbst getrunken.' },
-    { art: 'Bruch', text: 'Kaputt, abgelaufen oder sonst nicht mehr verkäuflich.' },
-    { art: 'Abfüllung', text: 'Neue Flaschen vom Abfüller angekommen (Zugang). Steht danach auch im Tab Abfüllungen.' },
+    { art: 'Inventur', kurz: 'Bestand gezählt', text: 'Gezählt: so viele Flaschen stehen gerade da. Ab dann rechnet die App von dieser Zahl aus.' },
+    { art: 'Umlagerung', kurz: 'Von A nach B', text: 'Flaschen von einem Standort zu einem anderen gebracht.' },
+    { art: 'Promo', kurz: 'Verschenkt', text: 'Verschenkt fürs Marketing, z. B. Proben, Events, Gewinnspiele.' },
+    { art: 'Eigenverbrauch', kurz: 'Selbst getrunken', text: 'Vom Team selbst getrunken.' },
+    { art: 'Bruch', kurz: 'Kaputt, abgelaufen', text: 'Kaputt, abgelaufen oder sonst nicht mehr verkäuflich.' },
+    { art: 'Abfüllung', kurz: 'Neue Flaschen da', text: 'Neue Flaschen vom Abfüller angekommen (Zugang). Steht danach auch im Tab Abfüllungen.' },
   ];
 
   /** Eingabe säubern: Großbuchstaben, ohne Leerzeichen und Striche (der Server prüft genauso). */
@@ -230,6 +230,94 @@
     if (abstand < -MAX_TAGE_ZURUECK) return 'Das Datum liegt mehr als 400 Tage zurück.';
     if (Array.from(String(b.kommentar || '')).length > MAX_KOMMENTAR) return 'Kommentar: höchstens 200 Zeichen.';
     return '';
+  }
+
+  /**
+   * Abkürzungen fürs Datum beim Eintragen: Heute, Gestern und in den ersten 10 Tagen eines Monats das Ende des Vormonats
+   * (Stichtag z. B. für Dörflinger und die Jahresinventur am 31.12.). `heute` = `JJJJ-MM-TT`. Rückgabe [{ text, datum }].
+   */
+  function datumAbkuerzungen(heute) {
+    if (!datumGueltig(heute)) return [];
+    const liste = [{ text: 'Heute', datum: heute }, { text: 'Gestern', datum: tagePlus(heute, -1) }];
+    const tag = Number(heute.slice(8, 10));
+    const ende = tagePlus(heute.slice(0, 8) + '01', -1);
+    if (tag <= 10 && ende !== tagePlus(heute, -1)) liste.push({ text: datumKurz(ende), datum: ende });
+    return liste;
+  }
+
+  /**
+   * Bestand vorher/nachher für die Vorschau beim Eintragen. `bestand` = Bestand laut App am Standort `von` (oder null),
+   * `nachBestand` = am Ziel `nach` einer Umlagerung. Rückgabe Text oder ''. Inventur: Abweichung zur App.
+   */
+  function buchungVorschau(art, flaschen, bestand, nachBestand, nach, von) {
+    const fl = (n) => zahlFormat(n, 0) + (Math.abs(n) === 1 ? ' Flasche' : ' Flaschen');
+    if (!istZahl(flaschen)) return '';
+    if (art === 'Umlagerung') {
+      const teile = [];
+      if (istZahl(bestand)) teile.push((von ? von + ': ' : 'hier: ') + fl(bestand - flaschen));
+      if (istZahl(nachBestand) && nach) teile.push(nach + ': ' + fl(nachBestand + flaschen));
+      return teile.length ? 'Danach ' + teile.join(', ') + '.' : '';
+    }
+    if (!istZahl(bestand)) return '';
+    if (art === 'Inventur') {
+      const d = flaschen - bestand;
+      return d === 0 ? 'Passt genau zum Bestand laut App.' : 'Abweichung zur App: ' + (d > 0 ? '+' : '−') + fl(Math.abs(d)) + '.';
+    }
+    if (art === 'Abfüllung') return 'Danach: ' + fl(bestand + flaschen) + '.';
+    if (ARTEN.some((a) => a.art === art)) return 'Danach: ' + fl(bestand - flaschen) + '.';
+    return '';
+  }
+
+  /**
+   * Kurzer Stand zum Teilen (z. B. in die WhatsApp-Gruppe): Bestand, Bestelltermin, dieses Jahr mit Vergleich, letzter
+   * voller Monat. `u` = Antwort `uebersicht`, `jv` = jahresVergleich, `heute` = `JJJJ-MM-TT`. Nur Zahlen, keine Kunden.
+   */
+  function standText(u, jv, heute) {
+    const z = [];
+    const fl = (n) => zahlFormat(n, 0) + (n === 1 ? ' Flasche' : ' Flaschen');
+    z.push('SATE – Stand ' + datumText(heute));
+    const k = u && u.kennzahlen ? u.kennzahlen : {};
+    if (istZahl(k.gesamtbestand)) z.push('Bestand: ' + fl(k.gesamtbestand) + (k.gesamtQuelle === 'inventur' ? ' (gezählt)' : ' (geschätzt)'));
+    const b = u && u.bestellung ? u.bestellung : {};
+    if (datumGueltig(b.spaetestensBestellen)) {
+      const t = tageZwischen(heute, b.spaetestensBestellen);
+      z.push('Spätestens bestellen bis: ' + datumText(b.spaetestensBestellen) + (t > 0 ? ' (noch ' + zahlFormat(t, 0) + ' Tage)' : t === 0 ? ' (heute)' : ' (überfällig)'));
+    }
+    if (jv && jv.bisher) {
+      const vg = jv.vergleich;
+      const p = vg ? veraenderung(vg.dieses.flaschen, vg.vorjahr.flaschen) : null;
+      z.push('Dieses Jahr: ' + fl(jv.bisher.flaschen) + (p !== null ? ' (' + prozentText(p).replace(/\s/g, ' ') + ' zum Vorjahr, ' +
+        (vg.bis.slice(5) === '01' ? 'Januar' : 'Jan–' + monatFormat(vg.bis)) + ')' : ''));
+      const voll = jv.monate.filter((m) => m.dieses && !m.laufend && !m.zukunft);
+      const m = voll[voll.length - 1];
+      if (m) {
+        const pm = m.vorjahr ? veraenderung(m.dieses.flaschen, m.vorjahr.flaschen) : null;
+        z.push(monatName(m.monat) + ': ' + fl(m.dieses.flaschen) + (pm !== null ? ' (' + prozentText(pm).replace(/\s/g, ' ') + ' zum Vorjahresmonat)' : ''));
+      }
+    }
+    z.push('Trink SATE!');
+    return z.join('\n');
+  }
+
+  /**
+   * Inventur eines Standorts genau am Tag `tag` (`JJJJ-MM-TT`) → { datum, flaschen } oder null. Aus `inventuren` der
+   * Schnittstelle (die letzten Zählungen); ältere Antworten ohne das Feld: nur die letzte Inventur.
+   */
+  function inventurAm(lager, tag) {
+    if (!lager || !datumGueltig(tag)) return null;
+    if (Array.isArray(lager.inventuren)) {
+      const x = lager.inventuren.find((i) => i && i.datum === tag && istZahl(i.flaschen));
+      return x ? { datum: x.datum, flaschen: x.flaschen } : null;
+    }
+    return lager.letzteInventur === tag && istZahl(lager.gezaehlt) ? { datum: tag, flaschen: lager.gezaehlt } : null;
+  }
+
+  /** Stichtag der Jahresinventur, wenn `heute` im Dezember oder Januar liegt (31.12. des endenden Jahres), sonst ''. */
+  function jahresStichtag(heute) {
+    if (!datumGueltig(heute)) return '';
+    const monat = Number(heute.slice(5, 7));
+    if (monat !== 12 && monat !== 1) return '';
+    return (Number(heute.slice(0, 4)) - (monat === 1 ? 1 : 0)) + '-12-31';
   }
 
   /** Text für die Bestätigung nach dem Eintragen, z. B. „Umlagerung: 48 Flaschen von Lager Süd nach Lager Nord“. */
@@ -785,7 +873,7 @@
     relativZeit, monatPlus, veraenderung, prozentText, richtung, monatsTrend, reiterPosition, ziehRichtung, gummiband,
     MAX_FLASCHEN, datumKurz, monateAnzahl, zeitraumKurz, monatBisher, kistenKurz, anteileSinnvoll, hinweiseOrdnen, verlaufOhneStorno, schrittWert,
     kundeSchluessel, verkaufZeilen, monatsWerte, jahresVergleich, kumuliert, zeitraumAuswerten, kundeDetails, nachfassen,
-    bestellungenZaehlen, wannText, abstandText, monatName, wochentagText, dauerText,
+    bestellungenZaehlen, wannText, abstandText, monatName, wochentagText, dauerText, datumAbkuerzungen, buchungVorschau, standText, inventurAm, jahresStichtag,
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = hilfen;
   else wurzel.SATE_HILFEN = hilfen;

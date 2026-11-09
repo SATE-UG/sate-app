@@ -27,9 +27,15 @@
     <!-- Kopf (nur angemeldet): Logo links, rechts „Neu laden“ als runder Knopf -->
     <header class="kopf">
       <img class="logo" src="bilder/logo.png" alt="SATE" width="122" height="28">
-      <button id="neu-laden" type="button" class="rund" aria-label="Neu laden" hidden>
-        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M20 12a8 8 0 1 1-2.34-5.66"/><path d="M20 4v4.5h-4.5"/></svg>
-      </button>
+      <div class="kopf-knoepfe">
+        <!-- Stand als kurzen Text teilen (iOS-Teilen-Menü, sonst in die Zwischenablage) -->
+        <button id="teilen" type="button" class="rund" aria-label="Stand teilen" hidden>
+          <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 3.5v11"/><path d="M8 7l4-3.5L16 7"/><path d="M8.5 10.5H7a1.5 1.5 0 0 0-1.5 1.5v7A1.5 1.5 0 0 0 7 20.5h10a1.5 1.5 0 0 0 1.5-1.5v-7a1.5 1.5 0 0 0-1.5-1.5h-1.5"/></svg>
+        </button>
+        <button id="neu-laden" type="button" class="rund" aria-label="Neu laden" hidden>
+          <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M20 12a8 8 0 1 1-2.34-5.66"/><path d="M20 4v4.5h-4.5"/></svg>
+        </button>
+      </div>
     </header>
 
     <!-- Neue Version bereit, aber im Formular steht noch etwas oder eine Rückfrage ist offen (update.js) -->
@@ -95,6 +101,7 @@
           <div id="lager-inhalt"></div>
           <h2><strong>Verlauf</strong></h2>
           <div id="verlauf-inhalt"></div>
+          <div id="abfuellungen-inhalt"></div>
           <!-- „Verkäufe zuordnen“: einklappbar, Kopf mit Anzahl (ansichten.js) -->
           <div id="zuordnen-inhalt"></div>
         </section>
@@ -114,6 +121,7 @@
               <div class="feld">
                 <label for="b-standort" id="b-standort-label" class="feld-label">Standort</label>
                 <select id="b-standort"></select>
+                <p id="b-bestand" class="feld-hinweis" hidden></p>
               </div>
               <div class="feld" id="b-nach-feld" hidden>
                 <label for="b-nach" class="feld-label">Nach</label>
@@ -140,11 +148,13 @@
                   </div>
                 </div>
                 <p id="b-summe" class="summe" aria-live="polite" hidden></p>
+                <p id="b-vorschau" class="vorschau" hidden></p>
               </fieldset>
 
               <div class="feld">
                 <label for="b-datum" class="feld-label">Datum</label>
                 <input id="b-datum" type="date">
+                <div id="b-datum-chips" class="datum-chips" role="group" aria-label="Datum schnell wählen"></div>
               </div>
               <div class="feld letztes">
                 <label for="b-kommentar" class="feld-label">Kommentar <span class="leise">(optional)</span></label>
@@ -158,6 +168,8 @@
             <p id="buchen-offen" class="hinweis buchen-offen"></p>
             </div>
           </form>
+          <!-- Zuletzt eingetragen (aus dem Verlauf), damit niemand doppelt bucht -->
+          <div id="zuletzt-inhalt"></div>
         </section>
       </div>
     </div>

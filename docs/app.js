@@ -30,6 +30,7 @@
     el('app').hidden = !ja;
     el('leiste').hidden = !ja;
     el('neu-laden').hidden = !ja;
+    el('teilen').hidden = !ja;
     document.body.classList.toggle('mit-leiste', ja);
     document.documentElement.classList.toggle('mit-leiste', ja);
     untenPruefen();
@@ -148,7 +149,9 @@
     if (wechsel && ansagen) {
       S.ansagen(el('reiter-' + a).textContent.trim() + ', Reiter ' + (ANSICHTEN.indexOf(a) + 1) + ' von ' + ANSICHTEN.length);
     }
-    if (a === 'lager' && (Z.verlaufVeraltet || !Z.verlauf) && !Z.verlaufLaedt) S.verlaufLaden();
+    if (a === 'verkaeufe' && typeof S.diagrammeZeigen === 'function') S.diagrammeZeigen();
+    // Lager zeigt den Verlauf, Eintragen „Zuletzt eingetragen“ daraus
+    if ((a === 'lager' || a === 'eintragen') && (Z.verlaufVeraltet || !Z.verlauf) && !Z.verlaufLaedt) S.verlaufLaden();
   }
 
   /**
@@ -285,7 +288,8 @@
       return;
     }
     if (e.art === 'ok') {
-      if (!S.datenSetzen(e.daten, e.daten.name)) meldung('Die Antwort der Schnittstelle ist unvollständig. Bitte Mark Bescheid geben.');
+      if (S.datenSetzen(e.daten, e.daten.name)) return; // datenSetzen hat schon alles neu gezeichnet
+      meldung('Die Antwort der Schnittstelle ist unvollständig. Bitte Mark Bescheid geben.');
     } else if (e.art === 'code') {
       return S.codeUngueltig(e.meldung);
     } else if (!(e.offline && Z.daten)) {
@@ -302,7 +306,7 @@
   S.aktualisieren = function () {
     const sitzung = Z.sitzung;
     const teile = [S.laden()];
-    if (Z.ansicht === 'lager') teile.push(S.verlaufLaden());
+    if (Z.ansicht === 'lager' || Z.ansicht === 'eintragen') teile.push(S.verlaufLaden());
     return Promise.all(teile).then(() => {
       if (sitzung !== Z.sitzung || !Z.code) return;
       if (!el('fehler').hidden) return S.ansagen(el('fehler').textContent);
@@ -319,6 +323,7 @@
     Z.verlaufLaedt = true;
     Z.verlaufFehler = '';
     S.ansichten.lager();
+    if (typeof S.zuletztZeigen === 'function') S.zuletztZeigen();
     const e = await S.anfrage('verlauf');
     if (nr !== verlaufNr || !Z.code) return; // inzwischen neu angestoßen oder abgemeldet
     Z.verlaufLaedt = false;
@@ -333,6 +338,7 @@
       Z.verlaufFehler = e.art === 'ok' ? 'Antwort unvollständig.' : e.meldung;
     }
     S.ansichten.lager();
+    if (typeof S.zuletztZeigen === 'function') S.zuletztZeigen();
   };
 
   /**
@@ -348,7 +354,7 @@
     abgemeldet = true;
     verlaufNr++;
     Object.assign(Z, { code: '', name: '', daten: null, frisch: false, laedt: false, verlauf: null, verlaufLaedt: false,
-      verlaufFehler: '', verlaufVeraltet: true, monatWahl: null, jahrWahl: 'dieses', alleKunden: false, alleNachfassen: false, zuordnenOffen: false, offline: false, ladenNachholen: false, sitzung: Z.sitzung + 1 });
+      verlaufFehler: '', verlaufVeraltet: true, monatWahl: null, jahrWahl: 'dieses', alleKunden: false, alleNachfassen: false, verlaufAlle: false, zuordnenOffen: false, offline: false, ladenNachholen: false, sitzung: Z.sitzung + 1 });
     meldung('');
     S.frageSchliessen();
     S.blattSchliessen();
@@ -396,6 +402,30 @@
   });
 
   el('neu-laden').addEventListener('click', () => { S.aktualisieren(); });
+
+  /**
+   * Stand teilen: kurzer Text (H.standText) ins iOS-Teilen-Menü (z. B. WhatsApp-Gruppe). Ohne Teilen-Menü in die
+   * Zwischenablage. Abbrechen im Menü ist kein Fehler.
+   */
+  el('teilen').addEventListener('click', async () => {
+    const a = typeof S.auswertung === 'function' ? S.auswertung() : null;
+    if (!Z.daten || !a) return S.melden('Noch keine Daten zum Teilen.', true);
+    const text = H.standText(Z.daten, a.jv, a.heute);
+    try {
+      if (navigator.share) {
+        await navigator.share({ text: text });
+        return;
+      }
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(text);
+        return S.melden('Stand kopiert – zum Einfügen z. B. in WhatsApp.');
+      }
+      S.melden('Teilen geht auf diesem Gerät nicht.', true);
+    } catch (e) {
+      if (e && e.name === 'AbortError') return; // Teilen-Menü abgebrochen
+      S.melden('Teilen hat nicht geklappt.', true);
+    }
+  });
 
   el('abmelden').addEventListener('click', async () => {
     if (!(await S.frage('Abmelden? Danach brauchst du deinen Zugangscode wieder.', 'Abmelden', 'Abbrechen'))) return;

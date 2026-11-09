@@ -173,8 +173,62 @@ test('Eintragen: Vorbelegen aus dem Lager (Inventur eintragen) wählt Art und St
   assert.strictEqual(x.el('b-formular').hidden, false);
   assert.strictEqual(x.el('b-standort-label').textContent, 'Gezählt in');
   assert.strictEqual(x.S.eintragenVorbelegen('Quatsch', 'Lager Nord'), false);
+  // Mit Datum (Jahresinventur): nur innerhalb der erlaubten Grenzen (höchstens heute, höchstens 400 Tage zurück)
+  const gestern = H.tagePlus(H.heuteBerlin(), -1);
+  assert.strictEqual(x.S.eintragenVorbelegen('Inventur', 'Lager Süd', gestern), true);
+  assert.strictEqual(x.el('b-datum').value, gestern);
+  x.S.eintragenVorbelegen('Inventur', 'Lager Süd', H.tagePlus(H.heuteBerlin(), 3));
+  assert.strictEqual(x.el('b-datum').value, gestern, 'Zukunft wird nicht übernommen');
+  x.S.eintragenVorbelegen('Inventur', 'Lager Süd', 'kaputt');
+  assert.strictEqual(x.el('b-datum').value, gestern);
   x.S.zustand.schreibt = true;
   assert.strictEqual(x.S.eintragenVorbelegen('Bruch', 'Lager Süd'), false, 'nicht während gespeichert wird');
+});
+
+test('Eintragen: Vorschau zeigt Bestand laut App und danach bzw. Abweichung', () => {
+  const x = laden();
+  x.S.zustand.daten.lager = [{ standort: 'Lager Süd', bestand: 288 }, { standort: 'Lager Nord', bestand: null }];
+  x.waehlen('Inventur');
+  x.el('b-standort').value = 'Lager Süd';
+  x.tippen('b-flaschen', '20');
+  x.tippen('b-kisten', '11');
+  assert.match(x.el('b-bestand').textContent, /288 Flaschen/);
+  assert.strictEqual(x.el('b-vorschau').textContent, 'Abweichung zur App: −4 Flaschen.');
+  x.waehlen('Promo');
+  assert.strictEqual(x.el('b-vorschau').textContent, 'Danach: 4 Flaschen.');
+  x.el('b-standort').value = 'Lager Nord';
+  x.tippen('b-flaschen', '2');
+  assert.match(x.el('b-bestand').textContent, /noch keine Inventur/);
+  assert.strictEqual(x.el('b-vorschau').hidden, true, 'ohne Bestand keine Vorschau');
+});
+
+test('Eintragen: Vorschau beachtet Datum und Inventuren (Codex-Befund)', () => {
+  const x = laden();
+  const heute = H.heuteBerlin();
+  const gestern = H.tagePlus(heute, -1);
+  x.S.zustand.daten.lager = [{ standort: 'Lager Süd', bestand: 100, letzteInventur: H.tagePlus(heute, -10) },
+    { standort: 'Lager Nord', bestand: 50, letzteInventur: gestern }];
+  x.waehlen('Umlagerung');
+  x.el('b-standort').value = 'Lager Süd';
+  x.el('b-nach').value = 'Lager Nord';
+  x.el('b-datum').value = H.tagePlus(heute, -3); // vor der Nord-Inventur von gestern: zählt dort nicht mehr
+  x.tippen('b-flaschen', '10');
+  assert.strictEqual(x.el('b-vorschau').textContent, 'Danach Lager Süd: 90 Flaschen.');
+  x.el('b-datum').value = H.tagePlus(heute, -20); // vor beiden Inventuren
+  x.tippen('b-flaschen', '10');
+  assert.match(x.el('b-vorschau').textContent, /Ändert den Bestand nicht mehr: beide Lager/);
+  x.el('b-datum').value = heute;
+  x.tippen('b-flaschen', '10');
+  assert.strictEqual(x.el('b-vorschau').textContent, 'Danach Lager Süd: 90 Flaschen, Lager Nord: 60 Flaschen.');
+  // Inventur zurückdatiert: kein Vergleich mit dem heutigen Bestand
+  x.waehlen('Inventur');
+  x.el('b-standort').value = 'Lager Süd';
+  x.el('b-datum').value = gestern;
+  x.tippen('b-flaschen', '95');
+  assert.strictEqual(x.el('b-vorschau').hidden, true);
+  x.el('b-datum').value = heute;
+  x.tippen('b-flaschen', '95');
+  assert.strictEqual(x.el('b-vorschau').textContent, 'Abweichung zur App: −5 Flaschen.');
 });
 
 test('Eintragen: während eine andere Schreib-Aktion läuft, bleibt „Speichern“ gesperrt (Codex-Befund)', () => {

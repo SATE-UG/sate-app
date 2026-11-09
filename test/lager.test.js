@@ -87,7 +87,7 @@ function rechne(logZeilen, verkaeufe) {
 
 test('Ohne Inventur: Bestand null, Gesamt aus „rechnerisch“ mit Quelle', () => {
   const { s, standorte } = rechne([z('2026-10-01', 'Lager Süd', 'Abfüllung', 1000)]);
-  assert.deepStrictEqual(s['Lager Süd'], { standort: 'Lager Süd', bestand: null, letzteInventur: null, gezaehlt: null, schwund: null, seitInventur: null });
+  assert.deepStrictEqual(s['Lager Süd'], { standort: 'Lager Süd', bestand: null, letzteInventur: null, gezaehlt: null, schwund: null, seitInventur: null, inventuren: [] });
   assert.deepStrictEqual(roh(k.gesamtBestand(standorte, 5000)),
     { wert: 5000, quelle: 'rechnerisch', summeBekannt: null, fehlen: ['Lager Süd', 'Lager Nord', 'Lager Ost'] });
 });
@@ -144,6 +144,8 @@ test('Mehrere Inventuren: letzte gilt, Schwund aus der vorigen, gleicher Tag →
   assert.strictEqual(s['Lager Süd'].bestand, 866);
   // So kommt die Zahl zustande: 870 gezählt − 4 Bruch (Verkauf vom 05.10. liegt vor der Inventur)
   assert.deepStrictEqual(roh(s['Lager Süd'].seitInventur), { verkauft: 0, zugaenge: 0, abgaenge: 4 });
+  // Inventuren neueste zuerst, am gleichen Tag die zuletzt erfasste
+  assert.deepStrictEqual(roh(s['Lager Süd'].inventuren), [{ datum: '2026-11-01', flaschen: 870 }, { datum: '2026-10-01', flaschen: 1000 }]);
   // ohne „Erfasst am“: Zeilenreihenfolge, die untere gilt
   const r = rechne([z('2026-11-01', 'Lager Nord', 'Inventur', 50), z('2026-11-01', 'Lager Nord', 'Inventur', 40)]).s;
   assert.strictEqual(r['Lager Nord'].bestand, 40);
@@ -349,4 +351,14 @@ test('seitInventur: Verkäufe, Zugänge (Abfüllung, Umlagerung hin) und Abgäng
   assert.deepStrictEqual(roh(s['Lager Süd'].seitInventur), { verkauft: 24, zugaenge: 500, abgaenge: 112 });
   assert.strictEqual(s['Lager Süd'].bestand, 1000 + 500 - 100 - 12 - 24);
   assert.deepStrictEqual(roh(s['Lager Nord'].seitInventur), { verkauft: 0, zugaenge: 100, abgaenge: 0 });
+});
+
+test('inventuren: die letzten sechs plus jede Jahresende-Inventur (31.12.), neueste zuerst', () => {
+  const zaehlungen = [z('2026-12-31', 'Lager Süd', 'Inventur', 500)];
+  for (let t = 2; t <= 9; t++) zaehlungen.push(z('2027-01-0' + t, 'Lager Süd', 'Inventur', 500 - t));
+  const { s } = rechne(zaehlungen);
+  const tage = s['Lager Süd'].inventuren.map((i) => i.datum);
+  assert.strictEqual(tage.length, 7);
+  assert.deepStrictEqual(tage.slice(0, 6), ['2027-01-09', '2027-01-08', '2027-01-07', '2027-01-06', '2027-01-05', '2027-01-04']);
+  assert.deepStrictEqual(roh(s['Lager Süd'].inventuren[6]), { datum: '2026-12-31', flaschen: 500 });
 });
