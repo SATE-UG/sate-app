@@ -363,3 +363,18 @@ test('Codex v24: Monatsende, Rechnungen mit Datum nach heute, Vorschau so weit w
   assert.strictEqual(weit.status, 'jetzt bestellen');
   assert.ok(weit.spaetestensBestellen < '2026-11-09');
 });
+
+test('Mark 2026-11-09: Wachstum über die letzten 12 Monate, Monate vor dem Start zählen im Vorjahr als 0', () => {
+  // Start im März 2025: Nov 2024 – Feb 2025 ohne Verkäufe, März–Okt 2025 je 100, danach je 150
+  const w = (m) => ({ flaschen: m >= '2025-11' ? 150 : m >= '2025-03' ? 100 : 0, umsatz: 0 });
+  const zwoelf = { abverkaufVon: '2025-11', abverkaufBis: '2026-10' };
+  const p = H.bestellPrognose(ub(5000, zwoelf), w, '2026-11-09', '2025-03');
+  assert.strictEqual(p.art, 'saison');
+  assert.strictEqual(p.wachstum, 2.25, '12 × 150 gegen 8 × 100 (vier Monate vor dem Start zählen als 0)');
+  // ältere Schnittstelle kennt die Monate vor dem Fenster nicht: vor dem Start trotzdem 0, kein Rückfall
+  assert.strictEqual(H.bestellPrognose(ub(5000, zwoelf), (m) => (m < '2024-11' ? null : w(m)), '2026-11-09', '2025-03').wachstum, 2.25);
+  // nur 5 von 12 Vorjahresmonaten nach dem Start: zu wenig, einfache Rechnung
+  assert.strictEqual(H.bestellPrognose(ub(5000, zwoelf), w, '2026-11-09', '2025-06').art, 'schnitt');
+  // 7 von 12 reichen
+  assert.strictEqual(H.bestellPrognose(ub(5000, zwoelf), w, '2026-11-09', '2025-04').art, 'saison');
+});

@@ -218,6 +218,7 @@ h2 {
   font-variant-numeric: tabular-nums;
 }
 .bestellung-fehlt { margin: 0 0 16px; font-size: 16px; }
+.am-stueck { white-space: nowrap; }
 /* Rechenweg zum Bestelltermin (v24): Bestand → reicht bis → − Abfüllung − Puffer → = bestellen, Annahmen klein darunter */
 .rw-titel { margin: 14px 0 0; padding-top: 12px; border-top: 1px solid var(--linie); font-size: 13px; font-weight: 600; }
 .rechenweg.bestell-rechenweg { margin: 2px 0 0; padding-top: 0; border-top: 0; font-size: 14px; }

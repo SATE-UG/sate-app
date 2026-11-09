@@ -172,16 +172,18 @@
     return 'seit ' + H.zahlFormat(-t, 0) + (t === -1 ? ' Tag' : ' Tagen') + ' überfällig';
   }
 
-  /** Annahme hinter „reicht bis“: Saison mit Wachstum (z. B. „jeder Monat wie im Vorjahr +53 % …“) oder der Ø. */
+  /** Annahme hinter „reicht bis“: Saison mit Wachstum (z. B. „jeder Monat wie im Vorjahr +35 % (Wachstum letzte 12 Monate)“) oder der Ø. */
   function annahmeText(p) {
-    // „Mai–Okt“; über mehr als ein Jahr mit Jahreszahlen, sonst wäre es nicht eindeutig
-    const lang = H.monateAnzahl(p.von, p.bis) > 12;
-    const zeitraum = p.von === p.bis ? H.monatFormat(p.bis, lang) : H.monatFormat(p.von, lang) + '–' + H.monatFormat(p.bis, lang);
+    // Ab 12 Monaten „letzte 12 Monate“ („Nov–Okt“ wäre verwirrend), darunter „Mai–Okt“
+    const zeitraum = H.monateAnzahl(p.von, p.bis) >= 12 ? H.zeitraumKurz(p.von, p.bis)
+      : p.von === p.bis ? H.monatFormat(p.bis) : H.monatFormat(p.von) + '–' + H.monatFormat(p.bis);
+    // Klammerteil am Stück, damit nicht „Monate)“ allein in die zweite Zeile rutscht
+    const klammer = (t) => h('span', { class: 'am-stueck', text: '(' + t + ')' });
     if (p.art === 'saison') {
       const pz = Math.round((p.wachstum - 1) * 100);
-      return 'jeder Monat wie im Vorjahr' + (pz === 0 ? '' : ' ' + H.prozentText(pz)) + ' (Wachstum ' + zeitraum + ')';
+      return ['jeder Monat wie im Vorjahr' + (pz === 0 ? '' : ' ' + H.prozentText(pz)) + ' ', klammer('Wachstum ' + zeitraum)];
     }
-    return typeof p.proMonat === 'number' ? 'Ø ' + H.zahlFormat(p.proMonat, 0) + ' Flaschen pro Monat (' + zeitraum + ')' : '';
+    return typeof p.proMonat === 'number' ? ['Ø ' + H.zahlFormat(p.proMonat, 0) + ' Flaschen pro Monat ', klammer(zeitraum)] : '';
   }
 
   /**
@@ -192,7 +194,7 @@
     const k = u.kennzahlen;
     // Zeile: Text | Wert, die Annahme klein und über die ganze Breite darunter
     const zeile = (dt, dd, notiz, summe) => h('div', { class: 'rw-zeile' + (summe ? ' rw-summe' : '') },
-      h('dt', { text: dt }), h('dd', { text: dd }), notiz ? h('dd', { class: 'rw-notiz', text: notiz }) : null);
+      h('dt', { text: dt }), h('dd', { text: dd }), notiz && notiz.length ? h('dd', { class: 'rw-notiz' }, notiz) : null);
     const gezaehlt = u.lager.filter((l) => l.bestand !== null).length;
     const monate = (n) => H.kistenFormat(n) + (n === 1 ? ' Monat' : ' Monate');
     const wochen = (n) => H.kistenFormat(n) + (n === 1 ? ' Woche' : ' Wochen');

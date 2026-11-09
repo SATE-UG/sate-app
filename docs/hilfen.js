@@ -456,11 +456,12 @@
   /**
    * Bestellprognose (seit v24 die eine Rechnung für Start-Karte und Teilen). Erwartete Verkäufe: jeder Monat wie im
    * Vorjahr mal Wachstum. Wachstum = Verkäufe im Ø-Zeitraum der Schnittstelle (`kennzahlen.abverkaufVon`–`abverkaufBis`,
-   * Standard die letzten 6 vollen Monate) ÷ dieselben Monate ein Jahr früher. So läuft der Bestand im Winter langsam und
+   * Einstellung „Zeitraum für Ø-Abverkauf“, seit 2026-11-09 die letzten 12 vollen Monate) ÷ dieselben Monate ein Jahr früher. So läuft der Bestand im Winter langsam und
    * im Sommer schnell ab, statt mit einem Sommer-Ø gerade nach unten. Spätestens bestellen = leer − Vorlauf − Puffer,
    * Status wie in der Schnittstelle (vorbei → „jetzt bestellen“, höchstens 30 Tage → „bald“, sonst „ok“).
-   * Ohne volles Vorjahr (Vergleichsmonate vor `erster` = erster Monat mit Verkäufen, Monate fehlen, dort oder zuletzt
-   * nichts verkauft) gilt die einfache Rechnung der Schnittstelle (`u.bestellung`: Bestand ÷ Ø, gerade Linie).
+   * Ohne genug Vorjahr (höchstens die Hälfte der Vergleichsmonate nach `erster` = erster Monat mit Verkäufen, Monate
+   * fehlen, dort oder zuletzt nichts verkauft) gilt die einfache Rechnung der Schnittstelle (`u.bestellung`: Bestand ÷ Ø,
+   * gerade Linie). Vergleichsmonate vor `erster` zählen als 0.
    * `bekannt` = bekannteRechnungen (mit Verkaufszeilen), sonst zählt der Monatswert des laufenden Monats als geschrieben.
    * Die Vorschau reicht 24 Monate plus Vorlauf und Puffer weit, damit „reicht länger“ nie einen fälligen Termin verdeckt.
    * Rückgabe null ohne Bestand, sonst { art: 'saison' | 'schnitt', bestand, mindest, wachstum, von, bis, proMonat,
@@ -483,23 +484,28 @@
       const v = typeof werte === 'function' ? werte(m) : null;
       return v && istZahl(v.flaschen) ? v.flaschen : null;
     };
-    // Wachstum: Ø-Zeitraum gegen dieselben Monate ein Jahr früher; die müssen nach dem ersten Verkaufsmonat liegen,
-    // sonst zählten Monate vor dem Start als „nichts verkauft“
+    // Wachstum: Ø-Zeitraum gegen dieselben Monate ein Jahr früher (Mark 2026-11-09: die letzten 12 Monate, Einstellung
+    // „Zeitraum für Ø-Abverkauf“ = 12). Monate vor dem ersten Verkauf zählen im Vorjahr als 0 (Startphase); mehr als die
+    // Hälfte der Vorjahresmonate muss aber danach liegen, sonst wäre das Wachstum im ersten Jahr beliebig groß
     let wachstum = null;
-    if (vorlauf !== null && puffer !== null && MONAT_MUSTER.test(erster || '') && monatPlus(von, -12) >= erster) {
+    const n = monateAnzahl(von, bis);
+    if (vorlauf !== null && puffer !== null && MONAT_MUSTER.test(erster || '') && n) {
       let jetztSumme = 0;
       let vorSumme = 0;
+      let mitVerkauf = 0;
       let fehlt = false;
       for (let m = von; m <= bis; m = monatPlus(m, 1)) {
+        const vm = monatPlus(m, -12);
         const a = fl(m);
-        const v = fl(monatPlus(m, -12));
+        const v = vm >= erster ? fl(vm) : 0;
+        if (vm >= erster) mitVerkauf++;
         if (a === null || v === null) fehlt = true;
         else {
           jetztSumme += a;
           vorSumme += v;
         }
       }
-      if (!fehlt && vorSumme > 0 && jetztSumme > 0) wachstum = jetztSumme / vorSumme;
+      if (!fehlt && mitVerkauf * 2 > n && vorSumme > 0 && jetztSumme > 0) wachstum = jetztSumme / vorSumme;
     }
     const proMonat = istZahl(k.abverkaufProMonat) ? k.abverkaufProMonat : null;
     let art;
