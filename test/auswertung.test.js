@@ -210,20 +210,23 @@ test('standText: kurzer Stand zum Teilen, ohne Kundennamen', () => {
 test('prognoseSaison: jeder Monat wie der gleiche Monat ein Jahr vorher, laufender Monat nur der Rest', () => {
   const w = (m) => ({ '2025-11': { flaschen: 300 }, '2025-12': { flaschen: 500 }, '2026-01': { flaschen: 200 } })[m] || { flaschen: 1000 };
   // 9. Nov: im November schon 100 verkauft (Vorjahr 300 → noch 200), Dezember 500, Januar 200, ab Februar 1000/Monat
-  const p = H.prognoseSaison(1500, '2026-11-09', w, 999, 100);
+  const p = H.prognoseSaison(1500, '2026-11-09', w, { proMonat: 999, bisher: 100 });
   assert.deepStrictEqual(p.punkte.slice(0, 4), [{ datum: '2026-11-09', bestand: 1500 }, { datum: '2026-11-30', bestand: 1300 },
     { datum: '2026-12-31', bestand: 800 }, { datum: '2027-01-31', bestand: 600 }]);
   assert.strictEqual(p.leer, '2027-02-17', '600 von 1000 im Februar → nach 60 % der 28 Tage');
   assert.deepStrictEqual(p.punkte[p.punkte.length - 1], { datum: '2027-02-17', bestand: 0 });
   // schon im laufenden Monat leer: anteilig ab heute
-  assert.strictEqual(H.prognoseSaison(100, '2026-11-09', w, 0, 0).leer, '2026-11-16', '100 von 300 → ein Drittel der 21 Resttage');
-  // fehlender Vorjahresmonat: Ø; reicht länger als 18 Monate: leer null
-  assert.strictEqual(H.prognoseSaison(10, '2026-11-09', () => null, 5, 0).leer, '2026-12-31', 'je 5 im November und Dezember');
-  assert.strictEqual(H.prognoseSaison(1e9, '2026-11-09', w, 1, 0).leer, null);
-  assert.strictEqual(H.prognoseSaison(0, '2026-11-09', w, 1, 0), null);
-  assert.strictEqual(H.prognoseSaison(100, 'kaputt', w, 1, 0), null);
+  assert.strictEqual(H.prognoseSaison(100, '2026-11-09', w).leer, '2026-11-19', '300 im Monat = 10 am Tag → 100 reichen 10 Tage');
+  // fehlender Vorjahresmonat: Ø; reicht länger als 24 Monate: leer null; nichts mehr da: leer heute
+  assert.strictEqual(H.prognoseSaison(10, '2026-11-09', () => null, { proMonat: 5 }).leer, '2027-01-10', 'November noch 21/30 von 5, Dezember 5, Rest 1,5 im Januar');
+  assert.strictEqual(H.prognoseSaison(1e9, '2026-11-09', w, { proMonat: 1 }).leer, null);
+  assert.strictEqual(H.prognoseSaison(0, '2026-11-09', w).leer, '2026-11-09');
+  assert.strictEqual(H.prognoseSaison(100, 'kaputt', w), null);
+  // Faktor: jeder Monat × 2
+  assert.strictEqual(H.prognoseSaison(1500, '2026-11-09', w, { faktor: 2, bisher: 100 }).punkte[1].bestand, 1080, 'November 600 erwartet, in 21 Resttagen höchstens 420');
   // Gutschrift-Monat (negativ) zählt als 0
-  assert.strictEqual(H.prognoseSaison(50, '2026-11-30', (m) => (m === '2025-12' ? { flaschen: -24 } : { flaschen: 100 }), 0, 100).punkte[2].bestand, 50);
+  assert.deepStrictEqual(H.prognoseSaison(50, '2026-11-30', (m) => (m === '2025-12' ? { flaschen: -24 } : { flaschen: 100 }), { bisher: 100 }).punkte[1],
+    { datum: '2026-12-31', bestand: 50 }, 'Dezember mit Gutschrift: nichts weg (heute ist Monatsende, kein doppelter Punkt)');
 });
 
 test('aktivitaet: Rechnungen und Buchungen gemischt, neueste zuerst, Storno-Gegenzeilen weg', () => {
@@ -248,8 +251,115 @@ test('letzteBestellungen: je Kunde die letzte Lieferung, Gutschriften zählen ni
 test('Codex v23: Prognose ab 12 Monaten voraus wiederholt das Saisonprofil, Aktivität ohne Zukunft', () => {
   // 1.11.2026, Bestand 1.350, Nov 2025 – Okt 2026 je 100: nach 12 Monaten weiter je 100 (nicht 0)
   const w = (m) => (m >= '2025-11' && m <= '2026-10' ? { flaschen: 100 } : { flaschen: 0 });
-  const p = H.prognoseSaison(1350, '2026-11-01', w, 0, 0);
-  assert.strictEqual(p.leer, '2027-12-16', '13,5 Monate zu je 100 (Dezember zur Hälfte, aufgerundet)');
+  const p = H.prognoseSaison(1350, '2026-11-01', w);
+  assert.strictEqual(p.leer, '2027-12-17', 'November 29/30, dann je 100 (Dezember etwas mehr als zur Hälfte)');
   const zukunft = H.aktivitaet([{ rechnung: 'RE9', datum: '2026-11-10', kunde: 'Morgen', flaschen: 1 }, { rechnung: 'RE8', datum: '2026-11-09', kunde: 'Heute', flaschen: 1 }], [], 5, '2026-11-09');
   assert.deepStrictEqual(zukunft.map((x) => x.rechnung), ['RE8']);
+});
+
+// Bestellprognose (v24): eine Rechnung statt zwei Linien ---------------------------------------------------------------
+const VORJAHR = { '2025-05': 100, '2025-06': 100, '2025-07': 100, '2025-08': 100, '2025-09': 100, '2025-10': 100, '2025-11': 40, '2025-12': 20,
+  '2026-01': 20, '2026-02': 20, '2026-03': 60, '2026-04': 80, '2026-05': 150, '2026-06': 150, '2026-07': 150, '2026-08': 150, '2026-09': 150,
+  '2026-10': 150, '2026-11': 30 };
+const wv = (m) => ({ flaschen: VORJAHR[m] || 0, umsatz: 0 });
+const ub = (bestand, k, b) => ({
+  kennzahlen: Object.assign({ gesamtbestand: bestand, gesamtQuelle: 'rechnerisch', mindestbestand: 0, abverkaufProMonat: 150, abverkaufVon: '2026-05', abverkaufBis: '2026-10' }, k),
+  bestellung: Object.assign({ leerAm: '2027-02-26', spaetestensBestellen: '2026-12-12', status: 'bald', vorlaufMonate: 2, pufferWochen: 2 }, b),
+});
+
+test('bestellPrognose: jeder Monat wie im Vorjahr mal Wachstum, bestellen = leer − Abfüllung − Puffer', () => {
+  const p = H.bestellPrognose(ub(500), wv, '2026-11-09', '2025-01');
+  assert.strictEqual(p.art, 'saison');
+  assert.strictEqual(p.wachstum, 1.5, 'Mai–Okt 900 gegen 600 im Vorjahr');
+  // November: 40 × 1,5 = 60 erwartet, 30 schon verkauft; Winter je 30, März 90, April 120, im Mai 225 → leer am 24.
+  assert.deepStrictEqual(p.punkte.map((x) => x.datum.slice(5) + ':' + x.bestand),
+    ['11-09:500', '11-30:470', '12-31:440', '01-31:410', '02-28:380', '03-31:290', '04-30:170', '05-24:0']);
+  assert.strictEqual(p.leerAm, '2027-05-24');
+  assert.strictEqual(p.spaetestensBestellen, '2027-03-10', '24.5. − 2 Monate − 14 Tage');
+  assert.strictEqual(p.tage, 121);
+  assert.strictEqual(p.status, 'ok');
+  assert.strictEqual(p.ankunft, '2027-05-10', 'bestellt am 10.3. + 2 Monate Abfüllung');
+  assert.strictEqual(p.luecke, 0);
+  assert.strictEqual(p.reichtUeber, null);
+  // ohne Ø-Zeitraum der Schnittstelle: die letzten 6 vollen Monate
+  assert.strictEqual(H.bestellPrognose(ub(500, { abverkaufVon: undefined, abverkaufBis: undefined }), wv, '2026-11-09', '2025-01').spaetestensBestellen, '2027-03-10');
+});
+
+test('bestellPrognose: Status bald und jetzt, Lücke bis die Abfüllung da ist, Mindestbestand, reicht lange', () => {
+  const bald = H.bestellPrognose(ub(100), wv, '2026-11-09', '2025-01');
+  assert.deepStrictEqual([bald.leerAm, bald.spaetestensBestellen, bald.tage, bald.status], ['2027-02-10', '2026-11-26', 17, 'bald']);
+  const jetzt = H.bestellPrognose(ub(40), wv, '2026-11-09', '2025-01');
+  assert.deepStrictEqual([jetzt.leerAm, jetzt.spaetestensBestellen, jetzt.status], ['2026-12-11', '2026-09-27', 'jetzt bestellen']);
+  assert.strictEqual(jetzt.ankunft, '2027-01-09', 'heute bestellt + 2 Monate');
+  assert.strictEqual(jetzt.luecke, 29, '11.12. leer, 9.1. neue Flaschen');
+  const mindest = H.bestellPrognose(ub(500, { mindestbestand: 170 }), wv, '2026-11-09', '2025-01');
+  assert.deepStrictEqual(mindest.punkte[mindest.punkte.length - 1], { datum: '2027-04-30', bestand: 170 }, 'leer heißt: Mindestbestand erreicht');
+  const lang = H.bestellPrognose(ub(1e7), wv, '2026-11-09', '2025-01');
+  assert.deepStrictEqual([lang.leerAm, lang.reichtUeber, lang.spaetestensBestellen, lang.status], [null, '2029-02', null, 'ok'], '24 Monate + Vorlauf + Puffer');
+  const leer = H.bestellPrognose(ub(0), wv, '2026-11-09', '2025-01');
+  assert.deepStrictEqual([leer.leerAm, leer.status, leer.punkte.length], ['2026-11-09', 'jetzt bestellen', 1]);
+  const weniger = H.bestellPrognose(ub(500), (m) => ({ flaschen: m >= '2026-05' && m <= '2026-10' ? 50 : VORJAHR[m] || 0 }), '2026-11-09', '2025-01');
+  assert.strictEqual(weniger.wachstum, 0.5);
+  assert.strictEqual(H.bestellPrognose(ub(null), wv, '2026-11-09', '2025-01'), null);
+});
+
+test('bestellPrognose: ohne volles Vorjahr die einfache Rechnung der Schnittstelle', () => {
+  const pruefen = (p, warum, ankunft) => {
+    assert.strictEqual(p.art, 'schnitt', warum);
+    assert.deepStrictEqual([p.leerAm, p.spaetestensBestellen, p.status, p.tage], ['2027-02-26', '2026-12-12', 'bald', 33], warum);
+    assert.deepStrictEqual(p.punkte, [{ datum: '2026-11-09', bestand: 500 }, { datum: '2027-02-26', bestand: 0 }], warum);
+    assert.strictEqual(p.ankunft, ankunft === undefined ? '2027-02-12' : ankunft, warum);
+  };
+  pruefen(H.bestellPrognose(ub(500), wv, '2026-11-09', '2025-08'), 'Vorjahresmonate vor dem ersten Verkauf');
+  pruefen(H.bestellPrognose(ub(500), wv, '2026-11-09', null), 'erster Monat unbekannt');
+  pruefen(H.bestellPrognose(ub(500), (m) => (m === '2025-07' ? null : wv(m)), '2026-11-09', '2025-01'), 'Monat fehlt (ältere Schnittstelle)');
+  pruefen(H.bestellPrognose(ub(500), (m) => ({ flaschen: m < '2026-01' ? 0 : VORJAHR[m] || 0 }), '2026-11-09', '2025-01'), 'im Vorjahr nichts verkauft');
+  pruefen(H.bestellPrognose(ub(500, {}, { vorlaufMonate: undefined }), wv, '2026-11-09', '2025-01'), 'Vorlauf fehlt', null);
+});
+
+test('datumMonatePlus, ersterVerkaufsmonat und standText mit Prognose', () => {
+  assert.strictEqual(H.datumMonatePlus('2027-03-31', -1), '2027-02-28');
+  assert.strictEqual(H.datumMonatePlus('2026-11-09', 2), '2027-01-09');
+  assert.strictEqual(H.datumMonatePlus('2028-03-31', -1), '2028-02-29');
+  const z = H.verkaufZeilen({ zeilen: [['2025-02', '', 'K', 'Gutschrift', -24, -30], ['2025-03', '', 'K', 'A', 24, 30], ['2025-01', '', 'K', 'Null', 0, 0]] });
+  assert.strictEqual(H.ersterVerkaufsmonat(null, z), '2025-03', 'Gutschriften und Nullzeilen zählen nicht');
+  assert.strictEqual(H.ersterVerkaufsmonat({ vergleichsmonate: [{ monat: '2024-11', flaschen: 0 }, { monat: '2024-12', flaschen: 48 }], monate: [{ monat: '2025-01', flaschen: 10 }] }, null), '2024-12');
+  assert.strictEqual(H.ersterVerkaufsmonat({}, null), null);
+  const u = ub(500);
+  const t = H.standText(u, null, '2026-11-09', H.bestellPrognose(u, wv, '2026-11-09', '2025-01'));
+  assert.match(t, /Reicht bis etwa: 24\. Mai 2027\nSpätestens bestellen bis: 10\. Mär 2027 \(noch 121 Tage\)/);
+  assert.match(H.standText(u, null, '2026-11-09'), /Reicht bis etwa: 26\. Feb 2027\nSpätestens bestellen bis: 12\. Dez 2026/, 'ohne Prognose die Schnittstelle');
+});
+
+test('Codex v24: Monatsende, Rechnungen mit Datum nach heute, Vorschau so weit wie Vorlauf und Puffer', () => {
+  const je100 = () => ({ flaschen: 100, umsatz: 0 });
+  // Am Monatsletzten geht im laufenden Monat nichts mehr weg (kein Sprung zum Folgetag), kein doppelter Punkt
+  const ende = H.prognoseSaison(150, '2026-11-30', je100);
+  assert.strictEqual(ende.leer, '2027-01-16');
+  assert.deepStrictEqual(ende.punkte.map((x) => x.datum), ['2026-11-30', '2026-12-31', '2027-01-16']);
+  assert.strictEqual(H.prognoseSaison(150, '2026-12-01', je100).leer, '2027-01-17', 'am Folgetag fast gleich');
+  // Rechnung vom 20.11. steht schon im Sheet, der Bestand zieht sie erst dann ab: geht genau an dem Tag weg
+  const vk = (kunde, datum, monat) => ({ zeilen: [[monat || '2026-11', datum, 'Karlsruhe', kunde, 100, 0, 'RE1']] });
+  assert.deepStrictEqual(H.bekannteRechnungen(vk('Bar Eins', '2026-11-20'), '2026-11-09'), { geschrieben: { '2026-11': 100 }, abgaenge: { '2026-11-20': 100 } });
+  assert.deepStrictEqual(H.bekannteRechnungen(vk('Bar Eins', '2026-11-08'), '2026-11-09').abgaenge, {}, 'schon abgezogen');
+  assert.deepStrictEqual(H.bekannteRechnungen(vk('Dörflinger GmbH', '2026-11-20'), '2026-11-09').abgaenge, {}, 'Dörflinger zählt zum 31.10.');
+  assert.deepStrictEqual(H.bekannteRechnungen(vk('Dörflinger GmbH', '2026-12-05', '2026-12'), '2026-11-09'),
+    { geschrieben: { '2026-12': 100 }, abgaenge: { '2026-11-30': 100 } }, 'Dezember-Rechnung von Dörflinger geht am 30.11. weg');
+  assert.deepStrictEqual(H.bekannteRechnungen(vk('Altliste', '', '2027-01'), '2026-11-09').abgaenge, { '2027-01-31': 100 }, 'Altzeile ohne Datum: Monatsende');
+  assert.deepStrictEqual(H.bekannteRechnungen(vk('Altliste', '', '2026-11'), '2026-11-09').abgaenge, {}, 'laufender Monat: schon abgezogen');
+  assert.strictEqual(H.bekannteRechnungen({}, '2026-11-09'), null);
+  const u = ub(150, {}, { pufferWochen: 0 });
+  const mitRechnung = H.bestellPrognose(u, je100, '2026-11-09', '2024-01', H.bekannteRechnungen(vk('Bar Eins', '2026-11-20'), '2026-11-09'));
+  assert.deepStrictEqual([mitRechnung.leerAm, mitRechnung.spaetestensBestellen, mitRechnung.status], ['2026-12-16', '2026-10-16', 'jetzt bestellen']);
+  const morgen = H.bestellPrognose(ub(50, {}, { vorlaufMonate: 0, pufferWochen: 0 }), je100, '2026-11-09', '2024-01', H.bekannteRechnungen(vk('Bar Eins', '2026-11-10'), '2026-11-09'));
+  assert.strictEqual(morgen.leerAm, '2026-11-10', 'Rechnung über 100 am 10.11. bei 50 Flaschen: leer am 10.11.');
+  const doerflinger = H.bestellPrognose(u, je100, '2026-11-09', '2024-01', H.bekannteRechnungen({ zeilen: [['2026-12', '2026-12-05', 'Karlsruhe', 'Dörflinger', 200, 0, 'RE2']] }, '2026-11-09'));
+  assert.strictEqual(doerflinger.leerAm, '2026-11-30', '70 im November verteilt, 200 am 30.11.');
+  const schonAbgezogen = H.bestellPrognose(u, je100, '2026-11-09', '2024-01', { geschrieben: { '2026-11': 100 }, abgaenge: {} });
+  assert.strictEqual(schonAbgezogen.leerAm, '2027-01-16', 'Rechnung von gestern ist im Bestand schon abgezogen');
+  // 30 Monate Vorlauf: Vorschau reicht weit genug, der fällige Termin wird nicht als „nicht in Sicht“ verdeckt
+  const weit = H.bestellPrognose(ub(2600, {}, { vorlaufMonate: 30, pufferWochen: 0 }), je100, '2026-11-09', '2024-01');
+  assert.strictEqual(weit.reichtUeber, null);
+  assert.strictEqual(weit.status, 'jetzt bestellen');
+  assert.ok(weit.spaetestensBestellen < '2026-11-09');
 });

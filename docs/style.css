@@ -204,12 +204,13 @@ h2 {
 /* Bestellstatus: Pille, großes Datum, Reichweiten-Balken */
 .bestellung { padding: 18px 16px 16px; }
 .bestellung.stufe-jetzt { box-shadow: inset 0 0 0 1.5px var(--akzent); }
-.bestellung-kopf { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin: 0 0 16px; }
-.bestellung-frist { font-size: 14px; font-weight: 600; color: var(--leise); font-variant-numeric: tabular-nums; }
-.bestellung.stufe-bald .bestellung-frist, .bestellung.stufe-jetzt .bestellung-frist { color: var(--akzent); }
+.bestellung-kopf { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin: 0 0 2px; }
+.bestellung-kopf .kachel-label { margin: 0; }
+.bestellung-frist { margin: 0 0 10px; font-size: 15px; font-weight: 500; color: var(--leise); font-variant-numeric: tabular-nums; }
+.bestellung.stufe-bald .bestellung-frist, .bestellung.stufe-jetzt .bestellung-frist { color: var(--akzent); font-weight: 600; }
 
 .bestellung-datum {
-  margin: 4px 0 18px;
+  margin: 4px 0 4px;
   font-size: 40px;
   font-weight: 700;
   line-height: 1.05;
@@ -217,10 +218,13 @@ h2 {
   font-variant-numeric: tabular-nums;
 }
 .bestellung-fehlt { margin: 0 0 16px; font-size: 16px; }
-.bestellung-fuss { margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--linie); }
-.reichweite-zeile { font-size: 15px; color: var(--leise); margin: 0 0 3px; }
-.reichweite-zeile strong { color: var(--text); font-weight: 600; font-variant-numeric: tabular-nums; }
-.am-stueck { white-space: nowrap; }
+/* Rechenweg zum Bestelltermin (v24): Bestand → reicht bis → − Abfüllung − Puffer → = bestellen, Annahmen klein darunter */
+.rw-titel { margin: 14px 0 0; padding-top: 12px; border-top: 1px solid var(--linie); font-size: 13px; font-weight: 600; }
+.rechenweg.bestell-rechenweg { margin: 2px 0 0; padding-top: 0; border-top: 0; font-size: 14px; }
+.bestell-rechenweg .rw-zeile { flex-wrap: wrap; align-items: baseline; column-gap: 12px; row-gap: 1px; padding: 4px 0; }
+.bestell-rechenweg dt { min-width: 0; }
+.bestell-rechenweg .rw-summe { margin-top: 2px; padding-top: 7px; }
+.bestell-rechenweg dd.rw-notiz { flex-basis: 100%; white-space: normal; font-size: 12px; font-weight: 400; line-height: 1.35; color: var(--leise); }
 /* Überschrift mit Link rechts (z. B. „Standorte“ → „Zum Lager ›“) */
 .h2-zeile { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin: 32px 0 12px; }
 .h2-zeile h2 { margin: 0; }
@@ -247,8 +251,9 @@ h2 {
 .diagramm .marke-text { fill: var(--akzent); font-size: 10px; font-weight: 700; }
 .diagramm .punkt-heute { fill: var(--text); stroke: var(--karte); stroke-width: 2; }
 .diagramm .start-wert { fill: var(--text); font-size: 10px; }
-.prognose-legende { margin: 6px 0 0; gap: 4px 14px; }
-.prognose-legende > span { white-space: nowrap; }
+.diagramm .band-abfuellung { fill: var(--akzent); opacity: 0.13; }
+.diagramm .band-text { fill: var(--akzent); font-size: 10px; font-weight: 600; }
+.diagramm .leer-text { fill: var(--leise); font-size: 10px; font-weight: 600; }
 .mini-fortschritt { display: block; height: 5px; margin: 8px 0 5px; border-radius: 3px; background: var(--feld); overflow: hidden; }
 .mini-fuell { display: block; height: 100%; min-width: 3px; border-radius: 3px; background: var(--text); }
 .mini-fuell.voll { background: var(--gruen); }

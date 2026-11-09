@@ -110,23 +110,30 @@
   const tagNr = (t) => Date.UTC(Number(t.slice(0, 4)), Number(t.slice(5, 7)) - 1, Number(t.slice(8, 10))) / 86400000;
 
   /**
-   * Bestandsprognose als kleines Liniendiagramm über die nächsten Monate: gelb die Rechnung der App (gerade Linie bis
-   * „leer“ am Tag der Schnittstelle), grau gestrichelt „wie im Vorjahr“ (H.prognoseSaison), senkrecht gestrichelt der
-   * Bestelltermin. Ohne Bestand oder ohne Ende: null.
+   * Bestandsprognose als Liniendiagramm (seit v24 nur eine Linie): der Bestand von heute bis „leer“ nach
+   * H.bestellPrognose (im Winter flach, im Sommer steil), senkrecht gestrichelt der Bestelltermin, dahinter als Band die
+   * Abfüllung (Vorlauf), bis die neuen Flaschen da sind. So sieht man, warum so früh bestellt werden muss. Ohne Verlauf: null.
    */
-  function prognoseDiagramm(b, k, bestand, saison, heute) {
-    const M = { breite: 340, hoehe: 128, links: 6, rechts: 8, oben: 22, unten: 20 };
-    const leerA = H.datumGueltig(b.leerAm) && b.leerAm > heute ? b.leerAm : null;
-    const enden = [leerA, saison ? saison.punkte[saison.punkte.length - 1].datum : null].filter(Boolean).sort();
-    if (!enden.length || !(bestand > 0)) return null;
-    const ende = H.tagePlus(enden[enden.length - 1], 14);
+  function prognoseDiagramm(p, heute) {
+    if (!p || !(p.bestand > 0) || !Array.isArray(p.punkte) || p.punkte.length < 2) return null;
+    const M = { breite: 340, hoehe: 126, links: 6, rechts: 10, oben: 24, unten: 20 };
+    const letzter = p.punkte[p.punkte.length - 1].datum;
+    const ende = H.tagePlus(p.ankunft && p.ankunft > letzter ? p.ankunft : letzter, 18);
     const x0 = tagNr(heute);
     const breite = Math.max(tagNr(ende) - x0, 1);
     const rund = (z) => Math.round(z * 100) / 100;
-    const X = (t) => rund(M.links + ((tagNr(t) - x0) / breite) * (M.breite - M.links - M.rechts));
-    const Y = (w) => rund(M.oben + (1 - Math.max(0, Math.min(w, bestand)) / bestand) * (M.hoehe - M.oben - M.unten));
+    const X = (t) => rund(M.links + ((Math.min(tagNr(t), tagNr(ende)) - x0) / breite) * (M.breite - M.links - M.rechts));
+    const Y = (w) => rund(M.oben + (1 - Math.max(0, Math.min(w, p.bestand)) / p.bestand) * (M.hoehe - M.oben - M.unten));
     const svg = s('svg', { viewBox: '0 0 ' + M.breite + ' ' + M.hoehe, class: 'diagramm prognose', 'aria-hidden': 'true', focusable: 'false' });
     const basis = Y(0);
+    // Bestelltermin (überfällig: heute) und Abfüllung als Band bis zur Ankunft der neuen Flaschen
+    const start = H.datumGueltig(p.spaetestensBestellen) ? (p.spaetestensBestellen < heute ? heute : p.spaetestensBestellen) : null;
+    if (start && p.ankunft && start <= ende) {
+      const xa = X(start);
+      const xb = X(p.ankunft);
+      svg.append(s('rect', { x: xa, y: M.oben, width: Math.max(rund(xb - xa), 1), height: rund(basis - M.oben), class: 'band-abfuellung' }));
+      if (xb - xa >= 58) svg.append(s('text', { x: rund((xa + xb) / 2), y: basis - 6, 'text-anchor': 'middle', class: 'band-text', text: 'Abfüllung' }));
+    }
     svg.append(s('line', { x1: M.links, x2: M.breite - M.rechts, y1: basis, y2: basis, class: 'achse' }));
     // Monatsanfänge als kleine Striche, höchstens sieben beschriftet
     const monate = [];
@@ -137,62 +144,93 @@
       svg.append(s('line', { x1: x, x2: x, y1: basis, y2: basis + 3, class: 'achse' }));
       if (i % jeder === 0) svg.append(s('text', { x: x, y: M.hoehe - 4, 'text-anchor': 'middle', class: 'monat', text: H.monatFormat(m) }));
     });
-    // Bestelltermin: senkrechte Linie mit Beschriftung (überfällig: heute)
-    if (H.datumGueltig(b.spaetestensBestellen)) {
-      const tag = b.spaetestensBestellen < heute ? heute : b.spaetestensBestellen;
-      if (tag <= ende) {
-        const x = X(tag);
-        svg.append(s('line', { x1: x, x2: x, y1: M.oben - 4, y2: basis, class: 'marke-bestellen' }));
-        svg.append(s('text', { x: Math.min(Math.max(x, 26), M.breite - 26), y: M.oben - 9, 'text-anchor': 'middle', class: 'marke-text',
-          text: b.spaetestensBestellen < heute ? 'jetzt bestellen' : 'bestellen' }));
-      }
+    if (start && start <= ende) {
+      const x = X(start);
+      svg.append(s('line', { x1: x, x2: x, y1: M.oben - 4, y2: basis, class: 'marke-bestellen' }));
+      svg.append(s('text', { x: Math.min(Math.max(x, 36), M.breite - 36), y: M.oben - 9, 'text-anchor': 'middle', class: 'marke-text',
+        text: p.spaetestensBestellen < heute ? 'jetzt bestellen' : 'bestellen' }));
     }
-    if (saison && saison.punkte.length > 1) {
-      svg.append(s('path', { d: saison.punkte.map((p, i) => (i ? 'L' : 'M') + X(p.datum) + ' ' + Y(p.bestand)).join(' '), class: 'linie-vorjahr' }));
-      if (saison.leer) svg.append(s('circle', { cx: X(saison.leer), cy: basis, r: 3, class: 'punkt-vorjahr' }));
+    svg.append(s('path', { d: p.punkte.map((q, i) => (i ? 'L' : 'M') + X(q.datum) + ' ' + Y(q.bestand)).join(' '), class: 'linie-dieses' }));
+    if (p.leerAm && p.leerAm > heute && p.leerAm <= ende) {
+      const x = X(p.leerAm);
+      svg.append(s('circle', { cx: x, cy: Y(p.mindest), r: 3.5, class: 'punkt-dieses' }));
+      svg.append(s('text', { x: Math.min(x + 6, M.breite - 20), y: Y(p.mindest) - 6, class: 'leer-text', text: 'leer' }));
     }
-    if (leerA) {
-      const ziel = typeof k.mindestbestand === 'number' && k.mindestbestand > 0 ? k.mindestbestand : 0;
-      svg.append(s('path', { d: 'M' + X(heute) + ' ' + Y(bestand) + ' L' + X(leerA) + ' ' + Y(ziel), class: 'linie-dieses' }));
-      svg.append(s('circle', { cx: X(leerA), cy: Y(ziel), r: 3.5, class: 'punkt-dieses' }));
+    svg.append(s('circle', { cx: X(heute), cy: Y(p.bestand), r: 4, class: 'punkt-heute' }));
+    // Startwert oben links, außer die Beschriftung „bestellen“ steht gleich daneben
+    if (!start || X(start) - X(heute) > 76) {
+      svg.append(s('text', { x: X(heute) + 8, y: Y(p.bestand) - 7, class: 'wert-label start-wert', text: H.zahlFormat(p.bestand, 0) }));
     }
-    svg.append(s('circle', { cx: X(heute), cy: Y(bestand), r: 4, class: 'punkt-heute' }));
-    svg.append(s('text', { x: X(heute) + 8, y: Y(bestand) - 7, class: 'wert-label start-wert', text: H.zahlFormat(bestand, 0) }));
     return svg;
   }
 
-  /** Bestell-Karte: Status, Termin groß, Prognose mit Legende, darunter Reichweite und Annahmen. */
-  function bestellKarte(u, a) {
+  /** Tage bis zum Bestelltermin in Worten: „in 135 Tagen“, „morgen“, „heute“, „seit 3 Tagen überfällig“. */
+  function fristText(t) {
+    if (t > 1) return 'in ' + H.zahlFormat(t, 0) + ' Tagen';
+    if (t === 1) return 'morgen';
+    if (t === 0) return 'heute';
+    return 'seit ' + H.zahlFormat(-t, 0) + (t === -1 ? ' Tag' : ' Tagen') + ' überfällig';
+  }
+
+  /** Annahme hinter „reicht bis“: Saison mit Wachstum (z. B. „jeder Monat wie im Vorjahr +53 % …“) oder der Ø. */
+  function annahmeText(p) {
+    // „Mai–Okt“; über mehr als ein Jahr mit Jahreszahlen, sonst wäre es nicht eindeutig
+    const lang = H.monateAnzahl(p.von, p.bis) > 12;
+    const zeitraum = p.von === p.bis ? H.monatFormat(p.bis, lang) : H.monatFormat(p.von, lang) + '–' + H.monatFormat(p.bis, lang);
+    if (p.art === 'saison') {
+      const pz = Math.round((p.wachstum - 1) * 100);
+      return 'jeder Monat wie im Vorjahr' + (pz === 0 ? '' : ' ' + H.prozentText(pz)) + ' (Wachstum ' + zeitraum + ')';
+    }
+    return typeof p.proMonat === 'number' ? 'Ø ' + H.zahlFormat(p.proMonat, 0) + ' Flaschen pro Monat (' + zeitraum + ')' : '';
+  }
+
+  /**
+   * „So kommt das Datum zustande“ (seit v24): Bestand heute → reicht bis etwa (mit Annahme) → minus Abfüllung und
+   * Puffer → spätestens bestellen, darunter wann die neuen Flaschen da wären. Gleicher Aufbau wie der Rechenweg im Lager.
+   */
+  function bestellRechenweg(p, u, heute) {
     const k = u.kennzahlen;
-    const b = u.bestellung;
-    const heute = a.heute;
-    const st = H.bestellStufe(b.status);
+    // Zeile: Text | Wert, die Annahme klein und über die ganze Breite darunter
+    const zeile = (dt, dd, notiz, summe) => h('div', { class: 'rw-zeile' + (summe ? ' rw-summe' : '') },
+      h('dt', { text: dt }), h('dd', { text: dd }), notiz ? h('dd', { class: 'rw-notiz', text: notiz }) : null);
+    const gezaehlt = u.lager.filter((l) => l.bestand !== null).length;
+    const monate = (n) => H.kistenFormat(n) + (n === 1 ? ' Monat' : ' Monate');
+    const wochen = (n) => H.kistenFormat(n) + (n === 1 ? ' Woche' : ' Wochen');
+    const zeilen = [zeile('Bestand heute', H.zahlFormat(p.bestand, 0) + ' Flaschen', k.gesamtQuelle === 'inventur' ? 'gezählt'
+      : 'geschätzt' + (u.lager.length ? ', ' + gezaehlt + ' von ' + u.lager.length + ' Lagern gezählt' : ''))];
+    if (p.mindest > 0) zeilen.push(zeile('Mindestbestand bleibt liegen', '− ' + H.zahlFormat(p.mindest, 0) + ' Flaschen'));
+    if (p.leerAm) {
+      zeilen.push(zeile('reicht bis etwa', p.leerAm > heute ? H.datumText(p.leerAm) : p.leerAm === heute ? 'heute' : 'schon vorbei', annahmeText(p)));
+    } else if (p.reichtUeber) zeilen.push(zeile('reicht über', H.monatFormat(p.reichtUeber, true) + ' hinaus', annahmeText(p)));
+    if (p.spaetestensBestellen) {
+      if (typeof p.vorlaufMonate === 'number') zeilen.push(zeile('Abfüllung dauert', '− ' + monate(p.vorlaufMonate)));
+      if (p.pufferWochen > 0) zeilen.push(zeile('Puffer', '− ' + wochen(p.pufferWochen)));
+      const ankunft = !p.ankunft ? ''
+        : p.tage < 0 ? 'heute bestellt: neue Flaschen am ' + H.datumText(p.ankunft) + (p.luecke > 0 ? ', ' + H.zahlFormat(p.luecke, 0) + (p.luecke === 1 ? ' Tag' : ' Tage') + ' nach „leer“' : '')
+          : 'neue Flaschen dann ab ' + H.datumText(p.ankunft);
+      zeilen.push(zeile('spätestens bestellen', H.datumText(p.spaetestensBestellen), ankunft, true));
+    }
+    return [h('p', { class: 'rw-titel', text: 'So rechnet die App' }), h('dl', { class: 'rechenweg bestell-rechenweg' }, zeilen)];
+  }
+
+  /** Bestell-Karte (seit v24): Status, Termin groß mit „in … Tagen“, eine Prognose-Linie, darunter der Rechenweg. */
+  function bestellKarte(u, a) {
+    const p = a.prognose;
+    const st = H.bestellStufe(p ? p.status : null);
     const stufe = st.stufe || 'leer';
-    const bisBestellen = H.datumGueltig(b.spaetestensBestellen) ? H.tageZwischen(heute, b.spaetestensBestellen) : null;
-    const bestand = typeof k.gesamtbestand === 'number' ? k.gesamtbestand : null;
-    const laufend = a.jv ? a.jv.monate.find((m) => m.laufend) : null;
-    const saison = bestand > 0 ? H.prognoseSaison(bestand, heute, a.werte, k.abverkaufProMonat, laufend && laufend.dieses ? laufend.dieses.flaschen : 0) : null;
-    const diagramm = prognoseDiagramm(b, k, bestand, saison, heute);
-    const annahmen = [typeof k.abverkaufProMonat === 'number' ? 'Ø ' + H.zahlFormat(k.abverkaufProMonat, 0) + ' Flaschen im Monat' : '',
-      H.kistenFormat(b.vorlaufMonate) + ' Monate Vorlauf', H.kistenFormat(b.pufferWochen) + ' Wochen Puffer'].filter(Boolean);
-    const saisonText = saison ? (saison.leer ? 'leer ' + H.datumText(saison.leer) : 'reicht über ' + H.monatFormat(saison.punkte[saison.punkte.length - 1].datum.slice(0, 7), true) + ' hinaus') : '';
+    const termin = p && H.datumGueltig(p.spaetestensBestellen) ? p.spaetestensBestellen : null;
+    const pill = h('span', { class: 'pill pill-' + stufe }, h('span', { class: 'punkt', 'aria-hidden': 'true' }), st.text);
+    const kopf = (text) => h('div', { class: 'bestellung-kopf' }, text ? h('p', { class: 'kachel-label', text: text }) : null, pill);
     return h('section', { class: 'karte bestellung stufe-' + stufe, 'aria-label': 'Bestellstatus' },
-      h('div', { class: 'bestellung-kopf' },
-        h('span', { class: 'pill pill-' + stufe }, h('span', { class: 'punkt', 'aria-hidden': 'true' }), st.text),
-        bisBestellen === null ? null : h('span', { class: 'bestellung-frist', text: bisBestellen > 1 ? 'noch ' + H.zahlFormat(bisBestellen, 0) + ' Tage'
-          : bisBestellen === 1 ? 'bis morgen' : bisBestellen === 0 ? 'heute' : 'seit ' + H.zahlFormat(-bisBestellen, 0) + (bisBestellen === -1 ? ' Tag' : ' Tagen') + ' fällig' })),
-      b.spaetestensBestellen
-        ? [h('p', { class: 'kachel-label', text: 'Spätestens bestellen bis' }), h('p', { class: 'bestellung-datum', text: H.datumText(b.spaetestensBestellen) })]
-        : h('p', { class: 'bestellung-fehlt', text: 'Dafür fehlen Bestand oder Verkäufe der letzten Monate.' }),
-      diagramm,
-      diagramm ? h('div', { class: 'legende prognose-legende' },
-        H.datumGueltig(b.leerAm) ? h('span', {}, h('span', { class: 'zeichen zeichen-linie', 'aria-hidden': 'true' }), 'Rechnung der App: leer ' + H.datumText(b.leerAm)) : null,
-        saison ? h('span', {}, h('span', { class: 'zeichen zeichen-linie-vorjahr', 'aria-hidden': 'true' }), 'Wie im Vorjahr: ' + saisonText) : null) : null,
-      h('p', { class: 'nur-vorlesen', text: (H.datumGueltig(b.leerAm) ? 'Laut Rechnung der App leer etwa am ' + H.datumText(b.leerAm) + '. ' : '') +
-        (saison ? 'Wenn jeder Monat so läuft wie vor einem Jahr: ' + saisonText + '.' : '') }),
-      h('div', { class: 'bestellung-fuss' },
-        typeof b.reichweite === 'number' ? h('p', { class: 'reichweite-zeile' }, 'Reichweite ', h('strong', { text: H.zahlFormat(b.reichweite, 1) + ' Monate' })) : null,
-        h('p', { class: 'kachel-zusatz annahmen' }, annahmen.map((t, i) => [i ? ' · ' : null, h('span', { class: 'am-stueck', text: t })]))));
+      termin
+        ? [kopf('Spätestens bestellen bis'), h('p', { class: 'bestellung-datum', text: H.datumText(termin) }),
+          h('p', { class: 'bestellung-frist', text: fristText(p.tage) })]
+        : p && p.reichtUeber
+          ? [kopf('Nächste Bestellung'), h('p', { class: 'bestellung-datum', text: 'nicht in Sicht' }),
+            h('p', { class: 'bestellung-frist', text: 'Bestand reicht über ' + H.monatFormat(p.reichtUeber, true) + ' hinaus' })]
+          : [kopf(''), h('p', { class: 'bestellung-fehlt', text: 'Dafür fehlen Bestand oder Verkäufe der letzten Monate.' })],
+      prognoseDiagramm(p, a.heute),
+      p && (termin || p.leerAm || p.reichtUeber) ? bestellRechenweg(p, u, a.heute) : null);
   }
 
   /** Kennzahl als Knopf (springt in die Details): Label mit Pfeil, große Zahl, Zusatz, optional Chip oder Balken. */
@@ -365,7 +403,8 @@
     const werte = H.monatsWerte(u.verkaeufe, zeilen);
     const jv = H.jahresVergleich(werte, heute);
     const vorjahr = jv ? H.jahresVergleich(werte, heute, jv.jahr - 1) : null;
-    memo = { daten: u, wert: { zeilen: zeilen, heute: heute, werte: werte, jv: jv, jvVorjahr: vorjahr } };
+    const prognose = H.bestellPrognose(u, werte, heute, H.ersterVerkaufsmonat(u.verkaeufe, zeilen), H.bekannteRechnungen(u.verkaeufe, heute));
+    memo = { daten: u, wert: { zeilen: zeilen, heute: heute, werte: werte, jv: jv, jvVorjahr: vorjahr, prognose: prognose } };
     return memo.wert;
   }
   S.auswertung = auswertung;

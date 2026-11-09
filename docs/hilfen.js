@@ -269,16 +269,18 @@
   }
 
   /**
-   * Kurzer Stand zum Teilen (z. B. in die WhatsApp-Gruppe): Bestand, Bestelltermin, dieses Jahr mit Vergleich, letzter
-   * voller Monat. `u` = Antwort `uebersicht`, `jv` = jahresVergleich, `heute` = `JJJJ-MM-TT`. Nur Zahlen, keine Kunden.
+   * Kurzer Stand zum Teilen (z. B. in die WhatsApp-Gruppe): Bestand, reicht bis, Bestelltermin, dieses Jahr mit
+   * Vergleich, letzter voller Monat. `u` = Antwort `uebersicht`, `jv` = jahresVergleich, `heute` = `JJJJ-MM-TT`,
+   * `prognose` = bestellPrognose (sonst die einfache Rechnung aus `u.bestellung`). Nur Zahlen, keine Kunden.
    */
-  function standText(u, jv, heute) {
+  function standText(u, jv, heute, prognose) {
     const z = [];
     const fl = (n) => zahlFormat(n, 0) + (n === 1 ? ' Flasche' : ' Flaschen');
     z.push('SATE – Stand ' + datumText(heute));
     const k = u && u.kennzahlen ? u.kennzahlen : {};
     if (istZahl(k.gesamtbestand)) z.push('Bestand: ' + fl(k.gesamtbestand) + (k.gesamtQuelle === 'inventur' ? ' (gezählt)' : ' (geschätzt)'));
-    const b = u && u.bestellung ? u.bestellung : {};
+    const b = prognose || (u && u.bestellung ? u.bestellung : {});
+    if (datumGueltig(b.leerAm) && b.leerAm > heute) z.push('Reicht bis etwa: ' + datumText(b.leerAm));
     if (datumGueltig(b.spaetestensBestellen)) {
       const t = tageZwischen(heute, b.spaetestensBestellen);
       z.push('Spätestens bestellen bis: ' + datumText(b.spaetestensBestellen) + (t > 0 ? ' (noch ' + zahlFormat(t, 0) + ' Tage)' : t === 0 ? ' (heute)' : ' (überfällig)'));
@@ -344,47 +346,197 @@
     return new Date(Date.UTC(Number(m.slice(0, 4)), Number(m.slice(5, 7)), 0)).getUTCDate();
   }
 
+  /** `JJJJ-MM-TT` plus n Monate; der Tag bleibt, am Monatsende gekappt (31.3. − 1 Monat = 28.2.), wie in der Schnittstelle. */
+  function datumMonatePlus(t, n) {
+    const m = monatPlus(t.slice(0, 7), n);
+    const tag = Math.min(Number(t.slice(8, 10)), monatsTage(m));
+    return m + '-' + (tag < 10 ? '0' : '') + tag;
+  }
+
   /**
-   * Bestandsprognose „Saison wie im Vorjahr“ (Start-Karte): Ab `heute` (`JJJJ-MM-TT`) mit `bestand` Flaschen geht jeder
-   * Monat so viel weg wie im gleichen Monat ein Jahr vorher (`werte` aus monatsWerte; ab 12 Monaten voraus der gleiche
-   * Monat zwei Jahre vorher usw.; fehlt der Monat: `proMonat`, negative Monate zählen als 0). Im laufenden Monat nur, was gegenüber dem Vorjahresmonat noch fehlt (`bisher` = schon
-   * verkauft). Höchstens `maxMonate` (Standard 18) weit. Rückgabe { punkte: [{datum, bestand}] (heute, dann Monatsenden,
-   * zuletzt der Tag „leer“), leer (`JJJJ-MM-TT` oder null, wenn es länger reicht) } oder null ohne Bestand.
+   * Bestandsverlauf nach Saison, Tag für Tag: Ab `heute` (`JJJJ-MM-TT`) mit `bestand` Flaschen geht in jedem Monat so
+   * viel weg wie im gleichen Monat ein Jahr vorher (`werte` aus monatsWerte) mal `o.faktor` (Standard 1); ab 12 Monaten
+   * voraus zählt der gleiche Monat zwei Jahre vorher usw., so wiederholt sich das zuletzt bekannte Saisonprofil. Fehlt
+   * ein Monat: `o.proMonat`; negative Monate (Gutschriften) zählen als 0.
+   * Schon geschriebene Rechnungen (Codex v24): `o.geschrieben` = { 'JJJJ-MM': Flaschen je Rechnungsmonat } (Standard:
+   * `o.bisher` im laufenden Monat) mindert, was in diesem Monat noch erwartet wird; die mit Lagerdatum nach heute
+   * (`o.abgaenge` = { 'JJJJ-MM-TT': Flaschen }, im Bestand noch nicht abgezogen) gehen an genau diesem Tag weg. Der Rest
+   * verteilt sich gleichmäßig auf die Tage, im laufenden Monat auf die Resttage und höchstens im Monatstempo (am
+   * Monatsletzten nichts mehr, sonst spränge die Prognose von einem Tag zum nächsten um einen Monat).
+   * „Leer“ = Bestand erreicht `o.mindest` (Standard 0). Höchstens `o.max` Monate (Standard 24). Rückgabe { punkte:
+   * [{datum, bestand}] (heute, dann Monatsenden, zuletzt der Tag „leer“), leer (`JJJJ-MM-TT` oder null) } oder null.
    */
-  function prognoseSaison(bestand, heute, werte, proMonat, bisher, maxMonate) {
-    if (!istZahl(bestand) || bestand <= 0 || !datumGueltig(heute) || typeof werte !== 'function') return null;
-    const max = maxMonate > 0 ? maxMonate : 18;
-    const ersatz = istZahl(proMonat) && proMonat > 0 ? proMonat : 0;
+  function prognoseSaison(bestand, heute, werte, o) {
+    const opt = o || {};
+    if (!istZahl(bestand) || !datumGueltig(heute) || typeof werte !== 'function') return null;
+    const faktor = istZahl(opt.faktor) && opt.faktor >= 0 ? opt.faktor : 1;
+    const ersatz = istZahl(opt.proMonat) && opt.proMonat > 0 ? opt.proMonat : 0;
+    const mindest = istZahl(opt.mindest) && opt.mindest > 0 ? opt.mindest : 0;
+    const max = opt.max > 0 ? opt.max : 24;
     const jetzt = heute.slice(0, 7);
-    // Vergleichsmonat: ein Jahr vorher; liegt der selbst noch nicht hinter uns (ab 12 Monaten voraus), noch ein Jahr
-    // früher – so wiederholt sich das zuletzt bekannte Saisonprofil, statt künftige Monate als verkaufsfrei zu zählen
+    const geschrieben = opt.geschrieben || { [jetzt]: istZahl(opt.bisher) ? opt.bisher : 0 };
+    const abgaenge = opt.abgaenge || {};
+    const zwei = (n) => (n < 10 ? '0' : '') + n;
     const erwartet = (m) => {
       let r = monatPlus(m, -12);
       while (r >= jetzt) r = monatPlus(r, -12);
       const v = werte(r);
-      return Math.max(0, v && istZahl(v.flaschen) ? v.flaschen : ersatz);
+      return v && istZahl(v.flaschen) ? Math.max(0, v.flaschen) * faktor : ersatz;
     };
     const punkte = [{ datum: heute, bestand: runde(bestand) }];
-    let rest = bestand;
-    let m = heute.slice(0, 7);
-    let tagAb = Number(heute.slice(8, 10)); // im laufenden Monat ab heute
+    if (bestand <= mindest) return { punkte: punkte, leer: heute };
+    let rest = bestand - mindest;
+    let m = jetzt;
     for (let i = 0; i <= max; i++) {
       const tage = monatsTage(m);
-      const ab = i === 0 ? tagAb : 0;
-      const weg = i === 0 ? Math.max(0, erwartet(m) - (istZahl(bisher) ? Math.max(bisher, 0) : 0)) : erwartet(m);
-      if (weg >= rest && weg > 0) {
-        // Leer in diesem Monat: Tag anteilig zwischen `ab` und Monatsende
-        const tag = Math.min(tage, Math.max(ab + 1, ab + Math.ceil((tage - ab) * (rest / weg))));
-        const leer = m + '-' + (tag < 10 ? '0' : '') + tag;
-        punkte.push({ datum: leer, bestand: 0 });
-        return { punkte: punkte, leer: leer };
+      const ab = i === 0 ? Number(heute.slice(8, 10)) : 0; // im laufenden Monat ab morgen
+      const e = erwartet(m);
+      const offen = Math.max(0, e - (istZahl(geschrieben[m]) ? geschrieben[m] : 0));
+      const verteilt = i === 0 ? Math.min(offen, e * ((tage - ab) / tage)) : offen;
+      const proTag = tage > ab ? verteilt / (tage - ab) : 0;
+      for (let t = ab + 1; t <= tage; t++) {
+        const datum = m + '-' + zwei(t);
+        const weg = proTag + (istZahl(abgaenge[datum]) ? abgaenge[datum] : 0);
+        rest -= weg;
+        if (weg > 0 && rest <= 1e-9) {
+          punkte.push({ datum: datum, bestand: runde(mindest) });
+          return { punkte: punkte, leer: datum };
+        }
       }
-      rest -= weg;
-      punkte.push({ datum: m + '-' + tage, bestand: runde(rest) });
+      const monatsende = m + '-' + zwei(tage);
+      if (monatsende !== heute) punkte.push({ datum: monatsende, bestand: runde(rest + mindest) });
       m = monatPlus(m, 1);
-      tagAb = 0;
     }
     return { punkte: punkte, leer: null };
+  }
+
+  /** Erster Monat mit verkauften Flaschen (`JJJJ-MM`): aus den Verkaufszeilen, sonst aus den Monatswerten der Schnittstelle. */
+  function ersterVerkaufsmonat(verkaeufe, zeilen) {
+    let erster = null;
+    const nehmen = (m, fl) => { if (MONAT_MUSTER.test(m) && istZahl(fl) && fl > 0 && (!erster || m < erster)) erster = m; };
+    if (Array.isArray(zeilen)) zeilen.forEach((z) => nehmen(z.monat, z.flaschen));
+    else {
+      const v = verkaeufe || {};
+      [].concat(Array.isArray(v.vergleichsmonate) ? v.vergleichsmonate : [], Array.isArray(v.monate) ? v.monate : [])
+        .forEach((x) => { if (x) nehmen(x.monat, x.flaschen); });
+    }
+    return erster;
+  }
+
+  const BALD_TAGE = 30; // wie BALD_TAGE der Schnittstelle (api/src/Konfig.js)
+  const PROGNOSE_MONATE = 24;
+  const KUNDE_VORMONAT = 'dörflinger'; // wie KUNDE_VORMONAT der Schnittstelle (api/src/Konfig.js)
+
+  /**
+   * Schon geschriebene Rechnungen für die Prognose (aus `verkaeufe.zeilen` der Schnittstelle, auch spätere Monate):
+   * `geschrieben` = { 'JJJJ-MM': Flaschen } ab dem laufenden Rechnungsmonat, `abgaenge` = { 'JJJJ-MM-TT': Flaschen } mit
+   * Lagerdatum nach `heute`, die der Bestand noch nicht abzieht. Lagerdatum wie in der Schnittstelle
+   * (`verkaufLagerdatum`): Rechnungsdatum, Dörflinger am letzten Tag des Vormonats, Altzeilen ohne Datum am Monatsende
+   * (im laufenden Monat schon abgezogen). Ohne Zeilen null.
+   */
+  function bekannteRechnungen(verkaeufe, heute) {
+    if (!verkaeufe || !Array.isArray(verkaeufe.zeilen) || !datumGueltig(heute)) return null;
+    const jetzt = heute.slice(0, 7);
+    const geschrieben = {}; // Schlüssel nur `JJJJ-MM` bzw. `JJJJ-MM-TT` (geprüft), also keine Kollision mit Object-Eigenschaften
+    const abgaenge = {};
+    const ende = (m) => m + '-' + monatsTage(m);
+    verkaeufe.zeilen.forEach((z) => {
+      if (!Array.isArray(z) || typeof z[0] !== 'string' || !MONAT_MUSTER.test(z[0]) || !istZahl(z[4])) return;
+      const fl = z[4];
+      if (z[0] >= jetzt) geschrieben[z[0]] = runde((geschrieben[z[0]] || 0) + fl);
+      const datum = datumGueltig(z[1]) ? z[1] : '';
+      let lager;
+      if (!datum) lager = z[0] > jetzt ? ende(z[0]) : '';
+      else lager = String(z[3] || '').toLowerCase().indexOf(KUNDE_VORMONAT) >= 0 ? ende(monatPlus(datum.slice(0, 7), -1)) : datum;
+      if (lager && lager > heute) abgaenge[lager] = runde((abgaenge[lager] || 0) + fl);
+    });
+    return { geschrieben: geschrieben, abgaenge: abgaenge };
+  }
+
+  /**
+   * Bestellprognose (seit v24 die eine Rechnung für Start-Karte und Teilen). Erwartete Verkäufe: jeder Monat wie im
+   * Vorjahr mal Wachstum. Wachstum = Verkäufe im Ø-Zeitraum der Schnittstelle (`kennzahlen.abverkaufVon`–`abverkaufBis`,
+   * Standard die letzten 6 vollen Monate) ÷ dieselben Monate ein Jahr früher. So läuft der Bestand im Winter langsam und
+   * im Sommer schnell ab, statt mit einem Sommer-Ø gerade nach unten. Spätestens bestellen = leer − Vorlauf − Puffer,
+   * Status wie in der Schnittstelle (vorbei → „jetzt bestellen“, höchstens 30 Tage → „bald“, sonst „ok“).
+   * Ohne volles Vorjahr (Vergleichsmonate vor `erster` = erster Monat mit Verkäufen, Monate fehlen, dort oder zuletzt
+   * nichts verkauft) gilt die einfache Rechnung der Schnittstelle (`u.bestellung`: Bestand ÷ Ø, gerade Linie).
+   * `bekannt` = bekannteRechnungen (mit Verkaufszeilen), sonst zählt der Monatswert des laufenden Monats als geschrieben.
+   * Die Vorschau reicht 24 Monate plus Vorlauf und Puffer weit, damit „reicht länger“ nie einen fälligen Termin verdeckt.
+   * Rückgabe null ohne Bestand, sonst { art: 'saison' | 'schnitt', bestand, mindest, wachstum, von, bis, proMonat,
+   *   punkte [{datum, bestand}], leerAm, reichtUeber (`JJJJ-MM`, wenn es länger reicht als die Vorschau),
+   *   spaetestensBestellen, tage (bis dahin), status, ankunft (neue Flaschen da, wenn spätestens bzw. heute bestellt),
+   *   luecke (Tage ohne Flaschen zwischen „leer“ und Ankunft), vorlaufMonate, pufferWochen }.
+   */
+  function bestellPrognose(u, werte, heute, erster, bekannt) {
+    const k = u && u.kennzahlen ? u.kennzahlen : {};
+    const b = u && u.bestellung ? u.bestellung : {};
+    if (!istZahl(k.gesamtbestand) || !datumGueltig(heute)) return null;
+    const bestand = k.gesamtbestand;
+    const mindest = istZahl(k.mindestbestand) && k.mindestbestand > 0 ? k.mindestbestand : 0;
+    const vorlauf = istZahl(b.vorlaufMonate) && b.vorlaufMonate >= 0 ? Math.round(b.vorlaufMonate) : null;
+    const puffer = istZahl(b.pufferWochen) && b.pufferWochen >= 0 ? b.pufferWochen : null;
+    const jetzt = heute.slice(0, 7);
+    const bis = MONAT_MUSTER.test(k.abverkaufBis || '') && k.abverkaufBis < jetzt ? k.abverkaufBis : monatPlus(jetzt, -1);
+    const von = MONAT_MUSTER.test(k.abverkaufVon || '') && k.abverkaufVon <= bis ? k.abverkaufVon : monatPlus(bis, -5);
+    const fl = (m) => {
+      const v = typeof werte === 'function' ? werte(m) : null;
+      return v && istZahl(v.flaschen) ? v.flaschen : null;
+    };
+    // Wachstum: Ø-Zeitraum gegen dieselben Monate ein Jahr früher; die müssen nach dem ersten Verkaufsmonat liegen,
+    // sonst zählten Monate vor dem Start als „nichts verkauft“
+    let wachstum = null;
+    if (vorlauf !== null && puffer !== null && MONAT_MUSTER.test(erster || '') && monatPlus(von, -12) >= erster) {
+      let jetztSumme = 0;
+      let vorSumme = 0;
+      let fehlt = false;
+      for (let m = von; m <= bis; m = monatPlus(m, 1)) {
+        const a = fl(m);
+        const v = fl(monatPlus(m, -12));
+        if (a === null || v === null) fehlt = true;
+        else {
+          jetztSumme += a;
+          vorSumme += v;
+        }
+      }
+      if (!fehlt && vorSumme > 0 && jetztSumme > 0) wachstum = jetztSumme / vorSumme;
+    }
+    const proMonat = istZahl(k.abverkaufProMonat) ? k.abverkaufProMonat : null;
+    let art;
+    let punkte;
+    let leerAm;
+    let reichtUeber = null;
+    let spaetestens;
+    let status;
+    if (wachstum !== null) {
+      const p = prognoseSaison(bestand, heute, werte, { faktor: wachstum, proMonat: proMonat, mindest: mindest,
+        geschrieben: bekannt ? bekannt.geschrieben : { [jetzt]: fl(jetzt) || 0 }, abgaenge: bekannt ? bekannt.abgaenge : {},
+        max: PROGNOSE_MONATE + vorlauf + Math.ceil(puffer / 4) });
+      art = 'saison';
+      punkte = p.punkte;
+      leerAm = p.leer;
+      if (!leerAm) reichtUeber = punkte[punkte.length - 1].datum.slice(0, 7);
+      spaetestens = leerAm ? tagePlus(datumMonatePlus(leerAm, -vorlauf), -Math.round(puffer * 7)) : null;
+      const t = spaetestens ? tageZwischen(heute, spaetestens) : null;
+      status = t === null ? 'ok' : t < 0 ? 'jetzt bestellen' : t <= BALD_TAGE ? 'bald' : 'ok';
+    } else {
+      // Einfache Rechnung der Schnittstelle: Bestand ÷ Ø bis „leer“, gerade Linie
+      art = 'schnitt';
+      leerAm = datumGueltig(b.leerAm) ? b.leerAm : null;
+      punkte = [{ datum: heute, bestand: runde(bestand) }];
+      if (leerAm && leerAm > heute) punkte.push({ datum: leerAm, bestand: runde(mindest) });
+      spaetestens = datumGueltig(b.spaetestensBestellen) ? b.spaetestensBestellen : null;
+      status = typeof b.status === 'string' ? b.status : null;
+    }
+    const tage = spaetestens ? tageZwischen(heute, spaetestens) : null;
+    const ab = spaetestens ? (spaetestens < heute ? heute : spaetestens) : null;
+    const ankunft = ab && vorlauf !== null ? datumMonatePlus(ab, vorlauf) : null;
+    return {
+      art: art, bestand: bestand, mindest: mindest, wachstum: wachstum, von: von, bis: bis, proMonat: proMonat,
+      punkte: punkte, leerAm: leerAm, reichtUeber: reichtUeber, spaetestensBestellen: spaetestens, tage: tage, status: status,
+      ankunft: ankunft, luecke: ankunft && leerAm && ankunft > leerAm ? tageZwischen(leerAm, ankunft) : 0,
+      vorlaufMonate: vorlauf, pufferWochen: puffer,
+    };
   }
 
   /**
@@ -954,6 +1106,7 @@
     MAX_FLASCHEN, datumKurz, monateAnzahl, zeitraumKurz, monatBisher, kistenKurz, anteileSinnvoll, hinweiseOrdnen, verlaufOhneStorno, schrittWert,
     kundeSchluessel, verkaufZeilen, monatsWerte, jahresVergleich, kumuliert, zeitraumAuswerten, kundeDetails, nachfassen,
     bestellungenZaehlen, wannText, abstandText, monatName, wochentagText, dauerText, datumAbkuerzungen, buchungVorschau, standText, inventurAm, jahresStichtag, prognoseSaison, aktivitaet, monatsTage, letzteBestellungen,
+    datumMonatePlus, ersterVerkaufsmonat, bekannteRechnungen, bestellPrognose,
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = hilfen;
   else wurzel.SATE_HILFEN = hilfen;
