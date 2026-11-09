@@ -190,21 +190,43 @@ test('Codex-Befunde: Rechnungen statt Tage, spätere Monate, Lücken, gezeigtes 
   assert.strictEqual(H.jahresVergleich(w, '2026-11-09').jahr, 2026);
 });
 
-test('standText: kurzer Stand zum Teilen, ohne Kundennamen', () => {
+test('standText: Update zum Teilen, Kurzfristiges zuerst, ohne Kundennamen', () => {
   const v = H.verkaufZeilen({ zeilen: zeilen() }, '2026-11-09');
-  const jv = H.jahresVergleich(H.monatsWerte({}, v), '2026-11-09');
+  const w = H.monatsWerte({}, v);
+  const jv = H.jahresVergleich(w, '2026-11-09');
   const u = { kennzahlen: { gesamtbestand: 8353, gesamtQuelle: 'rechnerisch' }, bestellung: { spaetestensBestellen: '2027-02-14' } };
-  const t = H.standText(u, jv, '2026-11-09');
-  assert.strictEqual(t.split('\n')[0], 'SATE Stand vom 9. Nov 2026');
-  assert.match(t, /Bestand: 8\.353 Flaschen \(geschätzt\)/);
-  assert.match(t, /Spätestens bestellen bis: 14\. Feb 2027 \(noch 97 Tage\)/);
-  assert.match(t, /Dieses Jahr: 602 Flaschen \(−71 % zum Vorjahr, Jan–Okt\)/);
-  assert.match(t, /Oktober: 108 Flaschen \(\+116 % zum Vorjahresmonat\)/);
-  assert.ok(t.endsWith('Trink SATE!'));
+  const t = H.standText(u, jv, '2026-11-09', null, { zeilen: v, jvVorjahr: H.jahresVergleich(w, '2026-11-09', 2025) });
+  assert.deepStrictEqual(t.split('\n'), [
+    '📊 SATE Update vom 9. Nov', '',
+    '📈 Oktober: 108 Flaschen, +116 % zum Vorjahr', '2 Bestellungen', '', // Gutschrift zählt nicht als Bestellung, kein neuer Kunde
+    '🚀 November bisher: 264 Flaschen', '1 Bestellung, 1 neuer Kunde', 'Ganzer November 2025: 24 Flaschen', '',
+    '📅 Dieses Jahr: 602 Flaschen, bis Oktober −71 % zum Vorjahr', '📦 Bestand: 8.353 Flaschen (geschätzt)', '🛒 Abfüllung bestellen bis 14. Feb 2027', '',
+    'Trink SATE! 🤍']);
   assert.doesNotMatch(t, /Bar Eins|Späti|Fest/, 'keine Kunden');
-  const jan = H.standText({ kennzahlen: {}, bestellung: { spaetestensBestellen: '2027-01-01' } }, H.jahresVergleich(H.monatsWerte({}, v), '2027-01-05'), '2027-01-05');
-  assert.match(jan, /\(überfällig\)/);
-  assert.match(jan, /Dieses Jahr: 0 Flaschen\n/);
+  assert.doesNotMatch(t, /[·•]/, 'keine Trennpunkte');
+  // Ohne Verkaufszeilen: gleiche Zahlen, nur ohne die Zeile mit Bestellungen und neuen Kunden
+  const ohne = H.standText(u, jv, '2026-11-09');
+  assert.match(ohne, /📈 Oktober: 108 Flaschen, \+116 % zum Vorjahr\n\n🚀 November bisher: 264 Flaschen\nGanzer November 2025: 24 Flaschen\n/);
+  // Laufender Monat unter dem Vorjahresmonat: Sanduhr statt Rakete; schwächerer Monat: Pfeil nach unten
+  const schwach = H.verkaufZeilen({ zeilen: [z('2025-10', '', 'K', 'A', 100, 1), z('2025-11', '', 'K', 'A', 100, 1),
+    z('2026-10', '2026-10-05', 'K', 'A', 40, 1, 'RE1'), z('2026-11', '2026-11-03', 'K', 'A', 1, 1, 'RE2')] }, '2026-11-09');
+  const ts = H.standText({}, H.jahresVergleich(H.monatsWerte({}, schwach), '2026-11-09'), '2026-11-09', null, { zeilen: schwach });
+  assert.match(ts, /📉 Oktober: 40 Flaschen, −60 % zum Vorjahr\n1 Bestellung\n\n⏳ November bisher: 1 Flasche\n1 Bestellung\nGanzer November 2025: 100 Flaschen\n/);
+  // Januar: der Dezember kommt aus dem Vorjahr, statt „Dieses Jahr“ das abgelaufene Jahr; Bestelltermin vorbei
+  const vj = H.verkaufZeilen({ zeilen: zeilen() }, '2027-01-05');
+  const wj = H.monatsWerte({}, vj);
+  const jan = H.standText({ kennzahlen: {}, bestellung: { spaetestensBestellen: '2027-01-01' } }, H.jahresVergleich(wj, '2027-01-05'), '2027-01-05', null,
+    { zeilen: vj, jvVorjahr: H.jahresVergleich(wj, '2027-01-05', 2026) });
+  assert.match(jan, /📉 Dezember: 0 Flaschen, −100 % zum Vorjahr\n\n⏳ Januar bisher: 0 Flaschen\nGanzer Januar 2026: 30 Flaschen\n\n📅 2026 gesamt: 602 Flaschen, −51 % zum Vorjahr\n⚠️ Abfüllung bestellen: überfällig seit 1\. Jan 2027\n/);
+  assert.match(H.standText({ bestellung: { spaetestensBestellen: '2027-01-05' } }, null, '2027-01-05'), /^📊 SATE Update vom 5\. Jan\n\n⚠️ Abfüllung heute bestellen\n\nTrink SATE! 🤍$/);
+  // Codex v27: zwei Kunden am selben Tag ohne Rechnungsnummer sind zwei Bestellungen; ohne gültiges Heute kein Termin, kein Absturz
+  const tag = H.verkaufZeilen({ zeilen: [z('2026-10', '2026-10-05', 'K', 'A', 24, 1), z('2026-10', '2026-10-05', 'K', 'B', 24, 1), z('2026-10', '2026-10-05', 'K', 'B', 6, 1)] }, '2026-11-09');
+  assert.strictEqual(H.bestellungenZaehlen(tag), 2);
+  assert.match(H.standText({}, H.jahresVergleich(H.monatsWerte({}, tag), '2026-11-09'), '2026-11-09', null, { zeilen: tag }), /Oktober: 54 Flaschen\n2 Bestellungen, 2 neue Kunden\n/);
+  for (const kaputt of ['kaputt', null, undefined]) {
+    assert.strictEqual(H.standText({ kennzahlen: { gesamtbestand: 10 }, bestellung: { spaetestensBestellen: '2027-01-05' } }, null, kaputt),
+      '📊 SATE Update\n\n📦 Bestand: 10 Flaschen (geschätzt)\n\nTrink SATE! 🤍');
+  }
 });
 
 test('prognoseSaison: jeder Monat wie der gleiche Monat ein Jahr vorher, laufender Monat nur der Rest', () => {
@@ -327,8 +349,8 @@ test('datumMonatePlus, ersterVerkaufsmonat und standText mit Prognose', () => {
   assert.strictEqual(H.ersterVerkaufsmonat({}, null), null);
   const u = ub(500);
   const t = H.standText(u, null, '2026-11-09', H.bestellPrognose(u, wv, '2026-11-09', '2025-01'));
-  assert.match(t, /Reicht bis etwa: 24\. Mai 2027\nSpätestens bestellen bis: 10\. Mär 2027 \(noch 121 Tage\)/);
-  assert.match(H.standText(u, null, '2026-11-09'), /Reicht bis etwa: 26\. Feb 2027\nSpätestens bestellen bis: 12\. Dez 2026/, 'ohne Prognose die Schnittstelle');
+  assert.match(t, /📦 Bestand: 500 Flaschen \(geschätzt\)\n🛒 Abfüllung bestellen bis 10\. Mär 2027\n/);
+  assert.match(H.standText(u, null, '2026-11-09'), /🛒 Abfüllung bestellen bis 12\. Dez 2026\n/, 'ohne Prognose die Schnittstelle');
 });
 
 test('Codex v24: Monatsende, Rechnungen mit Datum nach heute, Vorschau so weit wie Vorlauf und Puffer', () => {

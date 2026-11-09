@@ -407,13 +407,13 @@
   el('neu-laden').addEventListener('click', () => { S.aktualisieren(); });
 
   /**
-   * Stand teilen: kurzer Text (H.standText) ins iOS-Teilen-Menü (z. B. WhatsApp-Gruppe). Ohne Teilen-Menü in die
+   * Stand teilen: kurzes Update (H.standText) ins iOS-Teilen-Menü (z. B. WhatsApp-Gruppe). Ohne Teilen-Menü in die
    * Zwischenablage. Abbrechen im Menü ist kein Fehler.
    */
   el('teilen').addEventListener('click', async () => {
     const a = typeof S.auswertung === 'function' ? S.auswertung() : null;
     if (!Z.daten || !a) return S.melden('Noch keine Daten zum Teilen.', true);
-    const text = H.standText(Z.daten, a.jv, a.heute, a.prognose);
+    const text = H.standText(Z.daten, a.jv, a.heute, a.prognose, { zeilen: a.zeilen, jvVorjahr: a.jvVorjahr });
     try {
       if (navigator.share) {
         await navigator.share({ text: text });

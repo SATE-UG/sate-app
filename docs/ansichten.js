@@ -866,10 +866,17 @@
   function kundenDaten(a) {
     const gr = zeitraumGrenzen(a, Z.kundenZeitraum);
     // Kanäle für die Chips aus allen Zeilen; mit Kanal-Filter zählt je Kunde nur, was über diesen Kanal lief
-    const kanaele = H.zeitraumAuswerten(a.zeilen, gr.von, gr.bis).kanaele.map((k) => k.kanal);
+    const gesamt = H.zeitraumAuswerten(a.zeilen, gr.von, gr.bis);
+    const kanaele = gesamt.kanaele.map((k) => k.kanal);
     if (Z.kundenKanal && kanaele.indexOf(Z.kundenKanal) < 0) Z.kundenKanal = '';
     const basis = Z.kundenKanal ? a.zeilen.filter((x) => x.kanal === Z.kundenKanal) : a.zeilen;
     const z = H.zeitraumAuswerten(basis, gr.von, gr.bis);
+    if (Z.kundenKanal) {
+      // „neu“ heißt: erster Kauf überhaupt, nicht erster Kauf über diesen Kanal
+      const erster = Object.create(null);
+      gesamt.kunden.forEach((k) => { erster[k.schluessel] = k.erster; });
+      z.kunden.forEach((k) => { if (erster[k.schluessel]) k.erster = erster[k.schluessel]; });
+    }
     const vorher = Object.create(null);
     const jetzt = Object.create(null);
     if (gr.vgl) {

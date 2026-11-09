@@ -269,36 +269,67 @@
   }
 
   /**
-   * Kurzer Stand zum Teilen (z. B. in die WhatsApp-Gruppe): Bestand, reicht bis, Bestelltermin, dieses Jahr mit
-   * Vergleich, letzter voller Monat. `u` = Antwort `uebersicht`, `jv` = jahresVergleich, `heute` = `JJJJ-MM-TT`,
-   * `prognose` = bestellPrognose (sonst die einfache Rechnung aus `u.bestellung`). Nur Zahlen, keine Kunden.
+   * Update zum Teilen (z. B. in die WhatsApp-Gruppe), seit v27 mit dem Kurzfristigen zuerst: letzter voller Monat
+   * (Flaschen, Vergleich, Bestellungen, neue Kunden), laufender Monat bisher, dann Jahr, Bestand und Bestelltermin.
+   * `u` = Antwort `uebersicht`, `jv` = jahresVergleich, `heute` = `JJJJ-MM-TT`, `prognose` = bestellPrognose (sonst
+   * die einfache Rechnung aus `u.bestellung`), `mehr` (optional) = { zeilen (verkaufZeilen), jvVorjahr (für den
+   * Dezember im Januar und das abgelaufene Jahr) }. Nur Zahlen, keine Kundennamen.
    */
-  function standText(u, jv, heute, prognose) {
-    const z = [];
-    const fl = (n) => zahlFormat(n, 0) + (n === 1 ? ' Flasche' : ' Flaschen');
-    z.push('SATE Stand vom ' + datumText(heute));
+  function standText(u, jv, heute, prognose, mehr) {
+    const fl = (n) => zahlFormat(n, 0) + (Math.abs(n) === 1 ? ' Flasche' : ' Flaschen');
+    const pz = (p) => prozentText(p).replace(/\s/g, ' ');
+    const zeilen = mehr && Array.isArray(mehr.zeilen) ? mehr.zeilen : null;
+    const jvAlt = mehr && mehr.jvVorjahr ? mehr.jvVorjahr : null;
+    const ok = datumGueltig(heute);
+    const bloecke = [['📊 SATE Update' + (ok ? ' vom ' + datumKurz(heute) : '')]];
+    // „6 Bestellungen, 2 neue Kunden“ eines Monats (nur mit Verkaufszeilen), sonst ''
+    const kurz = (monat) => {
+      if (!zeilen) return '';
+      const n = bestellungenZaehlen(zeilen.filter((z) => z.monat === monat));
+      const neu = zeitraumAuswerten(zeilen, monat, monat).kunden.filter((k) => k.erster === monat && k.flaschen > 0).length;
+      return [n ? zahlFormat(n, 0) + (n === 1 ? ' Bestellung' : ' Bestellungen') : '',
+        neu ? zahlFormat(neu, 0) + (neu === 1 ? ' neuer Kunde' : ' neue Kunden') : ''].filter(Boolean).join(', ');
+    };
+    const jetzt = ok ? heute.slice(0, 7) : '';
+    const monate = [].concat(jvAlt && Array.isArray(jvAlt.monate) ? jvAlt.monate : [], jv && Array.isArray(jv.monate) ? jv.monate : []);
+    // Letzter voller Monat (im Januar der Dezember aus dem Vorjahr)
+    const lm = jetzt ? monate.find((m) => m.monat === monatPlus(jetzt, -1) && m.dieses) : null;
+    if (lm) {
+      const p = lm.vorjahr ? veraenderung(lm.dieses.flaschen, lm.vorjahr.flaschen) : null;
+      const b = [(p > 0 ? '📈 ' : p < 0 ? '📉 ' : '📆 ') + monatName(lm.monat) + ': ' + fl(lm.dieses.flaschen) + (p !== null ? ', ' + pz(p) + ' zum Vorjahr' : '')];
+      if (kurz(lm.monat)) b.push(kurz(lm.monat));
+      bloecke.push(b);
+    }
+    // Laufender Monat bisher, dazu der ganze Monat im Vorjahr
+    const lauf = jv && Array.isArray(jv.monate) ? jv.monate.find((m) => m.laufend && m.dieses) : null;
+    if (lauf) {
+      const vj = lauf.vorjahr && istZahl(lauf.vorjahr.flaschen) ? lauf.vorjahr.flaschen : null;
+      const b = [(vj !== null && vj > 0 && lauf.dieses.flaschen >= vj ? '🚀 ' : '⏳ ') + monatName(lauf.monat) + ' bisher: ' + fl(lauf.dieses.flaschen)];
+      if (kurz(lauf.monat)) b.push(kurz(lauf.monat));
+      if (vj !== null) b.push('Ganzer ' + monatFormat(lauf.vorjahrMonat, true) + ': ' + fl(vj));
+      bloecke.push(b);
+    }
+    const lage = [];
+    // Jahr: im Januar das abgelaufene Jahr (der Januar steht schon oben), sonst dieses Jahr bisher
+    const januar = jetzt.slice(5) === '01';
+    const jahr = januar ? jvAlt : jv;
+    if (jahr && jahr.bisher) {
+      const p = jahr.vergleich ? veraenderung(jahr.vergleich.dieses.flaschen, jahr.vergleich.vorjahr.flaschen) : null;
+      // Der Vergleich läuft nur über die vollen Monate: das steht dabei („bis Oktober +32 %“), außer das Jahr ist ganz um
+      const bis = p !== null && jahr.vergleich.bis.slice(5) !== '12' ? 'bis ' + monatName(jahr.vergleich.bis) + ' ' : '';
+      lage.push('📅 ' + (januar ? jahr.jahr + ' gesamt' : 'Dieses Jahr') + ': ' + fl(jahr.bisher.flaschen) + (p !== null ? ', ' + bis + pz(p) + ' zum Vorjahr' : ''));
+    }
     const k = u && u.kennzahlen ? u.kennzahlen : {};
-    if (istZahl(k.gesamtbestand)) z.push('Bestand: ' + fl(k.gesamtbestand) + (k.gesamtQuelle === 'inventur' ? ' (gezählt)' : ' (geschätzt)'));
+    if (istZahl(k.gesamtbestand)) lage.push('📦 Bestand: ' + fl(k.gesamtbestand) + (k.gesamtQuelle === 'inventur' ? ' (gezählt)' : ' (geschätzt)'));
     const b = prognose || (u && u.bestellung ? u.bestellung : {});
-    if (datumGueltig(b.leerAm) && b.leerAm > heute) z.push('Reicht bis etwa: ' + datumText(b.leerAm));
-    if (datumGueltig(b.spaetestensBestellen)) {
+    if (ok && datumGueltig(b.spaetestensBestellen)) {
       const t = tageZwischen(heute, b.spaetestensBestellen);
-      z.push('Spätestens bestellen bis: ' + datumText(b.spaetestensBestellen) + (t > 0 ? ' (noch ' + zahlFormat(t, 0) + ' Tage)' : t === 0 ? ' (heute)' : ' (überfällig)'));
+      lage.push(t > 0 ? '🛒 Abfüllung bestellen bis ' + datumText(b.spaetestensBestellen)
+        : t === 0 ? '⚠️ Abfüllung heute bestellen' : '⚠️ Abfüllung bestellen: überfällig seit ' + datumText(b.spaetestensBestellen));
     }
-    if (jv && jv.bisher) {
-      const vg = jv.vergleich;
-      const p = vg ? veraenderung(vg.dieses.flaschen, vg.vorjahr.flaschen) : null;
-      z.push('Dieses Jahr: ' + fl(jv.bisher.flaschen) + (p !== null ? ' (' + prozentText(p).replace(/\s/g, ' ') + ' zum Vorjahr, ' +
-        (vg.bis.slice(5) === '01' ? 'Januar' : 'Jan–' + monatFormat(vg.bis)) + ')' : ''));
-      const voll = jv.monate.filter((m) => m.dieses && !m.laufend && !m.zukunft);
-      const m = voll[voll.length - 1];
-      if (m) {
-        const pm = m.vorjahr ? veraenderung(m.dieses.flaschen, m.vorjahr.flaschen) : null;
-        z.push(monatName(m.monat) + ': ' + fl(m.dieses.flaschen) + (pm !== null ? ' (' + prozentText(pm).replace(/\s/g, ' ') + ' zum Vorjahresmonat)' : ''));
-      }
-    }
-    z.push('Trink SATE!');
-    return z.join('\n');
+    if (lage.length) bloecke.push(lage);
+    bloecke.push(['Trink SATE! 🤍']);
+    return bloecke.map((x) => x.join('\n')).join('\n\n');
   }
 
   /**
@@ -965,7 +996,7 @@
 
   /**
    * Bestellungen zählen: Zeilen mit Flaschen > 0. Zeilen derselben Rechnung zählen als eine (eine Rechnung kann mehrere
-   * Zeilen haben); ohne Rechnungsnummer Zeilen mit gleichem Rechnungsdatum, Altzeilen ohne beides einzeln.
+   * Zeilen haben); ohne Rechnungsnummer Zeilen desselben Kunden mit gleichem Rechnungsdatum, Altzeilen ohne beides einzeln.
    */
   function bestellungenZaehlen(zeilen) {
     const schon = Object.create(null);
@@ -973,7 +1004,7 @@
     (zeilen || []).forEach((z) => {
       if (!(z.flaschen > 0)) return;
       if (z.rechnung) schon['r:' + z.rechnung] = true;
-      else if (z.datum) schon['d:' + z.datum] = true;
+      else if (z.datum) schon['d:' + z.datum + '|' + (z.schluessel || '')] = true;
       else einzeln++;
     });
     return Object.keys(schon).length + einzeln;

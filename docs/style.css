@@ -559,20 +559,17 @@ h3.gruppe { font-size: 14px; font-weight: 600; color: var(--leise); margin: 22px
 .rang-zeile { display: flex; align-items: center; gap: 12px; }
 .liste > li.rang-zeile { padding: 12px 0; }
 .liste > li.rang-zeile.kunde-zeile { padding: 0; }
+/* Platz: schlichte Ziffer ohne Kreis (seit v27), die ersten drei hell, der Rest grau */
 .rang-nr {
   flex: none;
-  width: 26px;
-  height: 26px;
-  display: grid;
-  place-items: center;
-  border-radius: 50%;
-  background: var(--feld);
+  width: 24px;
   color: var(--leise);
-  font-size: 12px;
-  font-weight: 700;
+  font-size: 17px;
+  font-weight: 600;
+  line-height: 1;
   font-variant-numeric: tabular-nums;
 }
-.rang-nr.vorne { color: var(--text); background: var(--feld-aktiv); }
+.rang-nr.vorne { color: var(--text); }
 .rang-name { flex: 1; min-width: 0; }
 .rang-titel { display: block; font-size: 16px; overflow-wrap: anywhere; }
 .rang-name .anteil { margin-top: 8px; }
