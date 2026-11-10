@@ -1313,8 +1313,9 @@ body.mit-leiste::after {
 .dash-lager .dash-zeile { grid-template-columns: minmax(0, 1fr) 64px 84px; }               /* Name, Zahl, Datum */
 .dash-abf .dash-zeile { grid-template-columns: minmax(0, 1fr) 58px 52px 58px; }             /* Abfüllung, Flaschen, je Fl., übrig */
 .dash-roh .dash-zeile { grid-template-columns: minmax(0, 1fr) 66px 62px 66px 52px; }       /* Zeitraum, Umsatz, Kosten, Rohertrag, Marge */
+.dash-rohabf .dash-zeile { grid-template-columns: minmax(0, 1fr) 66px 66px 52px; }         /* Abfüllung, Umsatz, Rohertrag, Marge */
 .dash-weg .dash-zeile { grid-template-columns: minmax(0, 1fr) 72px 84px; }                 /* Art oder Monat, Flaschen, Herstellkosten */
-.dash-bleibt .dash-zeile { grid-template-columns: minmax(0, 1fr) 80px 70px 80px; }         /* Jahr, Rohertrag, ohne Verkauf weg, bleibt */
+.dash-bleibt .dash-zeile { grid-template-columns: minmax(0, 1fr) 74px 62px 74px; }         /* Jahr oder Abfüllung, Rohertrag, ohne Verkauf weg, bleibt */
 .dash-rohkan .dash-zeile { grid-template-columns: minmax(0, 1fr) 50px 66px 52px 44px; }    /* Kanal, je Fl., Rohertrag, Marge, Anteil */
 .dash-zeile > :not(.dash-balken) { position: relative; z-index: 1; }
 .dash-balken { position: absolute; left: 0; top: 2px; bottom: 2px; z-index: 0; border-radius: 6px; background: rgba(255, 255, 255, 0.075); }
@@ -1368,6 +1369,10 @@ body.mit-leiste::after {
   .dash-roh .dash-zeile > :nth-last-child(3) { display: none; }
   .dash-rohkan .dash-zeile { grid-template-columns: minmax(0, 1fr) 46px 62px 50px; }
   .dash-rohkan .dash-zeile > :last-child { display: none; }
+  .dash-rohabf .dash-zeile { grid-template-columns: minmax(0, 1fr) 62px 50px; }
+  .dash-rohabf .dash-zeile > :nth-last-child(3) { display: none; }
+  .dash-bleibt .dash-zeile { grid-template-columns: minmax(0, 1fr) 72px 72px; }
+  .dash-bleibt .dash-zeile > :nth-last-child(2) { display: none; }
   .dash-jahre .dash-zeile { grid-template-columns: minmax(0, 1fr) 54px 66px 50px; }
   .dash-jahre .dash-zeile > :last-child, .dash-jahre .dash-zeile > :nth-last-child(2) { display: none; }
   .dash-bestellung { grid-template-columns: 44px minmax(0, 1fr) auto 58px; column-gap: 6px; }

@@ -28,7 +28,9 @@ function rechnungOhnePosition(text) {
 /**
  * Tab Verkäufe (Zeilen A–L, erste Zeile Kopf) → [{zeile, monat, datum, kanal, kunde, flaschen, umsatz, standort, rechnung}].
  * monat = Rechnungsmonat aus A (sonst aus B), datum = B oder null (Altliste). Gutschriften bleiben negativ.
- * Zeilen ohne Flaschen fallen still weg, Zeilen ohne lesbaren Monat mit Hinweis. Unlesbarer Umsatz zählt als 0 € (mit Hinweis).
+ * Zeilen ohne Flaschen fallen weg (Flaschen 0 heißt im Sheet: Die Zeile zählt nicht), still, solange dort auch kein
+ * Umsatz steht; steht einer drin, mit Hinweis, damit kein Geld unbemerkt fehlt. Zeilen ohne lesbaren Monat fallen mit
+ * Hinweis weg. Unlesbarer Umsatz zählt als 0 € (mit Hinweis).
  */
 function verkaeufeLesen(zeilen, formatieren) {
   const kopf = (zeilen && zeilen[0]) || [];
@@ -43,6 +45,8 @@ function verkaeufeLesen(zeilen, formatieren) {
     if (flaschen === null || flaschen === 0) {
       if (z[VK.FLASCHEN] !== '' && z[VK.FLASCHEN] !== undefined && z[VK.FLASCHEN] !== null && flaschen === null) {
         hinweise.push('Verkäufe Zeile ' + (i + 1) + ': Flaschen unlesbar, zählt nicht.');
+      } else if (betragLesen(z[VK.UMSATZ])) {
+        hinweise.push('Verkäufe Zeile ' + (i + 1) + ': Umsatz ohne Flaschen, zählt nicht.');
       }
       continue;
     }

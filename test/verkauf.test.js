@@ -52,6 +52,15 @@ test('Verkäufe lesen: unlesbarer Umsatz zählt als 0 € und wird gemeldet, ein
   assert.deepStrictEqual(roh(r.hinweise), ['Verkäufe Zeile 2: Umsatz unlesbar, zählt als 0 €.', 'Verkäufe Zeile 3: Umsatz unlesbar, zählt als 0 €.']);
 });
 
+test('Verkäufe lesen: Zeile ohne Flaschen zählt nicht; steht dort ein Umsatz, wird das gemeldet (Codex v34)', () => {
+  // Flaschen 0 heißt im Sheet „zählt nicht“ (so werden Zeilen stillgelegt). Mit Umsatz 0 oder leer bleibt das still.
+  const zeilen = [D.verkaufKopf(), D.altzeile(2026, 8, 'Karlsruhe', 'Bar Eins', 0, 50), D.altzeile(2026, 8, 'Karlsruhe', 'Bar Zwei', 0, 0),
+    D.altzeile(2026, 8, 'Karlsruhe', 'Bar Drei', '', '12,50 €'), D.altzeile(2026, 8, 'Karlsruhe', 'Bar Vier', 0, ''), D.altzeile(2026, 8, 'Karlsruhe', 'Bar Fünf', 10, 20)];
+  const r = k.verkaeufeLesen(zeilen, D.berlin);
+  assert.deepStrictEqual(roh(r.verkaeufe.map((v) => [v.kunde, v.flaschen, v.umsatz])), [['Bar Fünf', 10, 20]]);
+  assert.deepStrictEqual(roh(r.hinweise), ['Verkäufe Zeile 2: Umsatz ohne Flaschen, zählt nicht.', 'Verkäufe Zeile 4: Umsatz ohne Flaschen, zählt nicht.']);
+});
+
 test('Auswertung: 13 Monate inkl. laufendem, letzte 12 volle Monate, laufendes Jahr, Kunden zusammengefasst', () => {
   const v = k.verkaeufeLesen(verkaufZeilen(), D.berlin).verkaeufe;
   const a = roh(k.verkaeufeAuswerten(v, '2026-11-08'));

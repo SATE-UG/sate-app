@@ -318,7 +318,7 @@ test('PWA: Dashboard (v30, erweitert in v31) – Kapsel auf dem Start, eigenes B
   // Seit v31: viele weitere Abschnitte zum Runterscrollen, jede Tabellenart hat ihre Spalten, Gruppen als Überschriften
   assert.match(ansichten, /H\.dashboardMehr\(a\.zeilen, a\.werte, a\.heute, k\.flaschenProKiste, u\.abfuellungen, lagerStand\)/);
   const arten = Array.from(new Set(Array.from(ansichten.matchAll(/dashTabelle\('([a-z0-9]+)/g), (m) => m[1])));
-  assert.deepStrictEqual(arten.sort(), ['abf', 'bleibt', 'gr', 'jahre', 'kan', 'lager', 'preis', 'roh', 'rohkan', 's5', 'top', 'vj', 'weg']);
+  assert.deepStrictEqual(arten.sort(), ['abf', 'bleibt', 'gr', 'jahre', 'kan', 'lager', 'preis', 'roh', 'rohabf', 'rohkan', 's5', 'top', 'vj', 'weg']);
   arten.forEach((art) => assert.match(dash, new RegExp('\\.dash-' + art + ' \\.dash-zeile \\{ grid-template-columns: '), art));
   assert.strictEqual((ansichten.match(/class: 'dash-gruppe'/g) || []).length, 8, 'fünf Gruppen, dazu Rohertrag und Marge und (seit v33) Ohne Verkauf weg mit und ohne Abgänge');
   // Seit v33: Was ohne Verkauf wegging, ist nicht „neutral“, sondern steht mit seinen Herstellkosten in einer eigenen Statistik
@@ -328,6 +328,13 @@ test('PWA: Dashboard (v30, erweitert in v31) – Kapsel auf dem Start, eigenes B
   // Die Marge bezieht sich nur auf verkaufte Flaschen (Mark, 2026-11-10): nach den Abgängen gibt es keinen Prozentwert
   assert.doesNotMatch(ansichten, /nj\.marge|nach\.[a-z]+\.marge|Rohertrag nach Abgängen/);
   assert.doesNotMatch(lies('docs/hilfen.js'), /marge: bleibt/);
+  // Seit v34: dasselbe je Abfüllung (Marge nur aus ihren verkauften Flaschen, „bleibt“ nur in Euro), und die alte Lücke
+  // steht für sich: Sie zählt zu keinem Jahr und keiner Abfüllung
+  assert.match(ansichten, /dashTitel\('Rohertrag je Abfüllung', 'nur verkaufte Flaschen'\)/);
+  assert.match(ansichten, /dashTitel\('Was je Abfüllung bleibt'/);
+  assert.match(ansichten, /dashTitel\('Wohin die Flaschen gingen'/);
+  assert.match(ansichten, /const lueckeName = \(flaschen\) => \(flaschen < 0 \? 'Altes Plus' : 'Alte Lücke'\);/);
+  assert.match(lies('docs/hilfen.js'), /art: x\[2\] === '' \? 'Lücke' : 'Schwund'/);
   // Herstellkosten (v32): je Abfüllung aus dem Sheet (Spalte E im Tab Abfüllungen), verteilt nach First in, First out.
   // Im öffentlichen Repo steht keine Kostenzahl: nur der Spaltenkopf, das Eingabefeld und die Rechnung.
   const konfig = lies('api/src/Konfig.js');

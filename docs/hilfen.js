@@ -1376,8 +1376,11 @@
    * - Geht mehr weg, als abgefüllt im Sheet steht, rechnet der Überhang mit den Kosten der letzten Abfüllung (`ueber`).
    * Rückgabe { kosten: je Verkaufszeile Euro (ungerundet) oder null, wenn eine berührte Abfüllung keine Kosten hat,
    *   abgang: je Abgang dasselbe, schichten: je { name, monat, flaschen, kosten, verbraucht, rest }, ueber, mehr,
-   *   uebrig (Reste + mehr − ueber), fehlt: Namen berührter Abfüllungen ohne Kosten }. Immer gilt: uebrig = abgefüllt −
-   *   verkauft − Abgänge.
+   *   uebrig (Reste + mehr − ueber), fehlt: Namen berührter Abfüllungen ohne Kosten,
+   *   teile: je Verkaufszeile, aus welchen Abfüllungen ihre Flaschen kamen, als [[Schicht, Flaschen], …] (Schicht −1 =
+   *   Mehrbestand vor der ersten, n = Überhang nach der letzten; Flaschen mit Minus, wenn sie zurückkamen; eine Zeile
+   *   ohne Flaschen bekommt [[Schicht, 0]] mit der Abfüllung, die an ihrem Tag dran war), abgangTeile: je Abgang
+   *   dasselbe (ohne gültiges Datum leer) }. Immer gilt: uebrig = abgefüllt − verkauft − Abgänge.
    */
   function fifoKosten(zeilen, schichten, abgaenge) {
     const liste = Array.isArray(zeilen) ? zeilen : [];
@@ -1397,10 +1400,10 @@
     };
     // q > 0 Flaschen gehen weg: erst der Mehrbestand, dann die älteste Abfüllung mit Rest, zuletzt der Überhang.
     // `stapel` merkt sich, woher sie kamen (zuletzt Genommenes oben), getrennt für Verkäufe und Abgänge.
-    const nehmen = (q, stapel) => {
+    const nehmen = (q, stapel, teile) => {
       const merker = { offen: false };
       let k = 0;
-      const teil = (i, weg) => { stapel.push([i, weg]); k += wert(i, weg, merker); q = glatt(q - weg); };
+      const teil = (i, weg) => { stapel.push([i, weg]); teile.push([i, weg]); k += wert(i, weg, merker); q = glatt(q - weg); };
       if (mehr > KLEIN && q > KLEIN) { const weg = Math.min(q, mehr); mehr = glatt(mehr - weg); teil(-1, weg); }
       for (let i = 0; i < n && q > KLEIN; i++) {
         const weg = Math.min(q, rest[i]);
@@ -1410,7 +1413,7 @@
       return merker.offen ? null : k;
     };
     // q > 0 Flaschen kommen zurück: die zuletzt über diesen Stapel weggegangenen zuerst, der Rest wird Mehrbestand
-    const zurueck = (q, stapel) => {
+    const zurueck = (q, stapel, teile) => {
       const merker = { offen: false };
       let k = 0;
       while (q > KLEIN && stapel.length) {
@@ -1419,11 +1422,18 @@
         oben[1] = glatt(oben[1] - m);
         if (oben[1] <= KLEIN) stapel.pop();
         if (oben[0] < 0) mehr = glatt(mehr + m); else if (oben[0] >= n) ueber = glatt(ueber - m); else rest[oben[0]] = glatt(rest[oben[0]] + m);
+        teile.push([oben[0], -m]);
         k += wert(oben[0], m, merker);
         q = glatt(q - m);
       }
-      if (q > KLEIN) { mehr = glatt(mehr + q); k += wert(-1, q, merker); }
+      if (q > KLEIN) { mehr = glatt(mehr + q); teile.push([-1, -q]); k += wert(-1, q, merker); }
       return merker.offen ? null : k;
+    };
+    // Woraus die nächste Flasche käme: Mehrbestand (−1), die älteste Abfüllung mit Rest oder der Überhang (n)
+    const dran = () => {
+      if (mehr > KLEIN) return -1;
+      for (let i = 0; i < n; i++) if (rest[i] > KLEIN) return i;
+      return n;
     };
     const monatsende = (m) => tagePlus(monatPlus(m, 1) + '-01', -1);
     // Reihenfolge rein nach dem Tag: Weicht der Monat einer Rechnung von ihrem Datum ab, zählt das Datum
@@ -1434,15 +1444,21 @@
       .sort((x, y) => (x.wann < y.wann ? -1 : x.wann > y.wann ? 1 : x.art - y.art || x.nr - y.nr));
     const kosten = liste.map(() => 0);
     const abgang = ab.map(() => 0);
+    const teile = [liste.map(() => []), ab.map(() => [])]; // Verkäufe, Abgänge: woher die Flaschen jedes Ereignisses kamen
     const stapel = [[], []]; // Verkäufe, Abgänge
     ereignisse.forEach((x) => {
       const q = x.menge;
-      if (!istZahl(q) || q === 0 || !n) { if (!n && istZahl(q) && q !== 0) (x.art ? abgang : kosten)[x.nr] = null; return; }
-      const k = q > 0 ? nehmen(q, stapel[x.art]) : zurueck(-q, stapel[x.art]);
+      if (!istZahl(q) || q === 0 || !n) {
+        if (!n && istZahl(q) && q !== 0) (x.art ? abgang : kosten)[x.nr] = null;
+        // Verkaufszeile ohne Flaschen (nur Geld): gehört zu der Abfüllung, die an ihrem Tag dran war
+        else if (n && !x.art) teile[0][x.nr].push([dran(), 0]);
+        return;
+      }
+      const k = q > 0 ? nehmen(q, stapel[x.art], teile[x.art][x.nr]) : zurueck(-q, stapel[x.art], teile[x.art][x.nr]);
       (x.art ? abgang : kosten)[x.nr] = k === null ? null : q > 0 ? k : -k;
     });
     return {
-      kosten: kosten, abgang: abgang,
+      kosten: kosten, abgang: abgang, teile: teile[0], abgangTeile: teile[1],
       schichten: schichten.map((x, i) => ({ name: x.name, monat: x.monat, flaschen: x.flaschen, kosten: x.kosten,
         verbraucht: runde(x.flaschen - rest[i]), rest: runde(rest[i]) })),
       ueber: runde(ueber), mehr: runde(mehr), fehlt: Object.keys(fehlt),
@@ -1499,13 +1515,23 @@
    *     `lager.abgaenge` = [[Datum, Flaschen, Art]] (Promo, Eigenverbrauch, Bruch) und `lager.schwund` = [[Datum,
    *     Flaschen, Standort]] (jede Nachzählung an ihrem Tag, mit leerem Standort die Lücke vom Anfang; negativ, wenn
    *     mehr da war). { anzahl (Ereignisse), jahr, vorjahr, gesamt (je { flaschen, kosten }), arten: je Art dasselbe,
-   *     monate: die letzten zwölf Monate mit Abgängen }; null, wenn die Schnittstelle die Felder noch nicht kennt.
+   *     luecke, monate: die letzten zwölf Monate mit Abgängen }; null, wenn die Schnittstelle die Felder noch nicht kennt.
+   *     `luecke` ({ datum, flaschen, kosten } oder null) ist die alte Lücke (seit v34 für sich): Flaschen, die schon
+   *     fehlten, als zum ersten Mal alle Lager gezählt waren. Niemand weiß, wann und aus welcher Abfüllung sie
+   *     weggingen. Sie zählt nur in `gesamt`, nicht in `jahr`, `vorjahr`, `arten` oder `monate`.
    *     `nach`: je Zeitraum { rohertrag, abgaenge (Kosten), flaschen, bleibt (Rohertrag − Abgänge, nur in Euro: die
    *     Marge bezieht sich immer nur auf verkaufte Flaschen), proFlasche (Abgänge je verkaufter Flasche) } oder null
    *     wie `verluste`.
-   *     `flaschen`: der Abgleich { abgefuellt, verkauft, abgaenge, schwund, uebrig }, es gilt immer abgefuellt −
-   *     verkauft − abgaenge − schwund = uebrig. `mehr` (Flaschen, die zurückkamen oder gefunden wurden, ohne dass eine
-   *     Abfüllung sie zurücknehmen konnte),
+   *     `flaschen`: der Abgleich { abgefuellt, verkauft, abgaenge, schwund, luecke, uebrig }, es gilt immer abgefuellt −
+   *     verkauft − abgaenge − schwund − luecke = uebrig. `mehr` (Flaschen, die zurückkamen oder gefunden wurden, ohne
+   *     dass eine Abfüllung sie zurücknehmen konnte),
+   *     `abfuellungen` (seit v34): je Abfüllung { name, monat, abgefuellt, rest } und der Posten ihrer verkauften
+   *     Flaschen (flaschen, umsatz, kosten, rohertrag, marge, … wie oben; Umsatz einer Zeile aus zwei Abfüllungen
+   *     anteilig nach Flaschen; Umsatz und Kosten so auf den Cent gerundet, dass die Abfüllungen zusammen genau
+   *     `gesamt` ergeben, jede höchstens einen Cent neben ihrem genauen Wert), dazu `weg` ({ flaschen,
+   *     kosten }: was aus ihr ohne Verkauf wegging, ohne die alte Lücke), `luecke` (Flaschen der alten Lücke aus ihr)
+   *     und `bleibt` (Rohertrag − weg.kosten). Es gilt abgefuellt = flaschen + weg.flaschen + luecke + rest, solange
+   *     nichts über die Abfüllungen hinaus oder am Mehrbestand vorbei lief.
    *     `ueber` (mehr verkauft als abgefüllt), `fehlt` (berührte Abfüllungen ohne Kosten) und `abweichung` (Flaschen, um
    *     die die Schichten über der Summe im Tab Abfüllungen liegen, weil eine Minus-Zeile zu keiner Abfüllung passt) }.
    */
@@ -1675,7 +1701,11 @@
     const zahlProKunde = Object.create(null);
     best.forEach((b) => { zahlProKunde[b.schluessel] = (zahlProKunde[b.schluessel] || 0) + 1; });
     const treu = za.kunden.reduce((x, k) => ((zahlProKunde[k.schluessel] || 0) > (x ? x.anzahl : 0) ? { kunde: k.kunde, anzahl: zahlProKunde[k.schluessel] } : x), null);
-    aus.gesamt.mehrfach = Object.keys(zahlProKunde).filter((s2) => zahlProKunde[s2] >= 2).length;
+    // nur Kunden, die auch in `gesamt.kunden` zählen (Flaschen unter dem Strich im Plus): Wer alles gutgeschrieben
+    // bekam, steht weder dort noch hier
+    const zaehlt = Object.create(null);
+    za.kunden.forEach((k) => { if (k.flaschen > 0) zaehlt[k.schluessel] = true; });
+    aus.gesamt.mehrfach = Object.keys(zahlProKunde).filter((s2) => zaehlt[s2] && zahlProKunde[s2] >= 2).length;
     const gk = za.kunden.length && za.kunden[0].flaschen > 0 ? za.kunden[0] : null;
     const gb = best.reduce((x, b) => (!x || b.flaschen > x.flaschen ? b : x), null);
     aus.rekorde = { monatFlaschen: mf ? { monat: mf.monat, flaschen: mf.flaschen } : null, monatUmsatz: mu ? { monat: mu.monat, umsatz: mu.umsatz } : null,
@@ -1699,10 +1729,16 @@
       const ereignisse = (lager && Array.isArray(lager.abgaenge) ? lager.abgaenge : []).filter((x) => gueltig(x) && x[1] > 0)
         .map((x) => ({ datum: x[0], flaschen: x[1], art: GEBUCHT.indexOf(x[2]) >= 0 ? x[2] : 'Sonstiges' }))
         .concat((lager && Array.isArray(lager.schwund) ? lager.schwund : []).filter((x) => gueltig(x) && x[1] !== 0)
-          .map((x) => ({ datum: x[0], flaschen: x[1], art: 'Schwund' })));
+          // Ohne Standort: die alte Lücke. Diese Flaschen fehlten schon, als zum ersten Mal alle Lager gezählt waren.
+          // Wann und aus welcher Abfüllung sie weggingen, weiß niemand: Sie brauchen die Abfüllungen am Zähltag auf
+          // (damit die Mengen stimmen), ihr Geld steht aber für sich und zählt zu keinem Jahr und keiner Abfüllung.
+          .map((x) => ({ datum: x[0], flaschen: x[1], art: x[2] === '' ? 'Lücke' : 'Schwund' })));
       // „Sonstiges“ nur, wenn die Schnittstelle eine Art schickt, die die App nicht kennt
       const VERLUST_ARTEN = GEBUCHT.concat(ereignisse.some((e) => e.art === 'Sonstiges') ? ['Sonstiges'] : [], ['Schwund']);
-      const fifo = fifoKosten(zeilen, schichten, ereignisse);
+      // Zeilen nach dem laufenden Monat zählen nirgends mit (die App lässt sie schon in verkaufZeilen weg): auch
+      // nicht in der Warteschlange, sonst gingen Abfüllungen und Abgleich nicht auf
+      const zaehltMit = (z) => !(z.monat > jetzt);
+      const fifo = fifoKosten(zeilen.map((z) => (zaehltMit(z) ? z : Object.assign({}, z, { flaschen: 0 }))), schichten, ereignisse);
       const vLeer = () => ({ flaschen: 0, kosten: 0, offen: false });
       const vDazu = (x, e, k) => { x.flaschen += e.flaschen; if (k === null) x.offen = true; else x.kosten += k; };
       const vFertig = (x) => ({ flaschen: runde(x.flaschen), kosten: x.offen ? null : runde(x.kosten) });
@@ -1710,8 +1746,12 @@
       VERLUST_ARTEN.forEach((art) => { vArt[art] = { jahr: vLeer(), vorjahr: vLeer(), gesamt: vLeer() }; });
       const vAlle = { jahr: vLeer(), vorjahr: vLeer(), gesamt: vLeer() };
       const vMonat = Object.create(null);
+      const vLuecke = vLeer();
+      let lueckeAm = '';
       ereignisse.forEach((e, i) => {
         const k = fifo.abgang[i];
+        // Die alte Lücke zählt nur zu „seit dem Start“: zu keinem Jahr, keinem Monat und keiner Art
+        if (e.art === 'Lücke') { vDazu(vLuecke, e, k); vDazu(vAlle.gesamt, e, k); if (e.datum > lueckeAm) lueckeAm = e.datum; return; }
         const j = Number(e.datum.slice(0, 4));
         const zeitraum = j === jahr ? 'jahr' : j === jahr - 1 ? 'vorjahr' : null;
         [vArt[e.art], vAlle].forEach((ziel) => {
@@ -1724,6 +1764,7 @@
       const verluste = !bekannt ? null : Object.assign(dreifach(vAlle), {
         anzahl: ereignisse.length,
         arten: VERLUST_ARTEN.map((art) => Object.assign({ art: art }, dreifach(vArt[art]))),
+        luecke: lueckeAm ? Object.assign({ datum: lueckeAm }, vFertig(vLuecke)) : null,
         // die letzten zwölf Monate, in denen etwas wegging (neuester zuerst, auch der laufende)
         monate: Object.keys(vMonat).sort().reverse().slice(0, 12).map((m) => Object.assign({ monat: m }, vFertig(vMonat[m]))),
       });
@@ -1752,8 +1793,28 @@
       const monS = Object.create(null);
       const kanS = Object.create(null);
       const kunS = Object.create(null);
+      // Je Abfüllung (seit v34): ihre verkauften Flaschen mit Umsatz und Kosten, was aus ihr ohne Verkauf wegging und
+      // die Flaschen der alten Lücke. Mehrbestand zählt zur ersten, Überhang zur letzten Abfüllung (wie bei den Kosten).
+      const schS = schichten.map(() => ({ verkauf: leer(), weg: vLeer(), luecke: vLeer() }));
+      const zuSchicht = (i) => Math.max(0, Math.min(schichten.length - 1, i));
+      const teilDazu = (x, i, menge) => {
+        x.flaschen += menge;
+        if (menge === 0) return;
+        if (schichten[i].kosten === null) x.offen = true; else x.kosten += menge * schichten[i].kosten;
+      };
+      ereignisse.forEach((e, nr) => fifo.abgangTeile[nr].forEach((t) => {
+        const i = zuSchicht(t[0]);
+        teilDazu(schS[i][e.art === 'Lücke' ? 'luecke' : 'weg'], i, t[1]);
+      }));
       zeilen.forEach((z, i) => {
         if (z.monat > jetzt) return;
+        // Umsatz einer Zeile aus zwei Abfüllungen: anteilig nach Flaschen, ungerundet (gerundet wird erst die Summe je
+        // Abfüllung, siehe `aufCent`; so kann kein Teil einer Zeile das Vorzeichen wechseln)
+        fifo.teile[i].forEach((t) => {
+          const s = zuSchicht(t[0]);
+          schS[s].verkauf.umsatz += z.flaschen !== 0 ? z.umsatz * (t[1] / z.flaschen) : z.umsatz;
+          teilDazu(schS[s].verkauf, s, t[1]);
+        });
         dazu(gesS, z, i);
         dazu(monS[z.monat] = monS[z.monat] || leer(), z, i);
         const j = Number(z.monat.slice(0, 4));
@@ -1801,10 +1862,35 @@
       // Flaschen-Abgleich: abgefüllt − verkauft − gebucht weg − Schwund = übrig (Reste, dazu der Mehrbestand, ohne Überhang)
       const abgefuellt = schichten.reduce((x, y) => x + y.flaschen, 0);
       const summeArt = (arten) => ereignisse.reduce((x, e) => x + (arten(e.art) ? e.flaschen : 0), 0);
-      const flaschen = { abgefuellt: runde(abgefuellt), verkauft: runde(zeilen.reduce((x, z) => x + z.flaschen, 0)),
-        abgaenge: runde(summeArt((art) => art !== 'Schwund')), schwund: runde(summeArt((art) => art === 'Schwund')),
-        uebrig: fifo.uebrig };
-      aus.marge = { schichten: fifo.schichten, aktuell: aktuell, ueber: fifo.ueber, fehlt: fifo.fehlt, abweichung: abweichung,
+      const flaschen = { abgefuellt: runde(abgefuellt), verkauft: runde(zeilen.reduce((x, z) => x + (zaehltMit(z) ? z.flaschen : 0), 0)),
+        abgaenge: runde(summeArt((art) => art !== 'Schwund' && art !== 'Lücke')), schwund: runde(summeArt((art) => art === 'Schwund')),
+        luecke: runde(summeArt((art) => art === 'Lücke')), uebrig: fifo.uebrig };
+      // Beträge so auf den Cent runden, dass sie zusammen genau `ziel` ergeben: abrunden, die fehlenden Cent gehen an
+      // die größten Reste. Jeder Betrag weicht höchstens einen Cent von seinem genauen Wert ab. Passt die Summe nicht
+      // zum Ziel (nur bei kaputten Eingaben), null: Dann rundet jeder Betrag für sich.
+      const aufCent = (werte, ziel) => {
+        const genau = werte.map((x) => x * 100);
+        const cent = genau.map((x) => Math.floor(x + 1e-6));
+        const fehlen = Math.round(ziel * 100) - cent.reduce((x, y) => x + y, 0);
+        if (fehlen < 0 || fehlen > cent.length) return null;
+        genau.map((x, i) => ({ i: i, rest: x - cent[i] })).sort((a, b) => b.rest - a.rest || a.i - b.i).slice(0, fehlen).forEach((x) => { cent[x.i] += 1; });
+        return cent.map((x) => x / 100);
+      };
+      // Umsatz und Kosten der verkauften Flaschen: Die Abfüllungen ergeben zusammen genau `gesamt` (3,01 € über zwei
+      // Abfüllungen sind 1,51 € + 1,50 €, nicht zweimal 1,51 €)
+      const umsatzCent = aufCent(schS.map((x) => x.verkauf.umsatz), runde(gesS.umsatz));
+      if (umsatzCent) schS.forEach((x, i) => { x.verkauf.umsatz = umsatzCent[i]; });
+      const kostenCent = gesS.offen || schS.some((x) => x.verkauf.offen) ? null : aufCent(schS.map((x) => x.verkauf.kosten), runde(gesS.kosten));
+      if (kostenCent) schS.forEach((x, i) => { x.verkauf.kosten = kostenCent[i]; });
+      // Je Abfüllung: Rohertrag und Marge nur aus ihren verkauften Flaschen; `bleibt` zieht ab, was aus ihr ohne
+      // Verkauf wegging (Promo, Eigenverbrauch, Bruch, Schwund). Die alte Lücke geht nur als Flaschen ein, nicht als Geld.
+      const jeAbfuellung = fifo.schichten.map((s, i) => {
+        const r = roh(schS[i].verkauf);
+        const weg = vFertig(schS[i].weg);
+        return Object.assign({ name: s.name, monat: s.monat, abgefuellt: s.flaschen, rest: s.rest }, r, { weg: weg, luecke: runde(schS[i].luecke.flaschen),
+          bleibt: r.rohertrag === null || weg.kosten === null ? null : runde(r.rohertrag - weg.kosten) });
+      });
+      aus.marge = { schichten: fifo.schichten, abfuellungen: jeAbfuellung, aktuell: aktuell, ueber: fifo.ueber, fehlt: fifo.fehlt, abweichung: abweichung,
         verluste: verluste, mehr: fifo.mehr, flaschen: flaschen,
         jahr: roh(jahrS), vorjahr: vorDa ? roh(vorS) : null, gesamt: roh(gesS), monate: mMonate,
         kanaele: mitAnteil(zj.kanaele.map((x) => Object.assign({ kanal: x.kanal }, roh(kanS[x.kanal] || leer()))).filter(zeigt)),
