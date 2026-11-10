@@ -60,9 +60,21 @@
     return h(tag, {}, h('strong', { text: fett }), rest ? ' ' + rest : null);
   }
 
-  /** Segmented Control (iOS): zwei oder drei Knöpfe in einer Pille, gewählter hell. `wahl` = [[wert, text], …]. */
+  /**
+   * Segmented Control (iOS): zwei oder drei Knöpfe in einer Pille, hinter dem gewählten ein heller Daumen.
+   * `wahl` = [[wert, text], …]. Die Knöpfe werden bei jeder Wahl neu gebaut; der Daumen gleitet trotzdem von der alten
+   * zur neuen Stelle, weil die Stellen als --von und --auf mitgehen (Animation in style.css).
+   */
+  const segmentStelle = Object.create(null); // je Gruppe: wo der Daumen zuletzt stand
   function umschalter(gruppe, wahl, aktuell, beiWahl) {
-    return h('div', { class: 'segment', role: 'group', 'aria-label': gruppe },
+    const auf = Math.max(0, wahl.findIndex(([wert]) => wert === aktuell));
+    const von = gruppe in segmentStelle ? segmentStelle[gruppe] : auf;
+    segmentStelle[gruppe] = auf;
+    const leiste = h('div', { class: 'segment', role: 'group', 'aria-label': gruppe });
+    leiste.style.setProperty('--n', String(wahl.length));
+    leiste.style.setProperty('--von', String(von));
+    leiste.style.setProperty('--auf', String(auf));
+    return S.fuellen(leiste,
       wahl.map(([wert, text]) => h('button', {
         type: 'button', 'aria-pressed': wert === aktuell ? 'true' : 'false', 'data-gruppe': gruppe, 'data-wert': wert, text: text,
         onclick: () => {
@@ -208,7 +220,7 @@
         e.currentTarget.setAttribute('aria-expanded', Z.rechenwegOffen ? 'true' : 'false');
         liste.hidden = !Z.rechenwegOffen;
       },
-    }, h('span', { text: 'So rechnet die App' }), h('span', { class: 'chevron klapp-pfeil', 'aria-hidden': 'true', text: '›' })), liste];
+    }, h('span', { text: 'So rechnet die App' }), h('span', { class: 'chevron klapp-pfeil', 'aria-hidden': 'true' })), liste];
   }
 
   /** Bestell-Karte (seit v24): Status, Termin groß mit „in … Tagen“, eine Prognose-Linie, darunter der Rechenweg (zugeklappt). */
@@ -234,7 +246,7 @@
   /** Kennzahl als Knopf (springt in die Details): Label mit Pfeil, große Zahl, Zusatz, optional Chip oder Balken. */
   function kennzahl(label, wert, zusatz, extra, beiKlick, vorlesen) {
     return h('button', { type: 'button', class: 'kachel kachel-knopf', onclick: beiKlick, 'aria-label': vorlesen },
-      h('span', { class: 'kachel-label' }, label, h('span', { class: 'kachel-pfeil', 'aria-hidden': 'true', text: '›' })),
+      h('span', { class: 'kachel-label' }, label, h('span', { class: 'kachel-pfeil', 'aria-hidden': 'true' })),
       h('span', { class: 'kachel-wert', text: wert }),
       zusatz ? h('span', { class: 'kachel-zusatz', text: zusatz }) : null,
       extra);
@@ -311,7 +323,7 @@
       h('span', { class: 'zeilen-karte-text' },
         h('strong', { text: z.kunden.length ? z.kunden.length + (z.kunden.length === 1 ? ' Kunde' : ' Kunden') + ' dieses Jahr' : 'Kunden' }),
         teile.length ? h('span', { text: teile.join(', ') }) : null),
-      h('span', { class: 'chevron', 'aria-hidden': 'true', text: '›' }));
+      h('span', { class: 'chevron', 'aria-hidden': 'true' }));
   }
 
   /**
@@ -327,7 +339,7 @@
       h('span', { class: 'hinweis-symbol', 'aria-hidden': 'true' }, S.icon('inventur')),
       h('span', { class: 'hinweis-text' }, h('strong', { text: 'Jahresinventur zum 31.12.' + stichtag.slice(0, 4) }),
         h('span', { text: fertig + ' von ' + u.lager.length + ' Lagern gezählt.' + (heute >= stichtag ? ' Jetzt zählen und eintragen.' : ' Am 1.1. zählen.') })),
-      h('span', { class: 'chevron', 'aria-hidden': 'true', text: '›' }));
+      h('span', { class: 'chevron', 'aria-hidden': 'true' }));
   }
 
   /** Eine Zeile „Zuletzt passiert“: Rechnung (Kunde, Flaschen) oder Buchung (Art, Lager, wer). */
@@ -474,7 +486,7 @@
 
   // Karte „Dieses Jahr“: Summe Januar bis heute, Vergleich volle Monate, Linien kumuliert -------------------------
 
-  const KM = { breite: 340, hoehe: 150, links: 30, unten: 20, oben: 14 };
+  const KM = { breite: 340, hoehe: 150, links: 40, unten: 20, oben: 14 };
 
   function kumulDiagramm(jv, g) {
     const d = H.kumuliert(jv.monate, 'dieses', g);
@@ -487,8 +499,8 @@
     const pv = punkte(v);
     const svg = s('svg', { viewBox: '0 0 ' + KM.breite + ' ' + KM.hoehe, class: 'diagramm kumul', 'aria-hidden': 'true', focusable: 'false' });
     svg.append(s('defs', {}, s('linearGradient', { id: 'kumul-flaeche', x1: 0, y1: 0, x2: 0, y2: 1 },
-      s('stop', { offset: 0, 'stop-color': '#E8C547', 'stop-opacity': 0.26 }),
-      s('stop', { offset: 1, 'stop-color': '#E8C547', 'stop-opacity': 0 }))));
+      s('stop', { class: 'kumul-stopp', offset: 0, 'stop-opacity': 0.26 }),
+      s('stop', { class: 'kumul-stopp', offset: 1, 'stop-opacity': 0 }))));
     gitter(svg, KM, r);
     [0, 3, 6, 9, 11].forEach((i) => {
       svg.append(s('text', { x: x(i), y: r.basis + 14, 'text-anchor': 'middle', class: 'monat', text: H.monatFormat(jv.monate[i].monat) }));
@@ -536,9 +548,9 @@
   }
   function jahrAnfang(monat) { return monat.slice(0, 4) + '-01'; }
 
-  // Monate: Balkenpaare Vorjahr (links, grau) | Dieses Jahr (rechts, hell; gewählt gelb) ---------------------------
+  // Monate: Balkenpaare Vorjahr (links, grau) | Dieses Jahr (rechts, hell; gewählt Akzent) -------------------------
 
-  const GM = { breite: 340, hoehe: 184, links: 30, unten: 20, oben: 20 };
+  const GM = { breite: 340, hoehe: 184, links: 38, unten: 20, oben: 20 };
 
   /**
    * Gewählter Monat als `JJJJ-MM`: gemerkt (dieses Jahr oder Vorjahr), sonst der letzte volle Monat – im Januar also der
@@ -650,7 +662,7 @@
       gruppen.push(gr);
       svg.append(gr);
     });
-    /** Monat `i` wählen: Info oben neu, gelb markieren, Wert über dem Balken; `nachher(i)` z. B. für die Pfeile. */
+    /** Monat `i` wählen: Info oben neu, farbig markieren, Wert über dem Balken; `nachher(i)` z. B. für die Pfeile. */
     function waehle(i) {
       if (!(i >= 0 && i < jv.monate.length)) return;
       Z.monatWahl = jv.monate[i].monat;
@@ -682,13 +694,13 @@
       // Die Live-Region wurde mit neu gezeichnet: den neuen Monat ausdrücklich ansagen (VoiceOver)
       S.ansagen(H.monatName(monat) + ' ' + monat.slice(0, 4) + (monat.slice(0, 4) === String(a.jv.jahr) ? ', dieses Jahr' : ', Vorjahr'));
     };
-    // Pfeile ‹ › zum Blättern: große Tippflächen (die Monate im Diagramm sind bei 12 Spalten nur ~25 px breit)
+    // Pfeile links/rechts zum Blättern: große Tippflächen (die Monate im Diagramm sind bei 12 Spalten nur ~25 px breit)
     const zurueck = h('button', { type: 'button', class: 'rund', 'aria-label': 'Monat davor',
       onclick: () => (i > 0 ? svg.waehle(i - 1) : !mj.vorjahr && a.jvVorjahr ? ueberJahr(a.jvVorjahr.jahr + '-12', 'Monat davor') : null) },
-    h('span', { class: 'pfeil-text', 'aria-hidden': 'true', text: '‹' }));
+    h('span', { class: 'chevron pfeil-links', 'aria-hidden': 'true' }));
     const weiter = h('button', { type: 'button', class: 'rund', 'aria-label': 'Monat danach',
       onclick: () => (i < 11 ? svg.waehle(i + 1) : mj.vorjahr ? ueberJahr(a.jv.jahr + '-01', 'Monat danach') : null) },
-    h('span', { class: 'pfeil-text', 'aria-hidden': 'true', text: '›' }));
+    h('span', { class: 'chevron pfeil-rechts', 'aria-hidden': 'true' }));
     const knoepfe = (j) => {
       i = j;
       zurueck.disabled = j <= 0 && (mj.vorjahr || !a.jvVorjahr);
@@ -787,7 +799,7 @@
     const zuKunden = h('button', { type: 'button', class: 'karte zeilen-karte', onclick: () => { S.ansichtZeigen('kunden'); S.nachOben('kunden'); } },
       h('span', { class: 'karte-symbol', 'aria-hidden': 'true' }, S.icon('kunden')),
       h('span', { class: 'zeilen-karte-text' }, h('strong', { text: 'Kunden' }), h('span', { text: 'Alle Kunden, Suche und Details' })),
-      h('span', { class: 'chevron', 'aria-hidden': 'true', text: '›' }));
+      h('span', { class: 'chevron', 'aria-hidden': 'true' }));
     if (!a.zeilen) {
       // Ältere Schnittstelle: fertige Summen und Kanäle wie geliefert
       const z = u.verkaeufe[Z.zeitraum];
@@ -854,7 +866,7 @@
         h('span', { class: 'rang-name' }, h('span', { class: 'rang-titel kunde-name', text: k.kunde }),
           h('span', { class: 'rang-unter', text: flaschen(k.flaschen) + ' in ' + k.bestellungen + (k.bestellungen === 1 ? ' Bestellung' : ' Bestellungen') })),
         h('span', { class: 'rang-zahlen' }, h('span', { class: 'rang-umsatz', text: H.abstandText(k.tage) })),
-        h('span', { class: 'chevron klein', 'aria-hidden': 'true', text: '›' })))))),
+        h('span', { class: 'chevron klein', 'aria-hidden': 'true' })))))),
       liste.length > 3
         ? h('button', { type: 'button', class: 'knopf mehr-knopf', 'aria-expanded': alle ? 'true' : 'false',
           text: alle ? 'Weniger zeigen' : 'Alle ' + liste.length + ' zeigen', onclick: () => { Z.alleNachfassen = !alle; S.ansichten.kunden(); } })
@@ -924,7 +936,7 @@
             h('span', { class: 'rang-zahlen' }, h('span', { class: 'rang-flaschen', text: flaschen(k.flaschen) }),
               Z.kundenSortierung === 'zuletzt' && l ? h('span', { class: 'rang-umsatz', text: H.abstandText(l.tage) })
                 : p !== null ? trendChip({ prozent: p }, '') : h('span', { class: 'rang-umsatz', text: H.euroFormat(k.umsatz) })),
-            h('span', { class: 'chevron klein', 'aria-hidden': 'true', text: '›' })));
+            h('span', { class: 'chevron klein', 'aria-hidden': 'true' })));
         })))
         : h('div', { class: 'karte' }, h('p', { class: 'leer', text: suche ? 'Kein Kunde passt zu „' + Z.kundenSuche + '“.' : 'Keine Verkäufe in diesem Zeitraum.' })),
       !alle && liste.length > KUNDEN_ANFANG
@@ -952,9 +964,17 @@
     }
     const d = kundenDaten(a);
     const kanaele = d.kanaele;
-    const suche = h('input', { type: 'search', id: 'kunden-suche', class: 'suche', placeholder: 'Kunde suchen', autocomplete: 'off', autocorrect: 'off',
+    const suche = h('input', { type: 'search', id: 'kunden-suche', class: 'suche', placeholder: 'Suchen', autocomplete: 'off', autocorrect: 'off',
       spellcheck: 'false', enterkeyhint: 'search', 'aria-label': 'Kunde suchen', value: Z.kundenSuche || '' });
-    suche.addEventListener('input', () => { Z.kundenSuche = suche.value; kundenListeZeigen(a, d); });
+    // Suchfeld wie in iOS: Lupe links, rechts ein Knopf zum Leeren, sobald etwas drinsteht
+    const leer = h('button', { type: 'button', class: 'such-leer', 'aria-label': 'Suche leeren', onclick: () => {
+      suche.value = '';
+      sucheGeaendert();
+      suche.focus({ preventScroll: true });
+    } }, S.icon('zu'));
+    const sucheGeaendert = () => { Z.kundenSuche = suche.value; leer.hidden = !suche.value; kundenListeZeigen(a, d); };
+    leer.hidden = !suche.value;
+    suche.addEventListener('input', sucheGeaendert);
     const chips = h('div', { class: 'filter-chips', role: 'group', 'aria-label': 'Nach Kanal filtern' },
       [''].concat(kanaele).map((k) => h('button', { type: 'button', class: 'chip', 'aria-pressed': (Z.kundenKanal || '') === k ? 'true' : 'false', text: k || 'Alle',
         'data-kanal': k, onclick: () => {
@@ -969,7 +989,7 @@
       nachfassenKarte(a),
       h('h2', {}, h('strong', { text: 'Alle' }), ' Kunden'),
       umschalten,
-      h('div', { class: 'such-zeile' }, suche,
+      h('div', { class: 'such-zeile' }, h('div', { class: 'such-feld' }, S.icon('lupe', 'such-icon'), suche, leer),
         h('label', { class: 'nur-vorlesen', for: 'kunden-sortierung', text: 'Sortieren nach' }),
         h('select', { id: 'kunden-sortierung', class: 'sortierung', onchange: (ev) => { Z.kundenSortierung = ev.currentTarget.value; kundenListeZeigen(a, d); } },
           [['menge', 'Meiste Flaschen'], ['zuletzt', 'Zuletzt bestellt'], ['name', 'A–Z']].map(([w, t]) => h('option', { value: w, text: t })))),
@@ -984,7 +1004,11 @@
   /** Kleines Balkendiagramm (Kunden-Blatt): Flaschen der Monate, Gutschrift-Monate rot unter der Nulllinie. */
   function miniDiagramm(monate) {
     const M = { breite: 320, hoehe: 96, links: 4, unten: 16, oben: 14 };
-    const r = H.achseMitMinus(monate.map((m) => m.flaschen), 2);
+    // Der höchste Balken füllt die Höhe (oben bleibt nur Platz für seinen Wert), Gutschriften gehen unter die Nulllinie
+    const zahlen = monate.map((m) => (typeof m.flaschen === 'number' && isFinite(m.flaschen) ? m.flaschen : 0));
+    const hoch = Math.max(0, ...zahlen);
+    const tief = Math.min(0, ...zahlen);
+    const r = { oben: hoch > 0 ? hoch : (tief < 0 ? 0 : 1), unten: tief < 0 ? tief * 1.25 : 0 };
     const flaeche = M.hoehe - M.oben - M.unten;
     const unten = M.oben + flaeche;
     const y = (w) => M.oben + ((r.oben - w) / (r.oben - r.unten)) * flaeche;
@@ -1097,7 +1121,7 @@
           ? h('span', { class: 'badge badge-zaehlen', text: 'zählen' })
           : h('span', { class: 'rang-zahlen' }, h('span', { class: 'rang-flaschen', text: flaschen(l.bestand) }),
             kisten ? h('span', { class: 'rang-umsatz', text: kisten }) : null),
-        h('span', { class: 'chevron klein', 'aria-hidden': 'true', text: '›' })));
+        h('span', { class: 'chevron klein', 'aria-hidden': 'true' })));
     })));
   }
 
@@ -1118,7 +1142,7 @@
     const pk = Z.daten.kennzahlen ? Z.daten.kennzahlen.flaschenProKiste : null;
     const buchungen = (Z.verlauf ? H.verlaufOhneStorno(Z.verlauf.eintraege) : []).filter((e) => e.standort === standort || e.nach === standort).slice(0, 6);
     const eintragen = (art) => {
-      S.blattSchliessen();
+      S.blattSchliessen(true); // ohne Bewegung: es geht gleich zum Eintragen
       if (!S.eintragenVorbelegen || !S.eintragenVorbelegen(art, standort)) return;
       S.ansichtZeigen('eintragen');
       S.nachOben('eintragen');
@@ -1231,7 +1255,7 @@
   async function stornieren(e, knopf) {
     const was = e.art + ', ' + verlaufText(e) + ', ' + H.datumFormat(e.datum);
     const ja = await S.frage('Diesen Eintrag stornieren?\n\n' + was +
-      '\n\nEr bleibt im Lager-Log stehen, eine Storno-Zeile hebt ihn auf.', 'Stornieren', 'Abbrechen');
+      '\n\nEr bleibt im Lager-Log stehen, eine Storno-Zeile hebt ihn auf.', 'Stornieren', 'Abbrechen', true);
     if (!ja) return;
     knopf.disabled = true;
     knopf.textContent = 'Storniert …';
@@ -1323,6 +1347,7 @@
     const n = u.verkaufListe.length;
     if (!n) {
       return ziel.append(h('h2', { class: 'klapp-h2' }, h('div', { class: 'karte klapp-kopf ohne-pfeil' },
+        h('span', { class: 'karte-symbol', 'aria-hidden': 'true' }, S.icon('rechnung')),
         h('span', { class: 'klapp-text' }, h('span', { class: 'klapp-titel', text: 'Verkäufe zuordnen' }),
           h('span', { class: 'klapp-zusatz', text: 'Keine Rechnungen in den letzten 60 Tagen' })))));
     }
@@ -1331,9 +1356,10 @@
       type: 'button', id: 'zuordnen-kopf', class: 'karte klapp-kopf', 'aria-expanded': offen ? 'true' : 'false', 'aria-controls': 'zuordnen-liste',
       onclick: () => { Z.zuordnenOffen = !offen; zuordnenZeigen(); S.el('zuordnen-kopf').focus({ preventScroll: true }); },
     },
+    h('span', { class: 'karte-symbol', 'aria-hidden': 'true' }, S.icon('rechnung')),
     h('span', { class: 'klapp-text' }, h('span', { class: 'klapp-titel', text: 'Verkäufe zuordnen' }),
       h('span', { class: 'klapp-zusatz', text: n + (n === 1 ? ' Rechnung' : ' Rechnungen') + ' der letzten 60 Tage' })),
-    h('span', { class: 'chevron klapp-pfeil', 'aria-hidden': 'true', text: '›' }))));
+    h('span', { class: 'chevron klapp-pfeil', 'aria-hidden': 'true' }))));
     if (!offen) return;
     const orte = standorte();
     ziel.append(h('div', { id: 'zuordnen-liste', class: 'klapp-inhalt' },

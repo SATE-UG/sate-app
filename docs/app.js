@@ -123,6 +123,29 @@
   let zielAnsicht = null; // läuft gerade ein Scrollen per Tab-Tipp: dorthin (Tab-Bar springt solange nicht mit)
   let breite = 0;          // zuletzt gemessene Breite der Leiste (für Drehen/Größenänderung)
 
+  /** Die helle Pille der Tab-Bar dorthin, wo die Ansichten gerade stehen (läuft beim Wischen und beim Tipp-Scrollen mit). */
+  const pille = document.querySelector('.leiste-pille');
+  function pilleSetzen() {
+    const b = leiste.clientWidth;
+    if (!pille || !b) return;
+    const pos = Math.min(Math.max(leiste.scrollLeft / b, 0), ANSICHTEN.length - 1);
+    pille.style.setProperty('--pos', pos.toFixed(3));
+  }
+
+  /**
+   * Kleiner Titel im Kopf, sobald die große Überschrift der aktuellen Ansicht weggescrollt ist (wie „Large Title“ bei
+   * iOS): Name des Reiters, blendet ein und aus.
+   */
+  const TITEL_AB_PX = 38;
+  function kopfTitel() {
+    const k = el('kopf-titel');
+    const sek = el('ansicht-' + Z.ansicht);
+    const zeigen = !!sek && !el('app').hidden && sek.scrollTop > TITEL_AB_PX;
+    if (zeigen) k.textContent = el('reiter-' + Z.ansicht).textContent.trim();
+    k.classList.toggle('sichtbar', zeigen);
+  }
+  S.kopfTitel = kopfTitel;
+
   /** Gewählten Reiter in der Tab-Bar markieren (nur Anzeige). */
   function reiterMarkieren(a) {
     ANSICHTEN.forEach((n) => {
@@ -145,6 +168,7 @@
     Z.ansicht = a;
     reiterMarkieren(a);
     ANSICHTEN.forEach((n) => { el('ansicht-' + n).inert = n !== a; });
+    kopfTitel();
     S.speicher.schreiben(K.ansicht, a);
     if (fokusWeg) el('reiter-' + a).focus({ preventScroll: true });
     if (wechsel && ansagen) {
@@ -172,6 +196,7 @@
       leiste.scrollTo({ left: links, behavior: 'smooth' });
     }
     breite = leiste.clientWidth;
+    pilleSetzen();
   }
   S.ansichtZeigen = ansichtZeigen;
 
@@ -209,6 +234,7 @@
     if (!rahmen) {
       rahmen = window.requestAnimationFrame(() => {
         rahmen = 0;
+        pilleSetzen();
         const p = H.reiterPosition(leiste.scrollLeft, leiste.clientWidth, ANSICHTEN.length);
         if (p && zielAnsicht === null) reiterMarkieren(ANSICHTEN[p.index]);
       });
@@ -226,9 +252,20 @@
     breite = b;
     zielAnsicht = null;
     leiste.scrollTo({ left: ANSICHTEN.indexOf(Z.ansicht) * b, behavior: 'auto' });
+    pilleSetzen();
   }
   if (typeof window.ResizeObserver === 'function') new window.ResizeObserver(breiteGeaendert).observe(leiste);
   else window.addEventListener('resize', breiteGeaendert);
+
+  // Tipp auf den Kopf (Logo oder Titel, nicht die Knöpfe): aktuelle Ansicht nach oben, wie der Tipp auf die Statusleiste
+  // bei iOS (die gehört hier dem System und erreicht die Ansichten nicht)
+  document.querySelector('.kopf').addEventListener('click', (ev) => {
+    if (el('app').hidden || (ev.target.closest && ev.target.closest('button'))) return;
+    S.nachOben();
+  });
+
+  // Kleiner Titel im Kopf: folgt dem Scrollen der aktuellen Ansicht
+  ANSICHTEN.forEach((n) => el('ansicht-' + n).addEventListener('scroll', () => { if (n === Z.ansicht) kopfTitel(); }, { passive: true }));
 
   // Fußzeile „Trink SATE!“ ans Ende jeder Ansicht (die der Seite ist angemeldet ausgeblendet)
   const fuss = document.querySelector('.seite > .fuss');
@@ -360,7 +397,7 @@
       verlaufFehler: '', verlaufVeraltet: true, diagramm: 'flaschen', zeitraum: 'jahr', monatWahl: null, alleKunden: false, kundenZeitraum: 'jahr', kundenSuche: '', kundenKanal: '', kundenSortierung: 'menge', alleNachfassen: false, verlaufAlle: false, zuordnenOffen: false, offline: false, ladenNachholen: false, sitzung: Z.sitzung + 1 });
     meldung('');
     S.frageSchliessen();
-    S.blattSchliessen();
+    S.blattSchliessen(true);
     S.meldenSchliessen();
     S.eintragenZuruecksetzen();
     S.renderAlle();
@@ -431,7 +468,7 @@
   });
 
   el('abmelden').addEventListener('click', async () => {
-    if (!(await S.frage('Abmelden? Danach brauchst du deinen Zugangscode wieder.', 'Abmelden', 'Abbrechen'))) return;
+    if (!(await S.frage('Abmelden? Danach brauchst du deinen Zugangscode wieder.', 'Abmelden', 'Abbrechen', true))) return;
     const geloescht = vergessen();
     angemeldetZeigen(false);
     anmeldeMeldung(geloescht ? '' : 'Abgemeldet, aber der Code ließ sich auf diesem Gerät nicht löschen. ' +

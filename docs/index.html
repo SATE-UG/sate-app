@@ -7,7 +7,7 @@
   <meta name="referrer" content="no-referrer">
   <title>SATE</title>
   <meta name="description" content="SATE-Team-App">
-  <!-- Immer dunkel wie die SATE-Slides: schwarzer Grund, dunkelgraue Karten, ein warmes Gelb als einzige Akzentfarbe -->
+  <!-- Immer dunkel wie die SATE-Slides: schwarzer Grund, dunkelgraue Karten, ein helles Blau als einzige Akzentfarbe -->
   <meta name="theme-color" content="#000000">
   <meta name="color-scheme" content="dark">
   <!-- iOS: als App vom Home-Bildschirm starten -->
@@ -27,6 +27,8 @@
     <!-- Kopf (nur angemeldet): Logo links, rechts „Neu laden“ als runder Knopf -->
     <header class="kopf">
       <img class="logo" src="bilder/logo.png" alt="SATE" width="122" height="28">
+      <!-- Kleiner Titel der Ansicht, sobald ihre große Überschrift weggescrollt ist (app.js); Vorleser haben die Überschrift selbst -->
+      <p id="kopf-titel" class="kopf-titel" aria-hidden="true"></p>
       <div class="kopf-knoepfe">
         <!-- Stand als kurzen Text teilen (iOS-Teilen-Menü, sonst in die Zwischenablage) -->
         <button id="teilen" type="button" class="rund" aria-label="Stand teilen" hidden>
@@ -183,9 +185,10 @@
     <footer class="fuss">Trink SATE!<img class="herz" src="bilder/herz.png" alt="" width="20" height="20"></footer>
   </main>
 
-  <!-- Untere Leiste mit den vier Ansichten (Symbol + Text, leicht durchscheinend) -->
+  <!-- Untere Leiste mit den fünf Ansichten: schwebende Glas-Kapsel, die helle Pille zeigt die gewählte (läuft beim Wischen mit) -->
   <div id="safe-probe" class="safe-probe" aria-hidden="true"></div>
   <nav id="leiste" class="leiste" role="tablist" aria-label="Ansichten" hidden>
+    <span class="leiste-pille" aria-hidden="true"></span>
     <button id="reiter-uebersicht" type="button" role="tab" data-ansicht="uebersicht" aria-controls="ansicht-uebersicht">
       <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M3.5 10.5 12 3.5l8.5 7"/><path d="M5.5 9v11h4.5v-6h4v6h4.5V9"/></svg>
       <span>Start</span>
@@ -194,7 +197,7 @@
       <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="4" y="12" width="4" height="8" rx="1"/><rect x="10" y="7" width="4" height="13" rx="1"/><rect x="16" y="3.5" width="4" height="16.5" rx="1"/></svg>
       <span>Verkäufe</span>
     </button>
-    <!-- Eintragen: die Hauptaktion, groß und gelb in der Mitte (seit v23) -->
+    <!-- Eintragen: die Hauptaktion, als Kreis in der Akzentfarbe in der Mitte (seit v23) -->
     <button id="reiter-eintragen" type="button" role="tab" data-ansicht="eintragen" aria-controls="ansicht-eintragen" class="reiter-plus">
       <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 5.5v13M5.5 12h13"/></svg>
       <span>Eintragen</span>
@@ -215,8 +218,9 @@
   <p id="ansage" class="nur-vorlesen" aria-live="polite" aria-atomic="true"></p>
 
   <!-- Rückfrage (Storno, „trotzdem speichern?“, Abmelden) -->
-  <dialog id="dialog" class="dialog" aria-labelledby="dialog-text">
-    <p id="dialog-text"></p>
+  <dialog id="dialog" class="dialog" aria-labelledby="dialog-titel" aria-describedby="dialog-text">
+    <h2 id="dialog-titel" class="dialog-titel" tabindex="-1"></h2>
+    <p id="dialog-text" tabindex="-1"></p>
     <div class="dialog-knoepfe">
       <button id="dialog-ja" type="button" class="knopf haupt">Ja</button>
       <button id="dialog-nein" type="button" class="knopf">Abbrechen</button>

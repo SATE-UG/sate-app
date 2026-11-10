@@ -229,6 +229,39 @@ test('standText: Update zum Teilen, Kurzfristiges zuerst, ohne Kundennamen', () 
   }
 });
 
+test('frageTeilen: Frage vorn als Titel, Rest als Erklärung', () => {
+  assert.deepStrictEqual(H.frageTeilen('Abmelden? Danach brauchst du deinen Zugangscode wieder.'), { titel: 'Abmelden?', text: 'Danach brauchst du deinen Zugangscode wieder.' });
+  assert.deepStrictEqual(H.frageTeilen('Diesen Eintrag stornieren?\n\nPromo, 12 Flaschen\n\nEr bleibt stehen.'), { titel: 'Diesen Eintrag stornieren?', text: 'Promo, 12 Flaschen\n\nEr bleibt stehen.' });
+  assert.deepStrictEqual(H.frageTeilen('Der Bestand würde auf -12 Flaschen fallen.'), { titel: '', text: 'Der Bestand würde auf -12 Flaschen fallen.' });
+  assert.deepStrictEqual(H.frageTeilen('Nur eine Frage?'), { titel: 'Nur eine Frage?', text: '' });
+  // Lange erste Zeile oder Frage erst in der zweiten Zeile: kein Titel
+  assert.strictEqual(H.frageTeilen('x'.repeat(70) + '? Rest').titel, '');
+  assert.strictEqual(H.frageTeilen('Hinweis.\nWirklich?').titel, '');
+  assert.deepStrictEqual(H.frageTeilen(null), { titel: '', text: '' });
+});
+
+test('ziehTempo und blattSchliesst: Loslassen des Blatts (weit genug oder mit Schwung)', () => {
+  // 100 px in 50 ms, sofort losgelassen: 2 px/ms
+  assert.strictEqual(H.ziehTempo([{ t: 0, y: 0 }, { t: 25, y: 50 }, { t: 50, y: 100 }], 50), 2);
+  // 30 px zwischen 20 und 50 ms, dann 80 ms still: der Stillstand zählt mit (Codex v28)
+  const still = H.ziehTempo([{ t: 20, y: 0 }, { t: 50, y: 30 }], 130);
+  assert.ok(still > 0.27 && still < 0.28, String(still));
+  assert.strictEqual(H.blattSchliesst(30, still), false);
+  // Punkte außerhalb des Fensters zählen nicht, ein einzelner Punkt hat kein Tempo
+  assert.strictEqual(H.ziehTempo([{ t: 0, y: 0 }, { t: 10, y: 200 }], 500), 0);
+  assert.strictEqual(H.ziehTempo([{ t: 400, y: 0 }], 400), 0);
+  assert.strictEqual(H.ziehTempo([], 10), 0);
+  assert.strictEqual(H.ziehTempo(null, 10), 0);
+  // Schließen: über 110 px immer, sonst nur mit Schwung und mindestens 24 px
+  assert.strictEqual(H.blattSchliesst(111, 0), true);
+  assert.strictEqual(H.blattSchliesst(110, 0), false);
+  assert.strictEqual(H.blattSchliesst(40, 0.6), true);
+  assert.strictEqual(H.blattSchliesst(20, 3), false);
+  assert.strictEqual(H.blattSchliesst(80, 0.5), false);
+  assert.strictEqual(H.blattSchliesst(0, 9), false);
+  assert.strictEqual(H.blattSchliesst(NaN, 9), false);
+});
+
 test('prognoseSaison: jeder Monat wie der gleiche Monat ein Jahr vorher, laufender Monat nur der Rest', () => {
   const w = (m) => ({ '2025-11': { flaschen: 300 }, '2025-12': { flaschen: 500 }, '2026-01': { flaschen: 200 } })[m] || { flaschen: 1000 };
   // 9. Nov: im November schon 100 verkauft (Vorjahr 300 → noch 200), Dezember 500, Januar 200, ab Februar 1000/Monat

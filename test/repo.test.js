@@ -125,9 +125,26 @@ test('PWA: SATE-Look (schwarz, Systemschrift, Courier New als Akzent, eine Akzen
   assert.match(css, /font-family: "Courier New", Courier, monospace;/, 'Courier New bleibt für die Überschriften');
   const body = /\nbody \{([^}]*)\}/.exec(css)[1];
   assert.match(body, /font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;/, 'Fließtext in Systemschrift');
-  assert.match(css, /--akzent: #E8C547;/);
+  // Seit v28: helles Blau als Akzent (nur Antippbares, Auswahl, Diagramm), Orange nur als Warnfarbe, kein Gelb mehr
+  assert.match(css, /--akzent: #5EB5FF;/);
+  assert.match(css, /--warn: #FFB340;/);
+  assert.doesNotMatch(css + lies('docs/ansichten.js'), /E8C547|232, 197, 71/i, 'kein Gelb mehr fest im Code');
   assert.match(css, /font-variant-numeric: tabular-nums/);
-  assert.match(css, /backdrop-filter: saturate\(180%\) blur\(20px\)/, 'Reiterleiste durchscheinend');
+  // Glas (Leiste, Rückmeldung, Rückfrage): Unschärfe ausgeschrieben, Safari nimmt -webkit-backdrop-filter nicht aus einer Variable
+  assert.match(css, /\n\.leiste \{[^}]*-webkit-backdrop-filter: saturate\(180%\) blur\(22px\);\s*backdrop-filter: saturate\(180%\) blur\(22px\);/, 'Reiterleiste als Glas');
+  assert.doesNotMatch(css, /backdrop-filter: var\(/, 'keine Variable im backdrop-filter');
+  assert.match(css, /@media \(prefers-reduced-transparency: reduce\)/, 'Glas abschaltbar');
+  assert.match(h, /<span class="leiste-pille" aria-hidden="true"><\/span>/, 'Pille hinter dem gewählten Reiter');
+  // Kleiner Titel im Kopf (nur Zierde, Vorleser haben die Überschrift), Rückfrage mit Titel und Erklärung
+  assert.match(h, /<p id="kopf-titel" class="kopf-titel" aria-hidden="true"><\/p>/);
+  assert.match(h, /<dialog id="dialog" class="dialog" aria-labelledby="dialog-titel" aria-describedby="dialog-text">\s*<h2 id="dialog-titel" class="dialog-titel" tabindex="-1"><\/h2>\s*<p id="dialog-text" tabindex="-1"><\/p>/);
+  // Blatt: Bewegung per Web Animations (kein CSS-Keyframe mehr), Schließen auch per Escape mit Bewegung
+  const kern = lies('docs/kern.js');
+  assert.doesNotMatch(css, /blatt-hoch/);
+  assert.match(kern, /S\.el\('blatt'\)\.addEventListener\('cancel', \(ev\) => \{ ev\.preventDefault\(\); S\.blattSchliessen\(\); \}\);/);
+  assert.match(kern, /if \(ruhig\(\) \|\| typeof b\.animate !== 'function'\) \{ if \(fertig\) fertig\(\); return; \}/, 'ohne Bewegung bei „Bewegung reduzieren“');
+  // Pfeile sind gezeichnet, kein Schriftzeichen
+  assert.doesNotMatch(lies('docs/ansichten.js'), /text: '[›‹]'/);
   assert.match(css, /@media \(prefers-reduced-motion: reduce\)/, 'Bewegung abschaltbar');
   assert.doesNotMatch(css, /border: 2px solid var\(--weiss\)/, 'keine weiß umrandeten Kästen mehr');
   // Reiter mit Symbol und Text
@@ -163,7 +180,9 @@ test('PWA: Service Worker cacht alle Hüllen-Dateien, Version im Cache-Namen', (
   for (const d of liste) if (d !== './') assert.ok(fs.existsSync(path.join(WURZEL, 'docs', d)), 'fehlt: ' + d);
   const verweise = (lies('docs/index.html').match(/(?:src|href)="([^"]+)"/g) || []).map((s) => s.replace(/^(src|href)="|"$/g, ''));
   for (const v of verweise) assert.ok(liste.includes(v), 'nicht im Cache: ' + v);
-  const cssBilder = (lies('docs/style.css').match(/url\('([^']+)'\)/g) || []).map((s) => s.replace(/^url\('|'\)$/g, ''));
+  // Bilder aus dem Stil (mit oder ohne Anführungszeichen) müssen auch im Cache liegen, sonst fehlen sie offline
+  const cssBilder = [...lies('docs/style.css').matchAll(/url\(\s*['"]?([^'")\s]+)['"]?\s*\)/g)].map((m) => m[1]).filter((v) => v.charAt(0) !== '#');
+  assert.ok(cssBilder.includes('bilder/auswahl.svg'), 'Auswahl-Pfeil wird im Stil benutzt');
   for (const v of cssBilder) assert.ok(liste.includes(v), 'CSS-Bild nicht im Cache: ' + v);
   assert.match(sw, /req\.method !== 'GET'/);
 });
@@ -195,12 +214,22 @@ test('PWA: keine fremden Skripte, Code nie in URLs', () => {
 
 test('PWA: Reiter per nativem Scroll Snap, Ziehen blockiert nie das Scrollen, kein Zoomen', () => {
   const gesten = lies('docs/gesten.js');
-  const touch = gesten.match(/addEventListener\('touch\w+',[\s\S]*?\}, \{ passive: true \}\)|addEventListener\('touch\w+', \w+, \{ passive: true \}\)/g) || [];
-  const alle = gesten.match(/addEventListener\('touch\w+'/g) || [];
-  assert.strictEqual(alle.length, 4, 'touchstart, touchmove, touchend, touchcancel');
-  assert.strictEqual(touch.length, alle.length, 'alle Touch-Listener passiv');
-  // preventDefault nur für die Safari-Zoom-Gesten, nie für Touch-Ereignisse (Scrollen bleibt frei)
-  assert.strictEqual((gesten.match(/preventDefault/g) || []).length, 1);
+  // Je Touch-Listener: wer hört auf was, und ist er passiv? (die erste passive-Angabe nach dem addEventListener)
+  const alle = [...gesten.matchAll(/(\w+)\.addEventListener\('(touch\w+)'/g)].map((m) => {
+    const p = /\{ passive: (true|false) \}/.exec(gesten.slice(m.index));
+    return { wer: m[1], was: m[2], passiv: !!p && p[1] === 'true' };
+  });
+  const touch = alle.filter((x) => x.passiv);
+  // Ansichten: touchstart, touchmove, touchend, touchcancel, alle passiv. Blatt (seit v28): dieselben vier, nur sein
+  // touchmove ist nicht passiv, weil der Finger das Blatt festhält (nach unten ziehen schließt).
+  assert.strictEqual(alle.length, 8, 'je vier für die Ansichten und für das Blatt');
+  assert.strictEqual(touch.length, 7, 'alle Touch-Listener passiv außer dem Ziehen am Blatt');
+  assert.deepStrictEqual(alle.filter((x) => !x.passiv), [{ wer: 'blatt', was: 'touchmove', passiv: false }]);
+  assert.strictEqual(alle.filter((x) => x.wer === 'leiste').length, 4);
+  // preventDefault nur beim Ziehen am Blatt und für die Safari-Zoom-Gesten, nie beim Scrollen der Ansichten
+  assert.strictEqual((gesten.match(/preventDefault/g) || []).length, 2);
+  const ansichtenTeil = gesten.slice(0, gesten.indexOf('// Blatt: nach unten ziehen'));
+  assert.doesNotMatch(ansichtenTeil, /preventDefault/, 'Ziehen zum Aktualisieren blockiert nie das Scrollen');
   assert.match(gesten, /\['gesturestart', 'gesturechange', 'gestureend'\][\s\S]*?ev\.preventDefault\(\), \{ passive: false \}/);
   assert.doesNotMatch(gesten, /wischRichtung|wischenZeigen|ansichtZeigen|translate3d\(' \+ weg/, 'keine eigene Wischlogik mehr');
 
@@ -218,15 +247,23 @@ test('PWA: Reiter per nativem Scroll Snap, Ziehen blockiert nie das Scrollen, ke
   assert.match(css, /\.ansichten::-webkit-scrollbar \{ display: none;/);
   const ansicht = regel('.ansicht');
   for (const d of ['flex: 0 0 100%;', 'overflow-y: auto;', '-webkit-overflow-scrolling: touch;', 'scroll-snap-align: start;', 'scroll-snap-stop: always;',
-    'env(safe-area-inset-bottom)', 'touch-action: pan-x pan-y;']) {
+    'var(--leiste)', 'touch-action: pan-x pan-y;']) {
     assert.ok(ansicht.includes(d), '.ansicht: ' + d);
   }
+  // Platz unter dem Inhalt = Höhe der schwebenden Leiste plus ihr Abstand über der Home-Leiste (Safe Area)
+  assert.match(css, /--unten: max\(calc\(env\(safe-area-inset-bottom\) - 14px\), 10px\);\s*--leiste: calc\(var\(--leiste-h\) \+ var\(--unten\)\);/);
   assert.doesNotMatch(css, /pan-y pinch-zoom|rein-von-rechts/, 'alte Wischlogik ist raus');
   assert.match(regel('html'), /overscroll-behavior: none;[\s\S]*touch-action: pan-x pan-y;/);
   assert.match(css, /\.diagramm \{[^}]*touch-action: manipulation;/, 'Diagramm: Tippen bleibt Tippen, waagerecht scrollt die Leiste');
   assert.match(css, /user-select: none;/);
-  for (const sel of ['.knopf:active', '.rund:active', '.leiste button:active', '.art:active .art-kachel', '.segment button:active']) {
+  // Drücken (seit v28): gesten.js setzt .gedrueckt (auch bei kurzem Tipp sichtbar, beim Scrollen sofort weg), kein :active mehr
+  for (const sel of ['.knopf.gedrueckt', '.rund.gedrueckt', '.leiste button.gedrueckt .icon', '.art.gedrueckt .art-kachel', '.segment button.gedrueckt', '.zeilen-knopf.gedrueckt']) {
     assert.ok(css.includes(sel + ' {'), sel);
+  }
+  assert.doesNotMatch(css, /:active/, 'kein :active mehr, alles über .gedrueckt');
+  assert.match(gesten, /const DRUCK_ZIELE = 'button, label\.art';/);
+  for (const art of ['pointerdown', 'pointermove', 'pointerup', 'pointercancel']) {
+    assert.match(gesten, new RegExp("document\\.addEventListener\\('" + art + "',[\\s\\S]*?\\{ passive: true \\}\\)"), art);
   }
   // Eingabefelder ≥ 16 px, sonst zoomt iOS beim Fokus trotzdem
   for (const m of css.matchAll(/\n(input, select, textarea|\.zuordnen select|#code) \{([^}]*)\}/g)) {

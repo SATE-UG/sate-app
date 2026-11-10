@@ -94,6 +94,8 @@
     fehler: [['circle', { cx: 12, cy: 12, r: 9 }], ['path', { d: 'M12 7.5v5.5' }], ['path', { d: 'M12 16.4v.1' }]],
     info: [['circle', { cx: 12, cy: 12, r: 9 }], ['path', { d: 'M12 11v5.5' }], ['path', { d: 'M12 7.6v.1' }]],
     flasche: [['path', { d: FLASCHE }]],
+    lupe: [['circle', { cx: 10.5, cy: 10.5, r: 6.5 }], ['path', { d: 'M15.4 15.4 20 20' }]],
+    zu: [['path', { d: 'M7 7l10 10M17 7 7 17' }]],
     kunden: [['circle', { cx: 9, cy: 8, r: 3.5 }], ['path', { d: 'M2.5 20c.6-3.6 3.2-5.5 6.5-5.5s5.9 1.9 6.5 5.5' }], ['path', { d: 'M15.5 4.8a3.5 3.5 0 0 1 0 6.4' }],
       ['path', { d: 'M18 14.9c2 .8 3.2 2.5 3.5 5.1' }]],
     rechnung: [['path', { d: 'M6 3.5h12v17l-2-1.3-2 1.3-2-1.3-2 1.3-2-1.3-2 1.3z' }], ['path', { d: 'M9 8h6M9 11.5h6M9 15h3.5' }]],
@@ -217,58 +219,184 @@
 
   // Rückfrage und Rückmeldung -------------------------------------------------------------------------------------
 
-  /** Rückfrage mit zwei Knöpfen. Promise → true bei „ja“. Ohne <dialog>-Unterstützung: window.confirm. */
-  S.frage = function (text, ja, nein) {
+  const ruhig = () => !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+
+  /**
+   * Kurzes Tippen im Gerät (Haptik) bei Auswahl und Ergebnis. Webseiten dürfen auf dem iPhone nicht vibrieren; ab
+   * iOS 17.4 löst aber das Umlegen eines Schalters (<input type="checkbox" switch>) das System-Tippen aus, auch wenn
+   * das Skript auf sein Label klickt. Android vibriert kurz. Ohne Unterstützung passiert nichts.
+   */
+  S.haptik = function () {
+    try {
+      if (!window.matchMedia || !window.matchMedia('(pointer: coarse)').matches) return;
+      if (typeof navigator.vibrate === 'function') { navigator.vibrate(8); return; }
+      const label = document.createElement('label');
+      const schalter = document.createElement('input');
+      schalter.type = 'checkbox';
+      schalter.setAttribute('switch', '');
+      label.setAttribute('aria-hidden', 'true');
+      label.style.display = 'none';
+      label.appendChild(schalter);
+      document.head.appendChild(label);
+      label.click();
+      label.remove();
+    } catch (e) { /* ohne Haptik weiter */ }
+  };
+
+  /**
+   * Rückfrage mit zwei Knöpfen. Promise → true bei „ja“. Ohne <dialog>-Unterstützung: window.confirm. Die Frage vorn
+   * (bis zum ersten „?“) steht fett als Titel, der Rest als Erklärung darunter. `gefahr`: der Ja-Knopf ist rot
+   * (Storno, Abmelden).
+   */
+  S.frage = function (text, ja, nein, gefahr) {
     const d = S.el('dialog');
     if (!d || typeof d.showModal !== 'function') return Promise.resolve(window.confirm(text));
-    S.el('dialog-text').textContent = text;
+    const teile = H.frageTeilen(text);
+    S.el('dialog-titel').textContent = teile.titel;
+    S.el('dialog-titel').hidden = !teile.titel;
+    S.el('dialog-text').textContent = teile.text;
+    S.el('dialog-text').hidden = !teile.text;
+    d.setAttribute('aria-labelledby', teile.titel ? 'dialog-titel' : 'dialog-text');
     S.el('dialog-ja').textContent = ja || 'Ja';
+    S.el('dialog-ja').classList.toggle('haupt', !gefahr);
+    S.el('dialog-ja').classList.toggle('gefahr', !!gefahr);
     S.el('dialog-nein').textContent = nein || 'Abbrechen';
-    if (d.open) d.close('');
+    // Zwei Kapseln nebeneinander; passt eine Beschriftung nicht in die halbe Breite, stehen sie untereinander
+    d.classList.toggle('gestapelt', Math.max((ja || 'Ja').length, (nein || 'Abbrechen').length) > 11);
+    // Kommt eine Frage, während noch eine offen ist: die alte gilt als „nein“, das Fenster bleibt offen und zeigt die neue
+    frageAntworten(false);
     return new Promise((fertig) => {
-      const zu = () => { d.removeEventListener('close', zu); fertig(d.returnValue === 'ja'); };
-      d.returnValue = '';
-      d.addEventListener('close', zu);
-      d.showModal();
-      S.el('dialog-nein').focus();
+      frageOffen = fertig;
+      if (!d.open) d.showModal();
+      // Fokus auf die Frage, nicht auf einen Knopf: Vorleser lesen sie vor, und kein Knopf sieht vorgewählt aus
+      S.el(teile.titel ? 'dialog-titel' : 'dialog-text').focus();
     });
   };
+  /**
+   * Die offene Rückfrage beantworten. Genau einmal je Frage und gleich, nicht erst im close-Ereignis: das kommt
+   * verzögert und träfe sonst eine inzwischen neu gestellte Frage.
+   */
+  let frageOffen = null;
+  function frageAntworten(ja) {
+    const fertig = frageOffen;
+    frageOffen = null;
+    if (fertig) fertig(!!ja);
+  }
   /** Offene Rückfrage schließen (wie „nein“), z. B. beim Abmelden. */
   S.frageSchliessen = function () {
     const d = S.el('dialog');
-    if (d && d.open && typeof d.close === 'function') d.close('nein');
+    frageAntworten(false);
+    if (d && d.open && typeof d.close === 'function') d.close();
   };
-  S.el('dialog-ja').addEventListener('click', () => S.el('dialog').close('ja'));
-  S.el('dialog-nein').addEventListener('click', () => S.el('dialog').close('nein'));
+  S.el('dialog-ja').addEventListener('click', () => { frageAntworten(true); S.el('dialog').close(); });
+  S.el('dialog-nein').addEventListener('click', () => { frageAntworten(false); S.el('dialog').close(); });
+  // Escape (oder ein Schließen von außen) zählt als „nein“; ist das Fenster schon wieder offen, gehört das Ereignis zur alten Frage
+  S.el('dialog').addEventListener('close', () => { if (!S.el('dialog').open) frageAntworten(false); });
 
   /**
-   * Blatt von unten (iOS-Sheet) mit Titel und Inhalt (Knoten). Schließen: Knopf oben rechts, Tippen auf den dunklen
-   * Rand, Escape. Der Fokus geht danach zurück auf das Element, von dem aus es geöffnet wurde.
+   * Blatt von unten (iOS-Sheet) mit Titel und Inhalt (Knoten). Schließen: nach unten ziehen (gesten.js), Knopf oben
+   * rechts, Tippen auf den dunklen Rand, Escape. Der Fokus geht danach zurück auf das Element, von dem aus es geöffnet
+   * wurde. Auf und zu fährt es mit einer kurzen Bewegung (bei „Bewegung reduzieren“ ohne).
    */
+  const BLATT_KURVE = 'cubic-bezier(0.32, 0.72, 0, 1)';
+  const lage = (px) => 'translate3d(0, ' + px + ', 0)';
   let blattVon = null;
   let blattZurueck = null; // Ersatz, falls das auslösende Element inzwischen neu gebaut wurde (z. B. nach Neuladen)
+  let blattLauf = null;    // laufende Bewegung (Web Animation)
+
+  /** Blatt von `von` nach `nach` bewegen (CSS-Längen für die Höhe), danach `fertig()`. Eine laufende Bewegung endet. */
+  function blattBewegen(von, nach, ms, kurve, fertig) {
+    const b = S.el('blatt');
+    if (blattLauf) { blattLauf.onfinish = null; blattLauf.cancel(); blattLauf = null; }
+    b.style.transform = '';
+    if (ruhig() || typeof b.animate !== 'function') { if (fertig) fertig(); return; }
+    const lauf = b.animate([{ transform: lage(von) }, { transform: lage(nach) }], { duration: ms, easing: kurve, fill: 'both' });
+    blattLauf = lauf;
+    lauf.onfinish = () => {
+      if (blattLauf === lauf) blattLauf = null;
+      if (fertig) fertig();
+      lauf.cancel(); // Endlage steht jetzt ohne Animation (offen: an Ort und Stelle, zu: gar nicht mehr sichtbar)
+    };
+  }
+  /** Um wie viele Pixel das Blatt gerade nach unten versetzt ist (gezogen oder mitten in einer Bewegung), sonst 0. */
+  function blattVersatz() {
+    try {
+      const m = /matrix(3d)?\(([^)]+)\)/.exec(getComputedStyle(S.el('blatt')).transform || '');
+      if (!m) return 0;
+      const w = m[2].split(',').map(Number);
+      return Math.max(0, (m[1] ? w[13] : w[5]) || 0);
+    } catch (e) { return 0; }
+  }
+  /** Ziehen oder Schließen aufräumen (Klassen, Lage, Abdunklung). */
+  function blattRuhe() {
+    const b = S.el('blatt');
+    b.classList.remove('geht', 'zieht');
+    b.style.transform = '';
+    b.style.removeProperty('--dunkel');
+  }
   S.blattZeigen = function (titel, inhalt, zurueck) {
     const b = S.el('blatt');
     if (!b || typeof b.showModal !== 'function') return false;
     S.el('blatt-titel').textContent = titel;
     S.fuellen(S.el('blatt-inhalt'), inhalt); // verschachtelte Listen flach, null fällt weg
     blattZurueck = typeof zurueck === 'function' ? zurueck : null;
-    if (!b.open) {
-      blattVon = document.activeElement;
-      b.showModal();
+    const gingGerade = b.classList.contains('geht'); // wurde gerade geschlossen: wieder hochfahren statt zumachen
+    if (!b.open || gingGerade) {
+      blattRuhe();
+      if (!b.open) {
+        blattVon = document.activeElement;
+        b.showModal();
+      }
+      blattBewegen('100%', '0px', 460, BLATT_KURVE);
     }
     S.el('blatt-inhalt').scrollTop = 0;
     S.el('blatt-titel').focus(); // Titel statt ✕: Vorleseprogramme lesen den Namen, es erscheint kein Fokusring
     return true;
   };
-  S.blattSchliessen = function () {
+  /**
+   * Blatt schließen: fährt nach unten weg, dann erst ist es zu. `sofort === true`: ohne Bewegung (wenn der Aufrufer
+   * gleich danach woanders hinspringt, z. B. zum Eintragen, oder beim Abmelden). `ab` = Pixel, um die das Blatt schon
+   * nach unten gezogen ist (gesten.js); ohne Angabe von dort, wo es gerade steht.
+   */
+  S.blattSchliessen = function (sofort, ab) {
     const b = S.el('blatt');
-    if (b && b.open) b.close();
+    if (!b || !b.open) return;
+    const zu = () => { blattRuhe(); if (b.open) b.close(); };
+    if (sofort === true || ruhig() || typeof b.animate !== 'function') {
+      if (blattLauf) { blattLauf.onfinish = null; blattLauf.cancel(); blattLauf = null; }
+      return zu();
+    }
+    if (b.classList.contains('geht')) return;
+    b.classList.remove('zieht');
+    b.classList.add('geht');
+    blattBewegen((typeof ab === 'number' && ab > 0 ? ab : blattVersatz()) + 'px', '100%', 240, 'cubic-bezier(0.4, 0, 1, 1)', zu);
   };
-  S.el('blatt-zu').addEventListener('click', S.blattSchliessen);
+  /**
+   * Laufende Bewegung anhalten, weil der Finger das Blatt übernimmt (gesten.js). Rückgabe: um wie viele Pixel das
+   * Blatt in diesem Moment nach unten versetzt ist, damit das Ziehen dort weitermacht und nichts springt.
+   */
+  S.blattHalten = function () {
+    if (!blattLauf) return 0;
+    const versatz = blattVersatz();
+    blattLauf.onfinish = null;
+    blattLauf.cancel();
+    blattLauf = null;
+    return versatz;
+  };
+  /** Nach dem Ziehen zurück an seinen Platz federn (`ab` = Pixel, um die es gezogen war). Ein begonnenes Schließen hat Vorrang. */
+  S.blattZurueckFedern = function (ab) {
+    const b = S.el('blatt');
+    if (!b || !b.open || b.classList.contains('geht')) return;
+    blattRuhe();
+    blattBewegen((ab > 0 ? ab : 0) + 'px', '0px', 340, BLATT_KURVE);
+  };
+  S.el('blatt-zu').addEventListener('click', () => S.blattSchliessen());
   // Tipp auf den Rand (das <dialog> selbst, nicht sein Inhalt) schließt
   S.el('blatt').addEventListener('click', (ev) => { if (ev.target === S.el('blatt')) S.blattSchliessen(); });
+  // Escape: nicht schlagartig zu, sondern wie alle anderen Wege mit Bewegung
+  S.el('blatt').addEventListener('cancel', (ev) => { ev.preventDefault(); S.blattSchliessen(); });
   S.el('blatt').addEventListener('close', () => {
+    blattRuhe();
     let v = blattVon;
     const ersatz = blattZurueck;
     blattVon = null;
@@ -296,6 +424,7 @@
         ...(zusatz || []).filter(Boolean).map((z) => S.h('div', { class: 'nebenzeile', text: z }))));
     t.classList.toggle('fehler-toast', !!fehler);
     t.hidden = false;
+    S.haptik();
     S.ansagen((fehler ? 'Fehler: ' : '') + [text].concat((zusatz || []).filter(Boolean)).join('. '));
     toastUhr = setTimeout(() => { t.hidden = true; }, fehler || (zusatz && zusatz.length) ? 9000 : 4500);
   };

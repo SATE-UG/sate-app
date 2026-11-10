@@ -1,27 +1,45 @@
 /* SATE-App: schwarzer Grund, dunkelgraue Karten, iOS-Systemschrift. Marke: Logo, „Trink SATE!“ mit Herz, Überschriften
-   in Courier New wie auf den Event-Slides („**Hallo** Mark“). Eine Akzentfarbe (warmes Gelb wie der Secco) nur für
-   Status „bald/jetzt bestellen“, gewählte Elemente und das Diagramm; Rot nur für Fehler und Storno.
-   Kontraste (WCAG AA, gerechnet): Grau #98989F auf #1C1C1E 5,9:1, auf #2C2C2E 4,8:1; Gelb auf #1C1C1E 10:1, Schwarz auf
-   Gelb 12:1; Rot #FF8F85 auf rotem Grund ≥ 5,2:1; Balken #7A7A80 auf #1C1C1E 3,9:1 (Grafik ≥ 3:1).
-   Trends (seit v9): Grün #6CD38A auf #2C2C2E 7,5:1, Rot #FF8F85 auf #2C2C2E 6,3:1; Richtung steht zusätzlich als Vorzeichen da.
+   in Courier New wie auf den Event-Slides („**Hallo** Mark“).
+   Farben (seit v28): eine Akzentfarbe, ein helles Blau, nur für Antippbares, Auswahl und die Linie im Diagramm. Zustände
+   haben eigene Farben: Grün = gut, Orange = bald/jetzt bestellen, Rot = Fehler und Storno. Primärknöpfe bleiben weiß.
+   Kontraste (WCAG AA, gerechnet): Grau #98989F auf #1C1C1E 5,9:1, auf #2C2C2E 4,8:1; Blau #5EB5FF auf #1C1C1E 7,7:1,
+   Schwarz auf Blau 9,5:1; Orange #FFB340 auf #1C1C1E 9,6:1; Rot #FF8F85 auf rotem Grund ≥ 5,2:1; Balken #7A7A80 auf
+   #1C1C1E 3,9:1 (Grafik ≥ 3:1). Trends: Grün #6CD38A auf #2C2C2E 7,5:1, Rot #FF8F85 auf #2C2C2E 6,3:1; die Richtung steht
+   zusätzlich als Vorzeichen da.
+   Material (seit v28, wie iOS 26): Leiste, Rückmeldung und Rückfrage sind Glas (durchscheinend, unscharf, helle Kante).
    Abstände für Notch und Home-Leiste (Safe Area). Statusleiste seit 2026-11-08 deckend schwarz (`black`): mit black-translucent
    macht iOS 26 das Fenster einer Home-Bildschirm-App zu kurz, unten bleibt ein schwarzer Streifen. */
 :root {
   --grund: #000000;
   --karte: #1C1C1E;
+  --karte-druck: #262628;  /* Karte, solange ein Finger darauf liegt */
   --feld: #2C2C2E;
   --feld-aktiv: #3A3A3C;
   --text: #ffffff;
   --leise: #98989F;
-  --linie: rgba(255, 255, 255, 0.08);
-  --akzent: #E8C547;
-  --akzent-weich: rgba(232, 197, 71, 0.16);
+  --hell: #F2F2F7;         /* gewähltes Segment, gewählter Chip */
+  --linie: rgba(255, 255, 255, 0.13);
+  --akzent: #5EB5FF;
+  --akzent-weich: rgba(94, 181, 255, 0.16);
+  --warn: #FFB340;
+  --warn-weich: rgba(255, 179, 64, 0.16);
   --rot: #FF8F85;
   --rot-weich: rgba(255, 92, 80, 0.15);
   --gruen: #6CD38A;
-  --radius: 16px;
+  --gruen-weich: rgba(108, 211, 138, 0.16);
+  --radius: 20px;
   --radius-klein: 12px;
-  --leiste: 58px;   /* Höhe der unteren Leiste ohne Safe Area */
+  /* Glas: durchscheinende Fläche mit Unschärfe dahinter, oben eine feine Lichtkante. Die Unschärfe selbst steht bei den
+     Elementen ausgeschrieben: Safari nimmt -webkit-backdrop-filter nicht aus einer Variable. */
+  --glas: rgba(34, 34, 37, 0.78);
+  --glas-kante: inset 0 0 0 0.5px rgba(255, 255, 255, 0.14), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  /* Bewegung: Loslassen federt leicht über, Blätter und Übergänge laufen weich aus (Kurve wie iOS-Sheets) */
+  --feder: cubic-bezier(0.34, 1.45, 0.64, 1);
+  --sanft: cubic-bezier(0.32, 0.72, 0, 1);
+  /* Untere Leiste: Höhe der Kapsel, Abstand zum unteren Rand (über der Home-Leiste), zusammen der Platz, den sie braucht */
+  --leiste-h: 62px;
+  --unten: max(calc(env(safe-area-inset-bottom) - 14px), 10px);
+  --leiste: calc(var(--leiste-h) + var(--unten));
   /* Seitenränder angemeldet: mindestens 16 px plus Safe Area, auf breiten Bildschirmen Inhalt mittig mit höchstens 520 px */
   --rand-l: max(calc(16px + env(safe-area-inset-left)), calc(50vw - 260px));
   --rand-r: max(calc(16px + env(safe-area-inset-right)), calc(50vw - 260px));
@@ -85,13 +103,21 @@ p { margin: 0; }
   flex-direction: column;
 }
 
-/* Bedienelemente: keine Textauswahl und kein Lupen-Menü beim langen Drücken, kurze Rückmeldung beim Tippen */
+/* Bedienelemente: keine Textauswahl und kein Lupen-Menü beim langen Drücken */
 button, .leiste, .segment, .art-kachel, .banner, .ziehen, .ort-wahl {
   touch-action: manipulation; /* kein Doppeltipp-Zoom, schnelles Tippen */
   -webkit-user-select: none;
   user-select: none;
   -webkit-touch-callout: none;
 }
+
+/* Drücken (seit v28): gesten.js setzt `.gedrueckt`, solange ein Finger auf einem Bedienelement liegt, auch bei einem
+   kurzen Tipp einen Moment lang sichtbar, beim Scrollen sofort weg. Rein geht es schnell, beim Loslassen federt das
+   Element zurück. Was „gedrückt“ aussieht (kleiner, heller, blasser), steht bei den Elementen selbst. */
+button, .art-kachel {
+  transition: transform 0.45s var(--feder), background-color 0.3s ease, color 0.2s ease, opacity 0.3s ease, box-shadow 0.25s ease;
+}
+.gedrueckt, .gedrueckt .art-kachel { transition-duration: 0.09s; transition-timing-function: ease-out; }
 
 .icon {
   width: 24px;
@@ -106,6 +132,7 @@ button, .leiste, .segment, .art-kachel, .banner, .ziehen, .ort-wahl {
 
 /* Kopf: Logo (Männchen + SATE) links, rechts „Neu laden“ rund. Vor der Anmeldung zeigt die Anmeldeseite ihr großes Logo. */
 .kopf {
+  position: relative;
   flex: none;
   min-height: 36px;
   margin: 0 0 4px;
@@ -118,6 +145,25 @@ button, .leiste, .segment, .art-kachel, .banner, .ziehen, .ort-wahl {
 body:not(.mit-leiste) .kopf { display: none; }
 .logo { display: block; height: 22px; width: auto; }
 .kopf-knoepfe { display: flex; gap: 10px; }
+/* Kleiner Titel in der Mitte, sobald die große Überschrift der Ansicht weggescrollt ist (wie „Large Title“ bei iOS, app.js) */
+.kopf-titel {
+  position: absolute;
+  left: 50%;
+  bottom: 0;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  margin: 0;
+  font-family: var(--marke);
+  font-size: 17px;
+  font-weight: 700;
+  white-space: nowrap;
+  opacity: 0;
+  transform: translate(-50%, 6px);
+  transition: opacity 0.2s ease, transform 0.3s var(--sanft);
+  pointer-events: none;
+}
+.kopf-titel.sichtbar { opacity: 1; transform: translate(-50%, 0); }
 
 .rund {
   width: 36px;
@@ -127,6 +173,7 @@ body:not(.mit-leiste) .kopf { display: none; }
   border: 0;
   border-radius: 50%;
   background: var(--karte);
+  box-shadow: var(--glas-kante);
   color: var(--text);
   cursor: pointer;
   -webkit-appearance: none;
@@ -137,8 +184,7 @@ body:not(.mit-leiste) .kopf { display: none; }
 /* 36 px sichtbar, Tippfläche trotzdem 44 px (Apple-Mindestgröße) */
 .rund { position: relative; }
 .rund::after { content: ""; position: absolute; inset: -4px; }
-.rund { transition: transform 0.1s ease, background-color 0.1s ease; }
-.rund:active { background: var(--feld-aktiv); transform: scale(0.92); }
+.rund.gedrueckt { background: var(--feld-aktiv); transform: scale(0.9); }
 .rund:disabled { cursor: default; }
 .rund:disabled .icon { animation: drehen 0.9s linear infinite; }
 .rund:focus-visible { outline: 2px solid var(--akzent); outline-offset: 2px; }
@@ -156,6 +202,9 @@ body:not(.mit-leiste) .kopf { display: none; }
   overflow-wrap: anywhere;
 }
 .titel strong, h2 strong { font-weight: 700; }
+/* Der normale Schnitt von Courier New ist auf Schwarz haarfein: ein Hauch Kontur macht ihn lesbar, fett bleibt unverändert */
+.titel, h2 { -webkit-text-stroke: 0.35px currentColor; }
+.titel strong, h2 strong, .blatt-titel, .dialog-titel, .klapp-h2 { -webkit-text-stroke: 0; }
 h2 {
   font-family: var(--marke);
   font-size: 22px;
@@ -170,11 +219,11 @@ h2 {
   color: var(--leise);
   text-transform: uppercase;
   letter-spacing: 0.06em;
-  margin: 24px 4px 8px;
+  margin: 24px 16px 8px;
 }
 
 .leise { color: var(--leise); font-weight: 400; }
-.hinweis { color: var(--leise); font-size: 14px; margin: 0 0 12px; }
+.hinweis { color: var(--leise); font-size: 15px; margin: 0 0 12px; }
 
 /* Karten und Kacheln ------------------------------------------------------------------------------------------ */
 .karte {
@@ -183,10 +232,10 @@ h2 {
   padding: 16px;
   margin: 0 0 12px;
 }
-.liste-karte { padding: 0 16px; }
+.liste-karte { padding: 0 16px; overflow: hidden; }
 
-.kacheln { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 0 0 12px; }
-.kachel { background: var(--karte); border-radius: var(--radius); padding: 14px 16px 16px; min-width: 0; }
+.kacheln { display: grid; grid-template-columns: 1fr 1fr; grid-auto-rows: 1fr; gap: 12px; margin: 0 0 12px; }
+.kachel { background: var(--karte); border-radius: var(--radius); padding: 16px; min-width: 0; }
 .kachel-label { display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 500; color: var(--leise); }
 .label-zeile { justify-content: space-between; gap: 12px; }
 .label-rechts { font-variant-numeric: tabular-nums; white-space: nowrap; }
@@ -203,12 +252,12 @@ h2 {
 .kachel-zusatz { font-size: 13px; color: var(--leise); line-height: 1.35; }
 
 /* Bestellstatus: Pille, großes Datum, Reichweiten-Balken */
-.bestellung { padding: 18px 16px 16px; }
-.bestellung.stufe-jetzt { box-shadow: inset 0 0 0 1.5px var(--akzent); }
+.bestellung { padding: 16px; }
+.bestellung.stufe-jetzt { box-shadow: inset 0 0 0 1.5px var(--warn); }
 .bestellung-kopf { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin: 0 0 2px; }
 .bestellung-kopf .kachel-label { margin: 0; }
 .bestellung-frist { margin: 0 0 10px; font-size: 15px; font-weight: 500; color: var(--leise); font-variant-numeric: tabular-nums; }
-.bestellung.stufe-bald .bestellung-frist, .bestellung.stufe-jetzt .bestellung-frist { color: var(--akzent); font-weight: 600; }
+.bestellung.stufe-bald .bestellung-frist, .bestellung.stufe-jetzt .bestellung-frist { color: var(--warn); font-weight: 600; }
 
 .bestellung-datum {
   margin: 4px 0 4px;
@@ -222,13 +271,13 @@ h2 {
 .am-stueck { white-space: nowrap; }
 /* Rechenweg zum Bestelltermin: seit v26 zugeklappt hinter „So rechnet die App“ (Bestand → reicht bis → − Abfüllung − Puffer → = bestellen) */
 .rw-knopf { width: 100%; min-height: 44px; display: flex; align-items: center; justify-content: space-between; gap: 12px;
-  margin: 14px 0 -12px; padding: 0; border: 0; border-top: 1px solid var(--linie); background: none; color: var(--leise);
-  font: inherit; font-size: 14px; font-weight: 500; text-align: left; cursor: pointer; -webkit-appearance: none; appearance: none; }
+  margin: 14px 0 -12px; padding: 0; border: 0; border-top: 0.5px solid var(--linie); background: none; color: var(--leise);
+  font: inherit; font-size: 15px; font-weight: 500; text-align: left; cursor: pointer; -webkit-appearance: none; appearance: none; }
 .rw-knopf[aria-expanded="true"] { margin-bottom: 0; }
-.rw-knopf[aria-expanded="true"] .klapp-pfeil { transform: rotate(90deg); }
-.rw-knopf:active { opacity: 0.55; }
+.rw-knopf[aria-expanded="true"] .klapp-pfeil { transform: rotate(135deg); }
+.rw-knopf.gedrueckt { opacity: 0.5; }
 .rw-knopf:focus-visible { outline: 2px solid var(--akzent); outline-offset: 2px; border-radius: 8px; }
-.rechenweg.bestell-rechenweg { margin: 0; padding-top: 0; border-top: 0; font-size: 14px; }
+.rechenweg.bestell-rechenweg { margin: 0; padding-top: 0; border-top: 0; font-size: 15px; }
 .bestell-rechenweg .rw-zeile { flex-wrap: wrap; align-items: baseline; column-gap: 12px; row-gap: 1px; padding: 4px 0; }
 .bestell-rechenweg dt { min-width: 0; }
 .bestell-rechenweg .rw-summe { margin-top: 2px; padding-top: 7px; }
@@ -240,43 +289,42 @@ h2 {
 
 /* Begrüßung: Datum klein unter „Hallo Mark“ */
 .titel-gruss { margin-bottom: 4px; }
-.datum-zeile { margin: 0 0 18px; font-size: 14px; color: var(--leise); min-height: 1.4em; }
+.datum-zeile { margin: 0 0 16px; font-size: 15px; color: var(--leise); min-height: 1.4em; }
 
 /* Kachel als Knopf (z. B. „Dieses Jahr“ öffnet Verkäufe) */
 .kachel-knopf { display: flex; flex-direction: column; width: 100%; border: 0; color: var(--text); font: inherit; text-align: left; cursor: pointer;
-  -webkit-appearance: none; appearance: none; transition: transform 0.1s ease, background-color 0.1s ease; }
+  -webkit-appearance: none; appearance: none; }
 .kachel-knopf > span { display: block; }
 .kachel-knopf > .kachel-label { display: flex; }
-.kachel-pfeil { margin-left: auto; font-size: 20px; line-height: 0.8; color: var(--leise); }
+.kachel-pfeil { margin-left: auto; }
 .kachel-fuss { margin-top: auto; padding-top: 10px; font-size: 13px; line-height: 1.35; color: var(--leise); font-variant-numeric: tabular-nums; }
 .kachel-fuss .mini-fortschritt, .kachel-fuss .verteilung-balken.mini { margin: 0 0 7px; height: 5px; }
-.kachel-knopf:active { transform: scale(0.97); background: #242426; }
+.kachel-knopf.gedrueckt { transform: scale(0.97); background: var(--karte-druck); }
 .kachel-knopf:focus-visible { outline: 2px solid var(--akzent); outline-offset: 2px; }
 
 /* Start (v23): Prognose in der Bestell-Karte, Kennzahlen mit Fortschritt, Zeilen-Karten, „Zuletzt passiert“ */
 .diagramm.prognose { margin: 6px 0 0; }
 .diagramm .marke-bestellen { stroke: var(--akzent); stroke-width: 1.25; stroke-dasharray: 3 3; }
-.diagramm .marke-text { fill: var(--akzent); font-size: 10px; font-weight: 700; }
+.diagramm .marke-text { fill: var(--akzent); font-size: 11px; font-weight: 700; }
 .diagramm .punkt-heute { fill: var(--text); stroke: var(--karte); stroke-width: 2; }
-.diagramm .start-wert { fill: var(--text); font-size: 10px; }
 .diagramm .band-abfuellung { fill: var(--akzent); opacity: 0.13; }
-.diagramm .band-text { fill: var(--akzent); font-size: 10px; font-weight: 600; }
-.diagramm .leer-text { fill: var(--leise); font-size: 10px; font-weight: 600; }
+.diagramm .band-text { fill: var(--akzent); font-size: 11px; font-weight: 600; }
+.diagramm .leer-text { fill: var(--leise); font-size: 11px; font-weight: 600; }
 .mini-fortschritt { display: block; height: 5px; margin: 8px 0 5px; border-radius: 3px; background: var(--feld); overflow: hidden; }
 .mini-fuell { display: block; height: 100%; min-width: 3px; border-radius: 3px; background: var(--text); }
 .mini-fuell.voll { background: var(--gruen); }
 .verteilung-balken.mini { display: flex; height: 6px; margin: 9px 0 3px; }
 .zeilen-karte { width: 100%; display: flex; align-items: center; gap: 12px; border: 0; color: var(--text); font: inherit; text-align: left;
-  cursor: pointer; -webkit-appearance: none; appearance: none; transition: transform 0.1s ease, background-color 0.1s ease; }
-.zeilen-karte:active { transform: scale(0.98); background: #242426; }
+  cursor: pointer; -webkit-appearance: none; appearance: none; }
+.zeilen-karte.gedrueckt { transform: scale(0.98); background: var(--karte-druck); }
 .zeilen-karte:focus-visible { outline: 2px solid var(--akzent); outline-offset: 2px; }
-.karte-symbol { flex: none; width: 36px; height: 36px; display: grid; place-items: center; border-radius: 10px; background: var(--feld); }
+.karte-symbol { flex: none; width: 32px; height: 32px; display: grid; place-items: center; border-radius: 10px; background: var(--feld); }
 .karte-symbol .icon { width: 20px; height: 20px; }
-.zeilen-karte-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; font-size: 14px; color: var(--leise); }
+.zeilen-karte-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; font-size: 13px; color: var(--leise); }
 .zeilen-karte-text strong { color: var(--text); font-size: 16px; font-weight: 600; }
-.liste > li.aktiv-zeile { display: grid; grid-template-columns: 32px 1fr auto; align-items: center; gap: 12px; padding: 11px 0; }
+.liste > li.aktiv-zeile { display: grid; grid-template-columns: 32px 1fr auto; align-items: center; gap: 12px; padding: 12px 0; }
 .aktiv-text { min-width: 0; display: flex; flex-direction: column; }
-.aktiv-titel { font-size: 15px; font-weight: 600; overflow-wrap: anywhere; }
+.aktiv-titel { font-size: 16px; font-weight: 600; overflow-wrap: anywhere; }
 .aktiv-titel .badge { margin-left: 8px; }
 .aktiv-wert { font-size: 15px; font-weight: 600; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .aktiv-rechts { display: flex; flex-direction: column; align-items: flex-end; text-align: right; }
@@ -286,17 +334,25 @@ h2 {
 
 /* Kunden (v23): Suche mit Sortierung, Kanal-Filter als Chips (waagerecht scrollbar) */
 .such-zeile { display: flex; gap: 8px; margin: 0 0 10px; }
-.suche { flex: 1; min-width: 0; min-height: 44px; padding: 10px 14px; border-radius: 12px; background-color: var(--karte); }
-.suche::-webkit-search-cancel-button { -webkit-appearance: none; }
-.sortierung { flex: none; width: auto; max-width: 46%; min-height: 44px; padding: 8px 34px 8px 12px; font-size: 16px; border-radius: 12px;
-  background-color: var(--karte); }
+/* Suchfeld wie in iOS: Kapsel, Lupe links, rechts ein runder Knopf zum Leeren (nur wenn etwas drinsteht) */
+.such-feld { position: relative; flex: 1; min-width: 0; display: flex; align-items: center; }
+.such-icon { position: absolute; left: 13px; width: 18px; height: 18px; color: var(--leise); pointer-events: none; }
+.suche { flex: 1; min-width: 0; min-height: 44px; padding: 10px 40px 10px 38px; border-radius: 999px; background-color: var(--karte); }
+.suche::-webkit-search-cancel-button, .suche::-webkit-search-decoration { -webkit-appearance: none; }
+.such-leer { position: absolute; right: 0; width: 44px; height: 44px; display: grid; place-items: center; padding: 0; border: 0; border-radius: 50%;
+  background: transparent; cursor: pointer; -webkit-appearance: none; appearance: none; }
+.such-leer .icon { width: 18px; height: 18px; padding: 4px; border-radius: 50%; background: rgba(235, 235, 245, 0.26); color: var(--karte); stroke-width: 3; }
+.such-leer.gedrueckt { opacity: 0.5; }
+.such-leer:focus-visible { outline: 2px solid var(--akzent); outline-offset: -6px; }
+.sortierung { flex: none; width: auto; max-width: 52%; min-height: 44px; padding: 8px 32px 8px 15px; font-size: 16px; border-radius: 999px;
+  background-color: var(--karte); background-position: right 14px center; }
 .filter-chips { display: flex; gap: 8px; overflow-x: auto; margin: 0 calc(-1 * var(--rand-r)) 10px calc(-1 * var(--rand-l)); padding: 2px var(--rand-r) 6px var(--rand-l);
   scrollbar-width: none; touch-action: pan-x; overscroll-behavior-x: contain; }
 .filter-chips::-webkit-scrollbar { display: none; }
 .filter-chips .chip { flex: none; background: var(--karte); }
-.filter-chips .chip[aria-pressed="true"] { background: #F2F2F2; color: #000000; }
+.filter-chips .chip[aria-pressed="true"] { background: var(--hell); color: #000000; }
 #kunden-inhalt > h2:first-child, #kunden-inhalt > .h2-zeile:first-child { margin-top: 0; }
-h3.gruppe { font-size: 14px; font-weight: 600; color: var(--leise); margin: 22px 4px 8px; }
+h3.gruppe { font-size: 13px; font-weight: 600; color: var(--leise); margin: 22px 16px 8px; }
 .rang-zahlen .trend { margin-top: 1px; }
 
 /* Lager (v23): Liste mit „zählen“, Lager-Blatt mit zwei Zahlen und Knöpfen */
@@ -304,16 +360,15 @@ h3.gruppe { font-size: 14px; font-weight: 600; color: var(--leise); margin: 22px
 .blatt-zahlen.zwei { grid-template-columns: repeat(2, 1fr); }
 .blatt-knoepfe { display: grid; gap: 10px; margin: 18px 0 4px; }
 
-/* Hinweis-Karte (z. B. Jahresinventur): gelber Rahmen, Symbol, Text, Pfeil */
+/* Hinweis-Karte (z. B. Jahresinventur): Rahmen in der Akzentfarbe, Symbol, Text, Pfeil */
 .hinweis-karte { width: 100%; display: flex; align-items: center; gap: 12px; border: 0; color: var(--text); font: inherit; text-align: left;
-  cursor: pointer; -webkit-appearance: none; appearance: none; box-shadow: inset 0 0 0 1.5px var(--akzent-weich);
-  transition: transform 0.1s ease, background-color 0.1s ease; }
-.hinweis-karte:active { transform: scale(0.98); background: #242426; }
+  cursor: pointer; -webkit-appearance: none; appearance: none; box-shadow: inset 0 0 0 1.5px var(--akzent-weich); }
+.hinweis-karte.gedrueckt { transform: scale(0.98); background: var(--karte-druck); }
 .hinweis-karte:focus-visible { outline: 2px solid var(--akzent); outline-offset: 2px; }
-.hinweis-symbol { flex: none; width: 36px; height: 36px; display: grid; place-items: center; border-radius: 10px; background: var(--akzent-weich); color: var(--akzent); }
+.hinweis-symbol { flex: none; width: 32px; height: 32px; display: grid; place-items: center; border-radius: 10px; background: var(--akzent-weich); color: var(--akzent); }
 .hinweis-symbol .icon { width: 20px; height: 20px; }
-.hinweis-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; font-size: 14px; color: var(--leise); }
-.hinweis-text strong { color: var(--text); font-size: 15px; font-weight: 600; }
+.hinweis-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; font-size: 13px; color: var(--leise); }
+.hinweis-text strong { color: var(--text); font-size: 16px; font-weight: 600; }
 
 
 /* Standorte: Inventurdatum und Kisten klein unter dem Namen */
@@ -322,29 +377,34 @@ h3.gruppe { font-size: 14px; font-weight: 600; color: var(--leise); margin: 22px
 .pill {
   display: inline-flex;
   align-items: center;
-  padding: 5px 12px;
+  padding: 4px 10px;
   border-radius: 999px;
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 600;
   background: var(--feld);
   color: var(--text);
 }
-.pill-bald { background: var(--akzent-weich); color: var(--akzent); }
-.pill-jetzt { background: var(--akzent); color: #000000; }
+.pill-ok { background: var(--gruen-weich); color: var(--gruen); }
+.pill-bald { background: var(--warn-weich); color: var(--warn); }
+.pill-jetzt { background: var(--warn); color: #000000; }
 .pill-leer { color: var(--leise); }
 
 
 /* Listen in Karten (Standorte, Kanäle, Verlauf …) */
 .liste { list-style: none; margin: 0; padding: 0; }
-.liste > li { padding: 14px 0; border-bottom: 1px solid var(--linie); }
-.liste > li:last-child { border-bottom: 0; }
+.liste > li { position: relative; padding: 12px 0; }
+/* Trenner als Haarlinie unter jeder Zeile außer der letzten; nach einem Symbol oder Platz beginnt er erst am Text */
+.liste > li:not(:last-child)::after { content: ''; position: absolute; left: var(--trenner-ab, 0px); right: 0; bottom: 0; height: 0.5px;
+  background: var(--linie); pointer-events: none; }
+.liste > li.aktiv-zeile, .liste > li.verlauf-zeile { --trenner-ab: 44px; }
+.liste > li:has(.rang-nr) { --trenner-ab: 36px; }
 .zeile { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
 .zeile > :first-child { min-width: 0; overflow-wrap: anywhere; }
 .zeile > :last-child { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .zeile-wert { font-weight: 600; }
-.zeile-leise { font-size: 14px; color: var(--leise); }
+.zeile-leise { font-size: 15px; color: var(--leise); }
 .nebenzeile { font-size: 13px; color: var(--leise); margin-top: 3px; overflow-wrap: anywhere; }
-.nebenzeile.warnung { color: var(--akzent); }
+.nebenzeile.warnung { color: var(--warn); }
 
 .anteil { height: 4px; border-radius: 2px; background: var(--feld); margin-top: 10px; overflow: hidden; }
 .anteil-fuell { height: 100%; min-width: 3px; border-radius: 2px; background: rgba(255, 255, 255, 0.9); }
@@ -366,7 +426,7 @@ h3.gruppe { font-size: 14px; font-weight: 600; color: var(--leise); margin: 22px
 .badge-storno { margin-left: 8px; background: var(--rot-weich); color: var(--rot); }
 
 /* Hinweise: der freundliche Satz zum Bestand direkt unter den Kacheln, die übrigen aus dem Sheet klein und dezent */
-.notiz { display: flex; align-items: flex-start; gap: 8px; margin: -2px 4px 16px; font-size: 13px; line-height: 1.4; color: var(--leise); }
+.notiz { display: flex; align-items: flex-start; gap: 8px; margin: -2px 16px 16px; font-size: 13px; line-height: 1.4; color: var(--leise); }
 .notiz-icon { width: 16px; height: 16px; margin-top: 1px; }
 .info-karte { display: grid; grid-template-columns: 16px 1fr; gap: 10px; margin-top: 24px; padding: 12px 14px; background: transparent;
   box-shadow: inset 0 0 0 1px var(--linie); }
@@ -394,7 +454,7 @@ h3.gruppe { font-size: 14px; font-weight: 600; color: var(--leise); margin: 22px
 .skelett-reihe { height: 112px; display: grid; grid-template-columns: 1fr 1fr; gap: 12px; background: none; animation: none; }
 .skelett-reihe::before, .skelett-reihe::after { content: ''; }
 .skelett-zeile { height: 64px; }
-.skelett-segment { height: 38px; border-radius: 11px; }
+.skelett-segment { height: 40px; border-radius: 999px; }
 .skelett-diagramm { height: 300px; }
 
 .spinner, .laedt::before {
@@ -413,55 +473,73 @@ h3.gruppe { font-size: 14px; font-weight: 600; color: var(--leise); margin: 22px
 
 .nur-vorlesen { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; margin: -1px; }
 
-/* Segmented Control (iOS): abgerundete Pille, gewähltes Segment hell */
+/* Segmented Control (iOS): Kapsel mit grauem Daumen hinter dem gewählten Segment (weiß bleibt dem Primärknopf). Die Knöpfe werden bei jeder Wahl neu
+   gebaut; damit der Daumen trotzdem gleitet, gibt ansichten.js die Anzahl (--n), die alte (--von) und die neue Stelle
+   (--auf) mit, und der Daumen läuft per Animation von alt nach neu. */
 .segment {
+  position: relative;
   display: grid;
   grid-auto-flow: column;
   grid-auto-columns: 1fr;
   gap: 2px;
   padding: 3px;
   margin: 0 0 12px;
-  border-radius: 11px;
+  border-radius: 999px;
   background: var(--karte);
 }
+.segment::before {
+  content: '';
+  position: absolute;
+  top: 3px;
+  bottom: 3px;
+  left: 3px;
+  width: calc((100% - 6px - (var(--n, 2) - 1) * 2px) / var(--n, 2));
+  border-radius: 999px;
+  background: #636366;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35), inset 0 0.5px 0 rgba(255, 255, 255, 0.12);
+  transform: translateX(calc(var(--auf, 0) * (100% + 2px)));
+  animation: segment-gleiten 0.32s var(--sanft);
+}
+@keyframes segment-gleiten { from { transform: translateX(calc(var(--von, var(--auf, 0)) * (100% + 2px))); } }
 .segment button {
   position: relative;
-  min-height: 40px;
+  min-height: 34px;
   padding: 4px 6px;
   border: 0;
-  border-radius: 9px;
+  border-radius: 999px;
   background: transparent;
   color: var(--text);
   font: inherit;
-  font-size: 14px;
-  font-weight: 600;
+  font-size: 15px;
+  font-weight: 500;
   line-height: 1.2;
   cursor: pointer;
   -webkit-appearance: none;
   appearance: none;
   -webkit-tap-highlight-color: transparent;
-  transition: background-color 0.2s ease, color 0.2s ease, opacity 0.1s ease;
 }
-.segment button:active { opacity: 0.7; }
-.segment button::after { content: ''; position: absolute; inset: -3px 0; } /* Tippfläche 46 px hoch */
-.segment button[aria-pressed="true"] { background: #F2F2F2; color: #000000; box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4); }
+.segment button.gedrueckt { opacity: 0.6; }
+.segment button::after { content: ''; position: absolute; inset: -5px 0; } /* Tippfläche 44 px hoch */
+.segment button[aria-pressed="true"] { font-weight: 600; }
 .segment button:focus-visible { outline: 2px solid var(--akzent); outline-offset: 1px; }
 
 /* Verkäufe: Diagramm-Karte (SVG aus ansichten.js), oben rechts Pfeile zum Blättern */
 .diagramm-karte { position: relative; padding: 16px 8px 14px; }
-.monat-schritte { position: absolute; top: 12px; right: 12px; display: flex; gap: 8px; }
+.monat-schritte { position: absolute; top: 14px; right: 16px; display: flex; gap: 8px; }
 .monat-schritte .rund { background: var(--feld); }
 .monat-schritte .rund:disabled { opacity: 0.35; }
-.monat-schritte .rund:disabled .icon, .monat-schritte .rund:disabled .pfeil-text { animation: none; }
-.pfeil-text { font-size: 24px; line-height: 1; margin-top: -3px; }
+.monat-schritte .rund:disabled .icon { animation: none; }
+/* Pfeile zum Blättern: derselbe gezeichnete Pfeil wie in den Zeilen, hell, nach links bzw. rechts */
+.monat-schritte .chevron { margin: 0; border-color: var(--text); }
+.monat-schritte .pfeil-links { transform: translateX(2px) rotate(-135deg); }
+.monat-schritte .pfeil-rechts { transform: translateX(-2px) rotate(45deg); }
 .balken-info { padding: 0 8px 6px; min-height: 118px; }
 .info-wert { margin: 4px 0 2px; font-size: 34px; font-weight: 700; line-height: 1.1; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
 .diagramm { display: block; width: 100%; height: auto; overflow: visible; touch-action: manipulation; }
-.diagramm text { fill: var(--leise); font-family: var(--schrift); font-size: 10px; font-variant-numeric: tabular-nums; }
-.diagramm .achsen-text, .diagramm .jahr { font-size: 9px; }
+.diagramm text { fill: var(--leise); font-family: var(--schrift); font-size: 11px; font-variant-numeric: tabular-nums; }
 .diagramm .gitter { stroke: var(--linie); stroke-width: 1; }
 .diagramm .achse { stroke: rgba(255, 255, 255, 0.24); stroke-width: 1; }
-/* Monate: Balkenpaare Vorjahr (grau, links) | Dieses Jahr (hell, rechts); gewählter Monat gelb mit heller Spalte.
+/* Monate: Balkenpaare Vorjahr (grau, links) | Dieses Jahr (hell, rechts); gewählter Monat in der Akzentfarbe mit heller Spalte.
    Kontraste: #6C6C70 auf #1C1C1E 3,2:1, #D1D1D6 auf #1C1C1E 11:1 (Grafik ≥ 3:1). */
 .diagramm .spalte { fill: transparent; transition: fill 0.2s ease; }
 .diagramm .gewaehlt .spalte { fill: rgba(255, 255, 255, 0.05); }
@@ -482,15 +560,16 @@ h3.gruppe { font-size: 14px; font-weight: 600; color: var(--leise); margin: 22px
 @keyframes wachsen { from { transform: scaleY(0); } to { transform: none; } }
 @keyframes blenden { from { opacity: 0; } to { opacity: 1; } }
 
-/* Dieses Jahr kumuliert: gelbe Linie mit Fläche, Vorjahr grau gestrichelt */
+/* Dieses Jahr kumuliert: Linie in der Akzentfarbe mit Fläche, Vorjahr grau gestrichelt */
 .diagramm .linie-dieses { fill: none; stroke: var(--akzent); stroke-width: 2.25; stroke-linejoin: round; stroke-linecap: round; }
 .diagramm .flaeche-dieses { fill: url(#kumul-flaeche); stroke: none; }
+.kumul-stopp { stop-color: var(--akzent); }
 .diagramm .linie-vorjahr { fill: none; stroke: #8E8E93; stroke-width: 1.75; stroke-dasharray: 4 3; stroke-linejoin: round; stroke-linecap: round; }
 .diagramm .punkt-dieses { fill: var(--akzent); stroke: var(--karte); stroke-width: 2; }
 .diagramm .punkt-vorjahr { fill: #8E8E93; stroke: var(--karte); stroke-width: 1.5; }
-.diagramm.mini .mini-wert { font-size: 9px; fill: var(--leise); }
-.diagramm.mini .monat { font-size: 9px; }
-.diagramm .wert-label { fill: var(--akzent); font-size: 10.5px; font-weight: 700; }
+.diagramm.mini .mini-wert { font-size: 10px; fill: var(--leise); }
+.diagramm .wert-label { fill: var(--akzent); font-size: 11px; font-weight: 700; }
+.diagramm .wert-label.start-wert { fill: var(--text); } /* Bestand heute: weiß wie der Punkt */
 .diagramm .treffer { fill: transparent; cursor: pointer; outline: none; -webkit-tap-highlight-color: transparent; }
 .diagramm .treffer:focus-visible { stroke: var(--text); stroke-width: 1; stroke-dasharray: 2 2; }
 .legende { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; font-size: 12px; color: var(--leise); margin: 8px 8px 0; }
@@ -501,8 +580,8 @@ h3.gruppe { font-size: 14px; font-weight: 600; color: var(--leise); margin: 22px
 .zeichen-linie-vorjahr { border-top: 2px dashed #8E8E93; }
 .legende-tipp { margin-left: auto; }
 
-.zeitraum-text { font-size: 13px; color: var(--leise); margin: 0 4px 8px; font-variant-numeric: tabular-nums; }
-.vergleich-text { margin: -2px 4px 12px; font-size: 13px; }
+.zeitraum-text { font-size: 13px; color: var(--leise); margin: 0 16px 8px; font-variant-numeric: tabular-nums; }
+.vergleich-text { margin: -2px 16px 12px; font-size: 13px; }
 .info-leer { color: var(--leise); }
 /* Vergleich eines Monats: zwei Zellen nebeneinander (Vorjahresmonat, Vormonat), Prozent farbig, Basiswert leise */
 .vergleich-raster { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px; margin: 12px 0 2px; }
@@ -518,20 +597,21 @@ h3.gruppe { font-size: 14px; font-weight: 600; color: var(--leise); margin: 22px
 .summe-wert { font-size: 20px; font-weight: 700; line-height: 1.2; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
 .summe-zelle .trend { margin-top: 2px; }
 .jahr-karte { padding: 16px 16px 14px; }
-.jahr-karte .diagramm { margin: 14px -8px 0; width: calc(100% + 16px); }
+.jahr-karte .diagramm { margin: 14px -4px 0; width: calc(100% + 8px); }
 .jahr-karte .legende { margin: 8px 0 0; }
 .jahr-karte .trend-zeile { align-items: center; }
 .jahr-karte .trend-hinweis { font-size: 12px; }
-#verkaeufe-inhalt > h3 .h3-zusatz { margin-left: 6px; font-weight: 500; text-transform: none; letter-spacing: 0; }
 
 /* Kunden: ganze Zeile tippbar (öffnet die Details), Kanal klein darunter */
 .liste > li.kunde-zeile { padding: 0; }
 .zeilen-knopf {
-  width: 100%;
+  /* reicht bis an den Kartenrand (Karte: 16 px Innenabstand), damit das Highlight beim Drücken die ganze Zeile füllt */
+  width: calc(100% + 32px);
+  margin: 0 -16px;
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 12px 0;
+  padding: 12px 16px;
   border: 0;
   background: transparent;
   color: var(--text);
@@ -540,20 +620,19 @@ h3.gruppe { font-size: 14px; font-weight: 600; color: var(--leise); margin: 22px
   cursor: pointer;
   -webkit-appearance: none;
   appearance: none;
-  transition: opacity 0.1s ease;
 }
-.zeilen-knopf:active { opacity: 0.55; }
-.zeilen-knopf:focus-visible { outline: 2px solid var(--akzent); outline-offset: 2px; border-radius: 8px; }
+.zeilen-knopf.gedrueckt { background: rgba(255, 255, 255, 0.07); }
+.zeilen-knopf:focus-visible { outline: 2px solid var(--akzent); outline-offset: -3px; border-radius: 12px; } /* innen: die Karte schneidet außen ab */
 .rang-unter { display: block; font-size: 13px; color: var(--leise); margin-top: 1px; overflow-wrap: anywhere; }
-.rang-unter .badge { margin-left: 6px; padding: 0 7px; font-size: 11px; line-height: 16px; vertical-align: 1px; }
+.rang-unter .badge { margin-left: 6px; padding: 1px 7px; font-size: 11px; vertical-align: 1px; }
 /* Lange Kundennamen: höchstens zwei Zeilen, deutsche Silbentrennung, der volle Name steht im Kunden-Blatt */
 .kunde-name { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; overflow-wrap: break-word;
   -webkit-hyphens: auto; hyphens: auto; }
 .rang-titel .badge, .rang-titel .trend { margin-left: 8px; vertical-align: 1px; }
-.chevron.klein { margin-left: -4px; }
-.badge-neu { background: var(--akzent-weich); color: var(--akzent); }
+.chevron.klein { margin-left: -2px; }
+/* „neu“ bleibt neutral grau wie alle Badges: die Akzentfarbe gehört dem, was man antippen kann */
 .knopf.mehr-knopf { min-height: 44px; margin: -4px 0 12px; font-size: 15px; background: transparent; color: var(--akzent); }
-.knopf.mehr-knopf:active { background: var(--karte); }
+.knopf.mehr-knopf.gedrueckt { background: transparent; opacity: 0.5; }
 
 /* Ranglisten: Kanäle (mit Anteil) und Top 10 Kunden (mit Platz) */
 .rang-zeile { display: flex; align-items: center; gap: 12px; }
@@ -571,11 +650,11 @@ h3.gruppe { font-size: 14px; font-weight: 600; color: var(--leise); margin: 22px
 }
 .rang-nr.vorne { color: var(--text); }
 .rang-name { flex: 1; min-width: 0; }
-.rang-titel { display: block; font-size: 16px; overflow-wrap: anywhere; }
+.rang-titel { display: block; font-size: 16px; font-weight: 500; overflow-wrap: anywhere; }
 .rang-name .anteil { margin-top: 8px; }
 .rang-zahlen { display: flex; flex-direction: column; align-items: flex-end; text-align: right; }
 /* Ranglisten mit Anteils-Balken: rechte Spalte gleich breit, damit alle Balken gleich lang sind */
-.rangliste .rang-zahlen { min-width: 132px; }
+.rangliste:has(.anteil) .rang-zahlen { min-width: 132px; }
 .rang-flaschen { font-size: 15px; font-weight: 600; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .rang-umsatz { font-size: 13px; color: var(--leise); white-space: nowrap; font-variant-numeric: tabular-nums; }
 
@@ -585,8 +664,8 @@ h3.gruppe { font-size: 14px; font-weight: 600; color: var(--leise); margin: 22px
 /* Bestand gesamt (Lager): Zahl, geschätzt/gezählt, wie viele Lager gezählt, Verteilung als geteilter Balken */
 .gesamt-karte .karte-kopf { margin-bottom: 4px; }
 .gesamt-karte .kachel-zusatz { margin-top: 4px; }
-.badge-gut { background: rgba(108, 211, 138, 0.16); color: var(--gruen); }
-.inventur-stand { display: flex; align-items: center; gap: 10px; margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--linie); }
+.badge-gut { background: var(--gruen-weich); color: var(--gruen); }
+.inventur-stand { display: flex; align-items: center; gap: 10px; margin-top: 14px; padding-top: 12px; border-top: 0.5px solid var(--linie); }
 .inventur-stand .kachel-zusatz { margin: 0; }
 .inventur-schritte { display: flex; gap: 4px; flex: none; }
 .schritt-punkt { width: 18px; height: 6px; border-radius: 3px; background: var(--feld-aktiv); }
@@ -613,11 +692,11 @@ h3.gruppe { font-size: 14px; font-weight: 600; color: var(--leise); margin: 22px
 .haken.fertig { background: var(--gruen); box-shadow: none; color: #000000; }
 
 /* Rechenweg im Standort: gezählt, ± Bewegungen, = Bestand */
-.rechenweg { margin: 14px 0 0; padding-top: 10px; border-top: 1px solid var(--linie); font-size: 13px; }
+.rechenweg { margin: 14px 0 0; padding-top: 10px; border-top: 0.5px solid var(--linie); font-size: 13px; }
 .rw-zeile { display: flex; justify-content: space-between; gap: 12px; padding: 3px 0; color: var(--leise); }
 .rw-zeile dd { margin: 0; font-variant-numeric: tabular-nums; color: var(--text); white-space: nowrap; }
-.rw-summe { margin-top: 4px; padding-top: 6px; border-top: 1px solid var(--linie); color: var(--text); font-weight: 600; }
-.rechenweg-leer { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--linie); }
+.rw-summe { margin-top: 4px; padding-top: 6px; border-top: 0.5px solid var(--linie); color: var(--text); font-weight: 600; }
+.rechenweg-leer { margin-top: 12px; padding-top: 10px; border-top: 0.5px solid var(--linie); }
 
 /* Noch nicht gezählte Lager: eine Zeile pro Standort mit „Inventur eintragen“ */
 .liste > li.offen-zeile { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 0; }
@@ -631,21 +710,20 @@ h3.gruppe { font-size: 14px; font-weight: 600; color: var(--leise); margin: 22px
   display: grid;
   place-items: center;
   align-self: start;
-  border-radius: 9px;
+  border-radius: 10px;
   background: var(--feld);
   color: var(--text);
 }
 .verlauf-icon .icon { width: 18px; height: 18px; }
-.verlauf-icon.rechnung-icon { color: var(--akzent); }
 .verlauf-mitte { min-width: 0; }
-.verlauf-kopf { display: flex; align-items: center; gap: 8px; font-size: 15px; line-height: 1.3; }
+.verlauf-kopf { display: flex; align-items: center; gap: 8px; font-size: 16px; line-height: 1.3; }
 .verlauf-art { font-weight: 600; }
 .eintrag-text { font-size: 15px; line-height: 1.3; margin-top: 1px; overflow-wrap: anywhere; }
 .verlauf-mitte .nebenzeile { margin-top: 2px; }
 .storniert .verlauf-icon { opacity: 0.5; }
 .storniert .verlauf-art { color: var(--leise); }
 .storniert .eintrag-text { text-decoration: line-through; color: var(--leise); }
-.liste-fuss { margin: -4px 4px 0; font-size: 13px; }
+.liste-fuss { margin: -4px 16px 0; font-size: 13px; }
 
 /* Einklappbarer Abschnitt („Verkäufe zuordnen“): Karte als Knopf, Pfeil dreht sich beim Aufklappen */
 .klapp-h2 { margin: 32px 0 12px; font: inherit; }
@@ -662,20 +740,19 @@ h3.gruppe { font-size: 14px; font-weight: 600; color: var(--leise); margin: 22px
   cursor: pointer;
   -webkit-appearance: none;
   appearance: none;
-  transition: transform 0.1s ease, background-color 0.1s ease;
 }
-button.klapp-kopf:active { transform: scale(0.98); background: #242426; }
+button.klapp-kopf.gedrueckt { transform: scale(0.98); background: var(--karte-druck); }
 .klapp-kopf:focus-visible { outline: 2px solid var(--akzent); outline-offset: 2px; }
 .klapp-text { flex: 1; min-width: 0; display: flex; flex-direction: column; }
-.klapp-titel { font-size: 17px; font-weight: 600; }
+.klapp-titel { font-size: 16px; font-weight: 600; }
 .klapp-zusatz { font-size: 13px; font-weight: 400; color: var(--leise); margin-top: 2px; }
-.klapp-pfeil { transition: transform 0.2s ease; }
-.klapp-kopf[aria-expanded="true"] .klapp-pfeil { transform: rotate(90deg); }
+.klapp-pfeil { transition: transform 0.3s var(--sanft); }
+.klapp-kopf[aria-expanded="true"] .klapp-pfeil { transform: rotate(135deg); }
 .klapp-inhalt { animation: rein 0.22s ease-out; }
 
 /* Verkäufe zuordnen: Kunde | Flaschen, darunter „Rechnung vom Datum“ | Standort als kleine Pille (natives select) */
 .liste > li.zuordnen-zeile { padding: 12px 0; }
-.zuordnen-kunde { font-weight: 600; font-size: 15px; }
+.zuordnen-kunde { font-weight: 600; font-size: 16px; }
 .zuordnen-unten { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 4px; }
 .zuordnen-unten .nebenzeile { margin-top: 0; min-width: 0; }
 .ort-wahl {
@@ -691,8 +768,7 @@ button.klapp-kopf:active { transform: scale(0.98); background: #242426; }
   text-overflow: ellipsis;
   white-space: nowrap;
   overflow: hidden;
-  background-position: calc(100% - 17px) 52%, calc(100% - 12px) 52%;
-  background-size: 5px 5px, 5px 5px;
+  background-position: right 12px center;
 }
 .ort-wahl.gesetzt { color: var(--text); }
 
@@ -717,16 +793,17 @@ input, select, textarea {
   appearance: none;
 }
 input::placeholder, textarea::placeholder { color: var(--leise); opacity: 1; }
-input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 2px solid var(--akzent); outline-offset: 1px; }
+input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 0; box-shadow: inset 0 0 0 1.5px var(--akzent); }
 input[type="date"] { display: block; text-align: left; }
 input[type="date"]::-webkit-date-and-time-value { text-align: left; }
-textarea { resize: vertical; min-height: 88px; line-height: 1.35; }
-/* Auswahl mit Pfeil (ohne Bild: zwei Linien als Verlauf) */
+input[type="date"]::-webkit-datetime-edit { padding: 0; }
+textarea { resize: none; min-height: 88px; line-height: 1.35; }
+/* Auswahl mit Doppelpfeil wie die Pop-up-Knöpfe von iOS (eigene Datei: die CSP erlaubt keine Daten-URIs) */
 select {
   padding-right: 40px;
-  background-image: linear-gradient(45deg, transparent 50%, var(--leise) 50%), linear-gradient(135deg, var(--leise) 50%, transparent 50%);
-  background-position: calc(100% - 22px) 50%, calc(100% - 16px) 50%;
-  background-size: 6px 6px, 6px 6px;
+  background-image: url(bilder/auswahl.svg);
+  background-position: right 15px center;
+  background-size: 10px 14px;
   background-repeat: no-repeat;
 }
 select:disabled, input:disabled, textarea:disabled { opacity: 0.5; }
@@ -753,19 +830,18 @@ select:disabled, input:disabled, textarea:disabled { opacity: 0.5; }
   -webkit-appearance: none;
   appearance: none;
   -webkit-tap-highlight-color: transparent;
-  transition: background-color 0.1s ease, transform 0.1s ease;
 }
 .schritt .icon { width: 20px; height: 20px; stroke-width: 2.2; }
-.schritt:active { background: var(--feld-aktiv); transform: scale(0.92); }
+.schritt.gedrueckt { background: var(--feld-aktiv); transform: scale(0.9); }
 .schritt:focus-visible { outline: 2px solid var(--akzent); outline-offset: 2px; }
 .schritt:disabled { opacity: 0.45; }
-.summe { margin: 14px 0 0; padding-top: 12px; border-top: 1px solid var(--linie); font-size: 22px; font-weight: 700; letter-spacing: -0.01em;
+.summe { margin: 14px 0 0; padding-top: 12px; border-top: 0.5px solid var(--linie); font-size: 22px; font-weight: 700; letter-spacing: -0.01em;
   text-align: right; font-variant-numeric: tabular-nums; }
 .summe.summe-fehler { font-size: 15px; font-weight: 500; color: var(--rot); text-align: left; letter-spacing: 0; }
 .buchen-offen { margin: 10px 4px 0; text-align: center; font-size: 13px; }
 /* Bestand laut App unter dem Standort, Vorschau (danach/Abweichung) unter der Summe, Datums-Abkürzungen */
-.feld-hinweis { margin: 8px 2px 0; font-size: 13px; color: var(--leise); }
-.vorschau { margin: 8px 0 0; font-size: 14px; font-weight: 600; color: var(--akzent); text-align: right; font-variant-numeric: tabular-nums; }
+.feld-hinweis { margin: 8px 0 0; font-size: 13px; color: var(--leise); }
+.vorschau { margin: 8px 0 0; font-size: 15px; font-weight: 600; color: var(--text); text-align: right; font-variant-numeric: tabular-nums; }
 .datum-chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
 .chip {
   min-height: 34px;
@@ -775,24 +851,23 @@ select:disabled, input:disabled, textarea:disabled { opacity: 0.5; }
   background: var(--feld);
   color: var(--text);
   font: inherit;
-  font-size: 14px;
+  font-size: 15px;
   font-weight: 500;
   cursor: pointer;
   -webkit-appearance: none;
   appearance: none;
   position: relative;
-  transition: background-color 0.15s ease, color 0.15s ease, transform 0.1s ease;
 }
 .chip::after { content: ''; position: absolute; inset: -5px 0; } /* Tippfläche 44 px hoch */
-.chip:active { transform: scale(0.96); }
-.chip[aria-pressed="true"] { background: #F2F2F2; color: #000000; }
+.chip.gedrueckt { transform: scale(0.95); }
+.chip[aria-pressed="true"] { background: var(--hell); color: #000000; }
 .chip:focus-visible { outline: 2px solid var(--akzent); outline-offset: 2px; }
 .chip:disabled { opacity: 0.45; }
 /* Zuletzt eingetragen */
 #zuletzt-inhalt h2 { margin-top: 28px; }
 
 /* Art als Kacheln: Symbol links, Name und Kurztext rechts (zwei Spalten) */
-.arten { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
+.arten { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
 .art { position: relative; margin: 0; min-width: 0; }
 .art input { position: absolute; opacity: 0; width: 1px; height: 1px; min-height: 0; pointer-events: none; }
 .art-kachel {
@@ -803,15 +878,14 @@ select:disabled, input:disabled, textarea:disabled { opacity: 0.5; }
   gap: 10px;
   min-height: 62px;
   padding: 10px;
-  border-radius: 14px;
+  border-radius: var(--radius);
   background: var(--karte);
   box-shadow: inset 0 0 0 1.5px transparent;
   color: var(--text);
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
-  transition: background-color 0.15s ease, box-shadow 0.15s ease, color 0.15s ease, transform 0.1s ease;
 }
-.art:active .art-kachel { transform: scale(0.96); background-color: var(--feld); }
+.art.gedrueckt .art-kachel { transform: scale(0.96); background-color: var(--feld); }
 .art-symbol { flex: none; width: 32px; height: 32px; display: grid; place-items: center; border-radius: 10px; background: var(--feld);
   transition: background-color 0.15s ease; }
 .art-kachel .icon { width: 20px; height: 20px; color: var(--text); transition: color 0.15s ease; }
@@ -820,14 +894,14 @@ select:disabled, input:disabled, textarea:disabled { opacity: 0.5; }
 .art-kurz { font-size: 12px; line-height: 1.25; color: var(--leise); overflow-wrap: anywhere; }
 .art input:checked + .art-kachel .art-symbol { background: var(--akzent); }
 .art input:checked + .art-kachel .art-symbol .icon { color: #000000; }
-.art input:checked + .art-kachel .art-kurz { color: var(--akzent); opacity: 0.85; }
-.art input:checked + .art-kachel { background: var(--akzent-weich); box-shadow: inset 0 0 0 1.5px var(--akzent); color: var(--akzent); }
+/* Gewählt: Akzent als Schleier über der Kartenfarbe (nicht über Schwarz, sonst wirkt die Kachel dunkler als die anderen) */
+.art input:checked + .art-kachel { background: linear-gradient(var(--akzent-weich), var(--akzent-weich)) var(--karte); box-shadow: inset 0 0 0 1.5px var(--akzent); }
 
 .art input:focus-visible + .art-kachel { outline: 2px solid var(--text); outline-offset: 2px; }
 .art input:disabled + .art-kachel { opacity: 0.5; }
-.art-text { margin: 12px 4px 16px; }
+.art-text { margin: 12px 16px 16px; }
 
-/* Knöpfe: Primär weiß gefüllt, sonst grau */
+/* Knöpfe: Kapseln wie in iOS 26, Primär weiß gefüllt, sonst grau */
 .knopf {
   width: 100%;
   min-height: 50px;
@@ -840,25 +914,22 @@ select:disabled, input:disabled, textarea:disabled { opacity: 0.5; }
   font-size: 17px;
   font-weight: 600;
   border: 0;
-  border-radius: var(--radius-klein);
+  border-radius: 999px;
   background: var(--feld);
   color: var(--text);
   cursor: pointer;
   -webkit-appearance: none;
   appearance: none;
   -webkit-tap-highlight-color: transparent;
-  transition: background-color 0.1s ease, opacity 0.15s ease, transform 0.1s ease;
 }
-.knopf:active { background: var(--feld-aktiv); transform: scale(0.98); }
-.knopf:disabled:active { transform: none; }
+.knopf.gedrueckt { background: var(--feld-aktiv); transform: scale(0.97); }
 .knopf.haupt { background: var(--text); color: #000000; }
-.knopf.haupt:active { background: #D6D6D6; }
+.knopf.haupt.gedrueckt { background: #D1D1D6; }
 .knopf:focus-visible { outline: 2px solid var(--akzent); outline-offset: 2px; }
 .knopf:disabled { opacity: 0.45; cursor: default; }
-.knopf.klein { width: auto; min-height: 36px; padding: 0 14px; font-size: 15px; border-radius: 10px; flex: none; }
-.knopf.storno-knopf { margin-right: -8px; padding: 0 8px; background: transparent; color: var(--rot); font-weight: 500; }
-.knopf.leise-knopf { min-height: 32px; padding: 0 12px; font-size: 14px; font-weight: 500; position: relative; }
-.knopf.leise-knopf::after { content: ""; position: absolute; inset: -6px 0; } /* Tippfläche 44 px hoch */
+.knopf.haupt:disabled { background: var(--feld); color: var(--leise); opacity: 1; }
+.knopf.klein { width: auto; min-height: 36px; padding: 0 16px; font-size: 15px; flex: none; }
+.knopf.storno-knopf { min-height: 44px; margin-right: -8px; padding: 0 8px; background: transparent; color: var(--akzent); font-weight: 500; }
 /* Abmelden: kleiner, gedimmter Textlink ganz unten in der Übersicht */
 .abmelden-zeile { text-align: center; margin: 12px 0 0; }
 .text-link {
@@ -868,16 +939,15 @@ select:disabled, input:disabled, textarea:disabled { opacity: 0.5; }
   background: transparent;
   color: var(--leise);
   font: inherit;
-  font-size: 14px;
+  font-size: 15px;
   cursor: pointer;
   -webkit-appearance: none;
   appearance: none;
   -webkit-tap-highlight-color: transparent;
-  transition: opacity 0.1s ease;
 }
-.text-link:active { opacity: 0.6; }
+.text-link.gedrueckt { opacity: 0.5; }
 .text-link:focus-visible { outline: 2px solid var(--akzent); outline-offset: 2px; border-radius: 8px; }
-.storno-knopf:active { background: var(--rot-weich); }
+.knopf.storno-knopf.gedrueckt { background: var(--akzent-weich); }
 .pfeil { height: 16px; width: auto; }
 .knopf.haupt .pfeil { filter: invert(1); }
 
@@ -902,7 +972,7 @@ form .fehler { margin: 16px 0; }
 .anmelden .titel { margin-bottom: 8px; }
 .untertitel { font-size: 16px; color: var(--leise); text-wrap: balance; }
 .anmelden-karte { padding: 20px; }
-.anmelden-karte .hinweis { margin: 10px 2px 18px; }
+.anmelden-karte .hinweis { margin: 10px 0 18px; }
 #code {
   font-family: ui-monospace, "SF Mono", Menlo, monospace;
   font-size: 22px;
@@ -945,7 +1015,7 @@ form .fehler { margin: 16px 0; }
   touch-action: pan-x pan-y; /* senkrecht selbst, waagerecht an die Leiste weiter; kein Zoomen */
   scroll-snap-align: start;
   scroll-snap-stop: always;
-  padding: 4px var(--rand-r) calc(24px + var(--leiste) + env(safe-area-inset-bottom)) var(--rand-l);
+  padding: 10px var(--rand-r) calc(28px + var(--leiste)) var(--rand-l);
 }
 .ansicht > .fuss { padding-top: 32px; }
 
@@ -964,91 +1034,121 @@ form .fehler { margin: 16px 0; }
 }
 .herz { height: 18px; width: auto; margin-top: -3px; }
 
-/* Angemeldet: Was unter dem sichtbaren Bereich liegt (iOS-26.0-Lücke unten), bekommt die Farbe der Tab-Bar, damit die
-   Leiste bis zum Bildschirmrand reicht. Der Inhalt selbst hat den schwarzen body-Hintergrund. */
-html.mit-leiste { background: #141415; }
-/* Lücke erkannt (app.js untenPruefen): die Home-Leiste liegt schon in der Lücke, kein zweiter Abstand in der Tab-Bar */
-html.luecke-unten .leiste { padding-bottom: 6px; }
+/* Angemeldet: schwarzer Grund auch dort, wo iOS 26.0 unter dem sichtbaren Bereich eine Lücke lässt; die Leiste schwebt. */
+html.mit-leiste { background: var(--grund); }
+/* Lücke erkannt (app.js untenPruefen): die Home-Leiste liegt schon in der Lücke, die Leiste braucht nur einen kleinen Abstand */
+html.luecke-unten { --unten: 10px; }
 .safe-probe { position: fixed; top: 0; left: 0; width: 0; height: 0; padding-top: env(safe-area-inset-top); visibility: hidden; pointer-events: none; }
 
-/* Untere Leiste (iOS-Tab-Bar): Symbol + Text, leicht durchscheinend, Platz für die Home-Leiste */
-.leiste {
+/* Untere Leiste (seit v28 wie die Tab-Bar von iOS 26): schwebende Glas-Kapsel mit Symbol + Text. Hinter dem gewählten
+   Reiter liegt eine helle Pille, die beim Wischen zwischen den Ansichten mitläuft (--pos = 0 … 4, setzt app.js).
+   Der Inhalt läuft unter der Leiste durch und blendet nach unten weich aus (body::after). */
+body.mit-leiste::after {
+  content: '';
   position: fixed;
   left: 0;
   right: 0;
   bottom: 0;
+  z-index: 9;
+  height: calc(var(--leiste) + 40px);
+  background: linear-gradient(to top, rgba(0, 0, 0, 0.96) 0%, rgba(0, 0, 0, 0.84) 55%, rgba(0, 0, 0, 0) 100%);
+  pointer-events: none;
+}
+.leiste {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: var(--unten);
   z-index: 10;
+  width: calc(100% - 24px - env(safe-area-inset-left) - env(safe-area-inset-right));
+  max-width: 420px;
+  height: var(--leiste-h);
+  margin: 0 auto;
   display: grid;
   grid-template-columns: repeat(5, 1fr);
-  padding: 4px env(safe-area-inset-right) max(env(safe-area-inset-bottom), 6px) env(safe-area-inset-left);
-  background: rgba(20, 20, 21, 0.94); /* fast deckend, gleiche Farbe wie die Lücke darunter (html.mit-leiste) */
-  -webkit-backdrop-filter: saturate(180%) blur(20px);
-  backdrop-filter: saturate(180%) blur(20px);
-  border-top: 0.5px solid rgba(255, 255, 255, 0.14);
+  padding: 4px;
+  border-radius: calc(var(--leiste-h) / 2);
+  background: var(--glas);
+  -webkit-backdrop-filter: saturate(180%) blur(22px);
+  backdrop-filter: saturate(180%) blur(22px);
+  box-shadow: var(--glas-kante), 0 10px 30px rgba(0, 0, 0, 0.5);
+}
+.leiste-pille {
+  position: absolute;
+  top: 4px;
+  bottom: 4px;
+  left: 4px;
+  width: calc((100% - 8px) / 5);
+  border-radius: calc(var(--leiste-h) / 2 - 4px);
+  background: rgba(255, 255, 255, 0.1);
+  transform: translate3d(calc(var(--pos, 0) * 100%), 0, 0);
+  pointer-events: none;
 }
 .leiste button {
-  min-height: 50px;
+  position: relative; /* über der Pille */
+  min-width: 0;
+  height: 100%;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 3px;
-  padding: 2px;
+  gap: 2px;
+  padding: 0 2px;
   border: 0;
+  border-radius: calc(var(--leiste-h) / 2 - 4px);
   background: transparent;
   color: var(--leise);
   font: inherit;
-  font-size: 11px;
-  font-weight: 500;
+  font-size: 10px;
+  font-weight: 600;
   letter-spacing: 0.01em;
   cursor: pointer;
   -webkit-appearance: none;
   appearance: none;
   -webkit-tap-highlight-color: transparent;
-  transition: color 0.15s ease;
 }
-.leiste .icon { width: 25px; height: 25px; transition: transform 0.1s ease; }
-.leiste button:active { color: var(--text); }
-.leiste button:active .icon { transform: scale(0.88); }
+.leiste .icon { width: 24px; height: 24px; transition: transform 0.45s var(--feder); }
+.leiste button.gedrueckt .icon { transform: scale(0.84); transition-duration: 0.09s; }
 .leiste button[aria-selected="true"] { color: var(--text); }
 .leiste button[aria-selected="true"] .icon { stroke-width: 2.1; }
-.leiste button:focus-visible { outline: 2px solid var(--akzent); outline-offset: -3px; border-radius: 12px; }
-/* Eintragen: die Hauptaktion als gelber Kreis mit Plus (seit v23) */
-.leiste .reiter-plus .icon { width: 30px; height: 30px; margin: -3px 0 -2px; padding: 5px; border-radius: 50%; background: var(--akzent); color: #000000;
-  stroke-width: 2.4; box-shadow: 0 4px 14px rgba(232, 197, 71, 0.25); }
-.leiste .reiter-plus[aria-selected="true"] .icon { stroke-width: 2.6; box-shadow: 0 0 0 3px rgba(232, 197, 71, 0.3); }
-.leiste .reiter-plus:active .icon { transform: scale(0.9); }
+.leiste button:focus-visible { outline: 2px solid var(--akzent); outline-offset: -2px; }
+/* Eintragen: die Hauptaktion als Kreis in der Akzentfarbe mit Plus (seit v23) */
+.leiste .reiter-plus .icon { width: 30px; height: 30px; margin: -3px 0; padding: 5px; border-radius: 50%; background: var(--akzent); color: #000000;
+  stroke-width: 2.4; }
+.leiste .reiter-plus[aria-selected="true"] .icon { stroke-width: 2.6; }
 
-/* Rückmeldung über der Leiste */
+/* Rückmeldung über der Leiste: Glas wie die Leiste, kommt von unten herein */
 .toast {
   position: fixed;
   left: calc(12px + env(safe-area-inset-left));
   right: calc(12px + env(safe-area-inset-right));
-  bottom: calc(var(--leiste) + 14px + env(safe-area-inset-bottom));
+  bottom: calc(var(--leiste) + 12px);
   z-index: 20;
-  max-width: 496px;
+  max-width: 420px;
   margin: 0 auto;
   display: flex;
   align-items: flex-start;
   gap: 10px;
-  padding: 13px 16px;
-  border-radius: 14px;
-  background: rgba(44, 44, 46, 0.94);
-  -webkit-backdrop-filter: blur(20px);
-  backdrop-filter: blur(20px);
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.55), inset 0 0 0 0.5px rgba(255, 255, 255, 0.1);
+  padding: 13px 18px;
+  border-radius: 24px;
+  background: rgba(46, 46, 49, 0.94);
+  -webkit-backdrop-filter: saturate(180%) blur(22px);
+  backdrop-filter: saturate(180%) blur(22px);
+  box-shadow: var(--glas-kante), 0 10px 30px rgba(0, 0, 0, 0.55);
   color: var(--text);
   font-size: 15px;
   font-weight: 500;
   cursor: pointer;
-  animation: hoch 0.25s ease-out;
+  animation: hoch 0.4s var(--sanft);
 }
-.toast-icon { width: 22px; height: 22px; color: var(--akzent); margin-top: -1px; }
+.toast-icon { width: 22px; height: 22px; color: var(--gruen); margin-top: -1px; }
 .fehler-toast .toast-icon { color: var(--rot); }
 .toast-text { min-width: 0; overflow-wrap: anywhere; }
 .toast .nebenzeile { color: var(--leise); font-weight: 400; }
 
-/* Blatt von unten (Kunden-Details): volle Breite, oben abgerundet, Inhalt scrollt für sich */
+/* Blatt von unten (Kunden- und Lager-Details): volle Breite, oben abgerundet, Inhalt scrollt für sich. Auf, zu und
+   Zurückfedern bewegt kern.js (Web Animations), nach unten ziehen schließt (gesten.js). Der dunkle Hintergrund blendet
+   ein, beim Ziehen mit dem Weg aus (--dunkel) und beim Schließen ganz aus. */
 .blatt {
   position: fixed;
   inset: auto 0 0 0;
@@ -1058,17 +1158,23 @@ html.luecke-unten .leiste { padding-bottom: 6px; }
   margin: 0 auto;
   padding: 0;
   border: 0;
-  border-radius: 20px 20px 0 0;
+  border-radius: 28px 28px 0 0;
   background: var(--karte);
   color: var(--text);
   font: inherit;
-  box-shadow: 0 -10px 40px rgba(0, 0, 0, 0.6);
+  box-shadow: 0 -10px 40px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.09);
   overflow: hidden;
 }
-.blatt[open] { display: flex; flex-direction: column; animation: blatt-hoch 0.28s cubic-bezier(0.2, 0.8, 0.2, 1); }
-.blatt::backdrop { background: rgba(0, 0, 0, 0.6); }
-.blatt-kopf { flex: none; display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 18px 16px 6px 20px; }
-.blatt-kopf::before { content: ''; position: absolute; top: 6px; left: 50%; width: 36px; height: 5px; margin-left: -18px; border-radius: 3px; background: rgba(255, 255, 255, 0.22); }
+.blatt[open] { display: flex; flex-direction: column; }
+.blatt::backdrop { background: rgba(0, 0, 0, 0.6); opacity: var(--dunkel, 1); animation: blenden 0.3s ease-out; }
+.blatt.geht::backdrop { animation: ausblenden 0.24s ease-in forwards; }
+/* Kopf: hier zieht der Finger immer das Blatt (nie den Inhalt), oben der Griff */
+.blatt-kopf { flex: none; position: relative; display: flex; align-items: flex-start; justify-content: space-between; gap: 12px;
+  padding: 22px 20px 2px 20px; touch-action: none; }
+/* Der Inhalt blendet beim Scrollen unter dem Kopf aus */
+.blatt-kopf::after { content: ''; position: absolute; left: 0; right: 0; top: 100%; z-index: 1; height: 12px; pointer-events: none;
+  background: linear-gradient(to bottom, var(--karte), rgba(28, 28, 30, 0)); }
+.blatt-kopf::before { content: ''; position: absolute; top: 7px; left: 50%; width: 36px; height: 5px; margin-left: -18px; border-radius: 3px; background: rgba(255, 255, 255, 0.26); }
 .blatt-titel { margin: 4px 0 0; font-family: var(--schrift); font-size: 22px; font-weight: 700; line-height: 1.2; overflow-wrap: break-word;
   -webkit-hyphens: auto; hyphens: auto; }
 .blatt-titel:focus { outline: none; }
@@ -1082,43 +1188,54 @@ html.luecke-unten .leiste { padding-bottom: 6px; }
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
   scrollbar-width: none;
-  padding: 0 20px calc(24px + env(safe-area-inset-bottom));
+  padding: 6px 20px calc(24px + env(safe-area-inset-bottom));
 }
 .blatt-inhalt::-webkit-scrollbar { display: none; }
-.blatt-unter { font-size: 14px; color: var(--leise); margin: 0 0 16px; }
+.blatt-unter { font-size: 15px; color: var(--leise); margin: 0 0 16px; }
 .blatt-zahlen { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 0 0 20px; }
 .blatt-zahl { background: var(--feld); border-radius: var(--radius-klein); padding: 10px 12px; min-width: 0; }
 .blatt-wert { margin: 4px 0 0; font-size: 22px; font-weight: 700; line-height: 1.15; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
 .blatt-euro { margin-top: 2px; color: var(--text); font-weight: 500; white-space: nowrap; }
-.blatt-titel-klein { font-size: 14px; font-weight: 600; color: var(--leise); margin: 22px 0 8px; }
+.blatt-titel-klein { font-size: 13px; font-weight: 600; color: var(--leise); margin: 22px 0 8px; }
 .blatt .diagramm.mini { margin: 0 0 4px; }
 .fakten { margin: 16px 0 0; display: grid; gap: 0; }
-.fakt { display: flex; justify-content: space-between; gap: 16px; padding: 11px 0; border-bottom: 1px solid var(--linie); font-size: 15px; }
+.fakt { display: flex; justify-content: space-between; gap: 16px; padding: 12px 0; border-bottom: 0.5px solid var(--linie); font-size: 15px; }
 .fakt:last-child { border-bottom: 0; }
 .fakt dt { color: var(--leise); }
 .fakt dd { margin: 0; text-align: right; font-weight: 600; font-variant-numeric: tabular-nums; }
 .fakt-unter { display: block; margin-top: 1px; font-size: 13px; font-weight: 400; color: var(--leise); }
-.blatt-liste > li { padding: 11px 0; font-size: 15px; }
+.blatt-liste > li { padding: 12px 0; font-size: 15px; }
 
-/* Rückfrage (iOS-Hinweisfenster) */
+/* Rückfrage (Hinweis wie in iOS 26): Glas in der Mitte, Frage fett, Erklärung darunter, linksbündig. Zwei Kapseln
+   nebeneinander, Abbrechen links; passt eine Beschriftung nicht (kern.js setzt .gestapelt), stehen sie untereinander. */
 .dialog {
-  width: calc(100% - 48px);
-  max-width: 360px;
-  padding: 22px 18px 18px;
+  width: calc(100% - 64px);
+  max-width: 320px;
+  padding: 22px 20px 16px;
   border: 0;
-  border-radius: 16px;
-  background: var(--karte);
+  border-radius: 30px;
+  background: rgba(44, 44, 47, 0.93);
+  -webkit-backdrop-filter: saturate(180%) blur(22px);
+  backdrop-filter: saturate(180%) blur(22px);
   color: var(--text);
   font: inherit;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
+  box-shadow: var(--glas-kante), 0 20px 60px rgba(0, 0, 0, 0.6);
 }
-.dialog[open] { animation: auf 0.2s ease-out; }
-.dialog::backdrop { background: rgba(0, 0, 0, 0.65); }
-.dialog p { white-space: pre-line; font-size: 16px; line-height: 1.45; }
-.dialog-knoepfe { display: grid; gap: 10px; margin-top: 22px; }
-.dialog-knoepfe .knopf { min-height: 46px; padding: 0 10px; font-size: 16px; }
+.dialog[open] { animation: auf 0.32s var(--sanft); }
+.dialog::backdrop { background: rgba(0, 0, 0, 0.5); animation: blenden 0.2s ease-out; }
+.dialog-titel { margin: 0 0 6px; font-family: var(--schrift); font-size: 17px; font-weight: 600; line-height: 1.3; }
+.dialog p { margin: 0; white-space: pre-line; font-size: 15px; line-height: 1.4; overflow-wrap: anywhere; }
+.dialog-titel:focus, .dialog p:focus { outline: none; }
+.dialog-knoepfe { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 8px; margin-top: 20px; }
+.dialog-knoepfe .knopf { min-height: 48px; padding: 0 12px; }
+.dialog-knoepfe #dialog-nein { order: -1; }
+.dialog.gestapelt .dialog-knoepfe { grid-auto-flow: row; }
+.dialog.gestapelt .dialog-knoepfe #dialog-nein { order: 0; }
+.dialog-knoepfe .knopf:not(.haupt):not(.gefahr) { background: rgba(120, 120, 128, 0.32); }
+.knopf.gefahr { background: rgba(255, 92, 80, 0.22); color: var(--rot); }
+.knopf.gefahr.gedrueckt { background: rgba(255, 92, 80, 0.34); }
 
-/* Banner oben: „Offline – zeigt gespeicherten Stand“ (grau) und „Neue Version – tippen zum Laden“ (gelb, ein Knopf) */
+/* Banner oben: „Offline, du siehst den gespeicherten Stand“ (grau) und „Neue Version da“ (Akzentfarbe, ein Knopf) */
 .banner {
   width: 100%;
   display: flex;
@@ -1129,7 +1246,7 @@ html.luecke-unten .leiste { padding-bottom: 6px; }
   border: 0;
   border-radius: var(--radius-klein);
   font: inherit;
-  font-size: 14px;
+  font-size: 15px;
   font-weight: 600;
   line-height: 1.3;
   text-align: left;
@@ -1143,9 +1260,8 @@ html.luecke-unten .leiste { padding-bottom: 6px; }
   cursor: pointer;
   -webkit-appearance: none;
   appearance: none;
-  transition: transform 0.1s ease;
 }
-.update-banner:active { transform: scale(0.98); }
+.update-banner.gedrueckt { transform: scale(0.98); }
 .update-banner:focus-visible { outline: 2px solid var(--akzent); outline-offset: 2px; }
 
 /* Trends (Verkäufe, Kunden, Start): nur die Zahl farbig („+12 %“), der Rest grau; kein Pfeil, kein Hintergrund */
@@ -1165,11 +1281,26 @@ html.luecke-unten .leiste { padding-bottom: 6px; }
 .trend-gleich .trend-zahl { color: var(--text); }
 .trend-hinweis { font-size: 13px; color: var(--leise); line-height: 1.35; }
 
-.chevron { flex: none; font-size: 22px; line-height: 1; color: var(--leise); }
+/* Pfeil „weiter“ (Zeilen, Kacheln, Klappen): zwei Linien als gedrehte Ecke, gleich stark wie die Symbole, dezent wie
+   die Pfeile in iOS-Listen. Aufgeklappt zeigt er nach unten. */
+.chevron, .kachel-pfeil {
+  flex: none;
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-right: 3px;
+  border-top: 2px solid rgba(235, 235, 245, 0.34);
+  border-right: 2px solid rgba(235, 235, 245, 0.34);
+  border-radius: 1px;
+  transform: rotate(45deg);
+}
 
 /* Ziehen zum Aktualisieren: runder Knopf mit Pfeil oben über der Ansicht (dreht sich bis zur Schwelle), beim Laden ein
    Kreisel. Den Inhalt bewegt nur das native Gummiband von iOS, nicht wir. */
 .ziehen-platz { position: relative; height: 0; z-index: 5; }
+/* Weiche Kante oben (wie der Scroll-Rand von iOS 26): der Inhalt blendet unter dem Kopf aus, kein harter Schnitt */
+.ziehen-platz::before { content: ''; position: absolute; left: 0; right: 0; top: 0; height: 14px; pointer-events: none;
+  background: linear-gradient(to bottom, var(--grund), rgba(0, 0, 0, 0)); }
 .ziehen {
   position: absolute;
   top: 0;
@@ -1187,7 +1318,7 @@ html.luecke-unten .leiste { padding-bottom: 6px; }
   pointer-events: none;
 }
 .ziehen .icon { width: 20px; height: 20px; transform: rotate(var(--drehung, 0deg)); transition: color 0.15s ease; }
-.ziehen.bereit { color: var(--akzent); }
+.ziehen.bereit { color: var(--text); }
 .ziehen.laedt-ring .icon { display: none; }
 .ziehen.laedt-ring::after {
   content: '';
@@ -1195,20 +1326,34 @@ html.luecke-unten .leiste { padding-bottom: 6px; }
   height: 18px;
   border-radius: 50%;
   border: 2px solid rgba(255, 255, 255, 0.22);
-  border-top-color: var(--akzent);
+  border-top-color: var(--text);
   animation: drehen 0.8s linear infinite;
 }
 
 /* Ziehen: Zeiger federt zurück */
-.feder { transition: transform 0.28s cubic-bezier(0.2, 0.8, 0.2, 1), opacity 0.28s ease; }
+.feder { transition: transform 0.32s var(--sanft), opacity 0.28s ease; }
 
 /* Sanfte Übergänge */
 @keyframes rein { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
 @keyframes hoch { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
-@keyframes auf { from { opacity: 0; transform: scale(0.96); } to { opacity: 1; transform: none; } }
-@keyframes blatt-hoch { from { transform: translateY(100%); } to { transform: none; } }
+@keyframes auf { from { opacity: 0; transform: scale(1.08); } to { opacity: 1; transform: none; } }
+@keyframes ausblenden { to { opacity: 0; } }
 @keyframes drehen { to { transform: rotate(360deg); } }
 @keyframes glanz { from { background-position: 100% 0; } to { background-position: -100% 0; } }
+
+/* Sehr schmale Geräte (320 px): Arten und Suche/Sortierung untereinander, Zahlen-Spalte der Ranglisten ohne feste Breite */
+@media (max-width: 350px) {
+  .arten { grid-template-columns: 1fr; }
+  .such-zeile { flex-wrap: wrap; }
+  .such-feld { flex-basis: 100%; }
+  .sortierung { flex: 1; max-width: none; }
+  .rangliste:has(.anteil) .rang-zahlen { min-width: 0; }
+}
+
+/* „Transparenz reduzieren“ (iOS-Bedienungshilfen): Glas wird deckend */
+@media (prefers-reduced-transparency: reduce) {
+  .leiste, .toast, .dialog { background: #222225; -webkit-backdrop-filter: none; backdrop-filter: none; }
+}
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {

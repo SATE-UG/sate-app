@@ -269,6 +269,16 @@
   }
 
   /**
+   * Text einer Rückfrage teilen: die Frage vorn (bis zum ersten „?“, höchstens 60 Zeichen, eine Zeile) als Titel, der
+   * Rest als Erklärung. Ohne so eine Frage vorn bleibt alles Text. Rückgabe { titel, text }.
+   */
+  function frageTeilen(text) {
+    const s = String(text === null || text === undefined ? '' : text).trim();
+    const m = /^([^\n?]{1,59}\?)\s*([\s\S]*)$/.exec(s);
+    return m ? { titel: m[1], text: m[2].trim() } : { titel: '', text: s };
+  }
+
+  /**
    * Update zum Teilen (z. B. in die WhatsApp-Gruppe), seit v27 mit dem Kurzfristigen zuerst: letzter voller Monat
    * (Flaschen, Vergleich, Bestellungen, neue Kunden), laufender Monat bisher, dann Jahr, Bestand und Bestelltermin.
    * `u` = Antwort `uebersicht`, `jv` = jahresVergleich, `heute` = `JJJJ-MM-TT`, `prognose` = bestellPrognose (sonst
@@ -800,6 +810,27 @@
     return Math.round((m * weg / (weg + m)) * 10) / 10;
   }
 
+  /**
+   * Tempo eines Fingers beim Loslassen in px/ms (nach unten positiv): Weg der Punkte aus den letzten `fensterMs`
+   * (Standard 110) vor `jetzt`, geteilt durch die Zeit vom ersten dieser Punkte bis zum Loslassen. Lag der Finger
+   * zuletzt still, zählt der Stillstand also mit und das Tempo fällt. `spur` = [{ t, y }] in Reihenfolge.
+   */
+  function ziehTempo(spur, jetzt, fensterMs) {
+    const fenster = fensterMs > 0 ? fensterMs : 110;
+    const frisch = (spur || []).filter((p) => p && istZahl(p.t) && istZahl(p.y) && jetzt - p.t <= fenster && p.t <= jetzt);
+    if (!frisch.length) return 0;
+    const a = frisch[0];
+    const b = frisch[frisch.length - 1];
+    const dauer = jetzt - a.t;
+    return dauer > 0 ? (b.y - a.y) / dauer : 0;
+  }
+
+  /** Blatt nach dem Ziehen schließen? Weit genug (über 110 px) oder mit Schwung (über 0,5 px/ms ab 24 px Weg). */
+  function blattSchliesst(weg, tempo) {
+    if (!istZahl(weg) || !(weg > 0)) return false;
+    return weg > 110 || (weg > 24 && istZahl(tempo) && tempo > 0.5);
+  }
+
   // Feinschliff (Task 16): kurze Texte für Kacheln, Hinweise, Verlauf, Stepper -----------------------------------
 
   /** Anzahl Monate von `von` bis `bis` (beide `JJJJ-MM`, einschließlich). Ungültig oder bis < von → null. */
@@ -1139,10 +1170,10 @@
     reichweiteBalken,
     ganzeZahlEingabe, flaschenAusEingabe, kistenText, kistenTeilen, buchungPruefen, buchungText, anfrageIdAus, achse, diagrammMasse,
     achsenText, achseMitMinus, antwortDeuten, uebersichtGueltig, neuer,
-    relativZeit, monatPlus, veraenderung, prozentText, richtung, monatsTrend, reiterPosition, ziehRichtung, gummiband,
+    relativZeit, monatPlus, veraenderung, prozentText, richtung, monatsTrend, reiterPosition, ziehRichtung, gummiband, ziehTempo, blattSchliesst,
     MAX_FLASCHEN, datumKurz, monateAnzahl, zeitraumKurz, monatBisher, kistenKurz, anteileSinnvoll, hinweiseOrdnen, verlaufOhneStorno, schrittWert,
     kundeSchluessel, verkaufZeilen, monatsWerte, jahresVergleich, kumuliert, zeitraumAuswerten, kundeDetails, nachfassen,
-    bestellungenZaehlen, wannText, abstandText, monatName, wochentagText, dauerText, datumAbkuerzungen, buchungVorschau, standText, inventurAm, jahresStichtag, prognoseSaison, aktivitaet, monatsTage, letzteBestellungen,
+    bestellungenZaehlen, wannText, abstandText, monatName, wochentagText, dauerText, datumAbkuerzungen, buchungVorschau, standText, frageTeilen, inventurAm, jahresStichtag, prognoseSaison, aktivitaet, monatsTage, letzteBestellungen,
     datumMonatePlus, ersterVerkaufsmonat, bekannteRechnungen, bestellPrognose,
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = hilfen;
