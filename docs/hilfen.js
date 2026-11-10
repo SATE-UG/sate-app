@@ -209,9 +209,25 @@
     return fl(flaschen) + ' = ' + zahlFormat(k, 0) + (k === 1 ? ' Kiste' : ' Kisten') + (rest ? ' + ' + fl(rest) : '');
   }
 
+  /** Herstellkosten pro Flasche beim Eintragen einer Abfüllung: über 0 bis so viele Euro (wie die Schnittstelle). */
+  const MAX_KOSTEN_PRO_FLASCHE = 100;
+
   /**
-   * Formular „Eintragen“ prüfen wie die Schnittstelle. `b` = { art, standort, nach, flaschen, datum, kommentar },
-   * `standorte` = Namen aus der Antwort, `heute` = `JJJJ-MM-TT`. Rückgabe: Fehlermeldung oder ''.
+   * Herstellkosten pro Flasche aus dem Eingabefeld (nur bei einer Abfüllung, freiwillig): '' → { leer: true },
+   * „0,85“, „0.8765“ oder „0,85 €“ → { wert } (auf vier Nachkommastellen), sonst { fehler }.
+   */
+  function kostenAusEingabe(text) {
+    const t = String(text === undefined || text === null ? '' : text).trim().replace(/\s*€$/, '');
+    if (!t) return { leer: true, wert: null, fehler: '' };
+    const z = /^\d{1,3}([.,]\d{1,4})?$/.test(t) ? Number(t.replace(',', '.')) : NaN;
+    if (!(z > 0) || z > MAX_KOSTEN_PRO_FLASCHE) return { leer: false, wert: null, fehler: 'Herstellkosten: bitte einen Betrag pro Flasche wie 0,85 eintragen (höchstens 100 €).' };
+    return { leer: false, wert: Math.round(z * 10000) / 10000, fehler: '' };
+  }
+
+  /**
+   * Formular „Eintragen“ prüfen wie die Schnittstelle. `b` = { art, standort, nach, flaschen, datum, kommentar, kosten },
+   * `standorte` = Namen aus der Antwort, `heute` = `JJJJ-MM-TT`. `kosten` (nur Abfüllung, freiwillig) = Herstellkosten
+   * pro Flasche als Zahl oder null. Rückgabe: Fehlermeldung oder ''.
    */
   function buchungPruefen(b, standorte, heute) {
     if (!ARTEN.some((a) => a.art === b.art)) return 'Bitte wähle aus, was du eintragen willst.';
@@ -229,6 +245,9 @@
     if (abstand > MAX_TAGE_ZUKUNFT) return 'Das Datum liegt in der Zukunft (höchstens heute).';
     if (abstand < -MAX_TAGE_ZURUECK) return 'Das Datum liegt mehr als 400 Tage zurück.';
     if (Array.from(String(b.kommentar || '')).length > MAX_KOMMENTAR) return 'Kommentar: höchstens 200 Zeichen.';
+    if (b.art === 'Abfüllung' && b.kosten !== undefined && b.kosten !== null && (!istZahl(b.kosten) || b.kosten <= 0 || b.kosten > MAX_KOSTEN_PRO_FLASCHE)) {
+      return 'Herstellkosten: bitte einen Betrag pro Flasche wie 0,85 eintragen (höchstens 100 €).';
+    }
     return '';
   }
 
@@ -1081,15 +1100,18 @@
   /**
    * Kanäle und Kunden in [von, bis] (Monate `JJJJ-MM`, beide inklusive) aus den Zeilen. Rückgabe { von, bis, flaschen,
    * umsatz, kanaele: [{kanal, flaschen, umsatz}], kunden: [{schluessel, kunde, kanal, flaschen, umsatz, erster}] }, beide
-   * nach Flaschen absteigend (bei Gleichstand Umsatz, dann Name). `erster` = erster Monat des Kunden überhaupt.
+   * nach Flaschen absteigend (bei Gleichstand Umsatz, dann Name). `erster` = erster Monat des Kunden überhaupt mit einem Kauf (Flaschen > 0; hat er nie gekauft, die erste Zeile).
    */
   function zeitraumAuswerten(zeilen, von, bis) {
     const kanaele = Object.create(null);
     const kunden = Object.create(null);
     const erster = Object.create(null);
+    const ersteZeile = Object.create(null);
     const summe = leerSumme();
     (zeilen || []).forEach((z) => {
-      if (!erster[z.schluessel] || z.monat < erster[z.schluessel]) erster[z.schluessel] = z.monat;
+      // „Kunde seit“ und „neu“ richten sich nach dem ersten Kauf: Eine frühere Gutschrift macht niemanden zum Bestandskunden
+      if (z.flaschen > 0 && (!erster[z.schluessel] || z.monat < erster[z.schluessel])) erster[z.schluessel] = z.monat;
+      if (!ersteZeile[z.schluessel] || z.monat < ersteZeile[z.schluessel]) ersteZeile[z.schluessel] = z.monat;
       if (z.monat < von || z.monat > bis) return;
       addieren(summe, z);
       addieren(kanaele[z.kanal] = kanaele[z.kanal] || { kanal: z.kanal, flaschen: 0, umsatz: 0 }, z);
@@ -1107,7 +1129,7 @@
         .sort((a, b) => ordnen(a, b, 'kanal')),
       kunden: Object.keys(kunden).map((s) => ({
         schluessel: s, kunde: haeufigsterName(kunden[s].namen), kanal: haeufigsterName(kunden[s].kanaele),
-        flaschen: runde(kunden[s].flaschen), umsatz: runde(kunden[s].umsatz), erster: erster[s],
+        flaschen: runde(kunden[s].flaschen), umsatz: runde(kunden[s].umsatz), erster: erster[s] || ersteZeile[s],
       })).sort((a, b) => ordnen(a, b, 'kunde')),
     };
   }
@@ -1207,7 +1229,8 @@
    * Bestellungen aus den Verkaufszeilen: Zeilen einer Rechnung desselben Kunden zusammengezählt, ohne Rechnungsnummer
    * Zeilen desselben Kunden am selben Tag, Altzeilen ohne Nummer und Datum jede für sich. In der Reihenfolge der Zeilen,
    * je { monat, datum ('' ohne Rechnungsdatum, sonst das späteste der Zeilen), kunde, schluessel, kanal, flaschen,
-   * umsatz, reihe (Stelle der ersten Zeile) }. Gutschriften sind dabei (Summe ≤ 0), der Aufrufer filtert.
+   * umsatz, reihe (Stelle der ersten Zeile), zeilenNr (Stellen aller Zeilen) }. Gutschriften sind dabei (Summe ≤ 0),
+   * der Aufrufer filtert.
    */
   function bestellListe(zeilen) {
     const nach = Object.create(null);
@@ -1219,9 +1242,10 @@
       const k = z.rechnung ? 'r\n' + z.rechnung + '\n' + z.schluessel : datum ? 'k\n' + z.schluessel + '\n' + datum : 'a\n' + i;
       let b = nach[k];
       if (!b) {
-        b = nach[k] = { monat: z.monat, datum: datum, kunde: z.kunde || '', schluessel: z.schluessel, kanal: z.kanal || '', flaschen: 0, umsatz: 0, reihe: i };
+        b = nach[k] = { monat: z.monat, datum: datum, kunde: z.kunde || '', schluessel: z.schluessel, kanal: z.kanal || '', flaschen: 0, umsatz: 0, reihe: i, zeilenNr: [] };
         liste.push(b);
       }
+      b.zeilenNr.push(i);
       if (datum > b.datum) b.datum = datum;
       b.flaschen = runde(b.flaschen + z.flaschen);
       b.umsatz = runde(b.umsatz + (istZahl(z.umsatz) ? z.umsatz : 0));
@@ -1295,6 +1319,98 @@
     return { heute: heute, monate: monate, laufend: monate[0], letzter: monate[1] || null, jahr: jahr, bestellungen: bestellungen, kanaele: kanaele };
   }
 
+  /**
+   * Schichten für First in, First out aus den Abfüllungen der Schnittstelle ([{ abfuellung, monat, flaschen,
+   * kostenProFlasche }]): eine Schicht je Abfüllung in zeitlicher Reihenfolge (Monat, bei Gleichstand wie im Sheet).
+   * Storno-Zeilen („Storno N. Abfüllung“ mit negativen Flaschen) heben ihre Abfüllung auf, egal wo sie stehen; eine
+   * Abfüllung ohne lesbaren Monat bleibt an ihrer Stelle im Sheet. Je { name, monat, flaschen, kosten (Herstellkosten
+   * pro Flasche oder null) }. Liefert die Schnittstelle keine Kosten (Feld fehlt überall, weil
+   * der Tab Abfüllungen die Kosten-Spalte nicht hat oder die Schnittstelle älter ist): null.
+   */
+  function fifoSchichten(abfuellungen) {
+    const liste = Array.isArray(abfuellungen) ? abfuellungen : [];
+    if (!liste.some((a) => a && a.kostenProFlasche !== undefined)) return null;
+    const name = (a) => String(a.abfuellung || '').trim();
+    const schichten = [];
+    let monat = ''; // Abfüllung ohne lesbaren Monat: steht zeitlich dort, wo sie im Sheet steht (Monat der Zeile davor)
+    liste.forEach((a, i) => {
+      if (!a || !istZahl(a.flaschen) || !(a.flaschen > 0)) return;
+      if (typeof a.monat === 'string' && MONAT_MUSTER.test(a.monat)) monat = a.monat;
+      schichten.push({ name: name(a), monat: typeof a.monat === 'string' && MONAT_MUSTER.test(a.monat) ? a.monat : '', ordnung: monat, flaschen: a.flaschen,
+        kosten: istZahl(a.kostenProFlasche) && a.kostenProFlasche > 0 ? a.kostenProFlasche : null, reihe: i });
+    });
+    // Gegenzeilen eines Stornos (zweiter Durchgang, die Reihenfolge im Sheet ist damit egal): Die jüngste Abfüllung
+    // dieses Namens, die noch Flaschen hat, verliert sie. Was zu keiner Abfüllung passt, bleibt stehen (dashboardMehr
+    // meldet die Abweichung).
+    liste.forEach((a) => {
+      if (!a || !istZahl(a.flaschen) || !(a.flaschen < 0)) return;
+      const ziel = name(a).replace(/^Storno\s+/i, '');
+      let rest = -a.flaschen;
+      for (let k = schichten.length - 1; k >= 0 && rest > 0; k--) {
+        if (schichten[k].name !== ziel) continue;
+        const weg = Math.min(rest, schichten[k].flaschen);
+        schichten[k].flaschen = runde(schichten[k].flaschen - weg);
+        rest -= weg;
+      }
+    });
+    return schichten.filter((x) => x.flaschen > 0).sort((x, y) => (x.ordnung < y.ordnung ? -1 : x.ordnung > y.ordnung ? 1 : x.reihe - y.reihe))
+      .map((x) => ({ name: x.name, monat: x.monat, flaschen: x.flaschen, kosten: x.kosten }));
+  }
+
+  /**
+   * Herstellkosten jeder Verkaufszeile nach First in, First out: Verkauft wird immer aus der ältesten Abfüllung, die noch
+   * Flaschen hat; ist sie aufgebraucht, gelten die Kosten der nächsten. Die Zeilen laufen in zeitlicher Reihenfolge
+   * (Monat, Rechnungsdatum, ohne Datum am Monatsende, sonst wie im Sheet). Eine Gutschrift (negative Flaschen) legt die
+   * zuletzt verkauften Flaschen zurück und bekommt deren Kosten mit Minus. Wurde mehr verkauft, als abgefüllt im Sheet
+   * steht, rechnet der Überhang mit den Kosten der letzten Abfüllung (`ueber`). Nur Verkäufe zählen: Promo, Bruch und
+   * Eigenverbrauch verbrauchen hier keine Schicht. Im Normalfall ergeben die Reste zusammen abgefüllt minus verkauft
+   * (nicht bei einem Überhang oder wenn mehr gutgeschrieben als verkauft ist).
+   * Rückgabe { kosten: je Zeile Euro (ungerundet) oder null, wenn eine berührte Abfüllung keine Kosten hat,
+   *   schichten: je { name, monat, flaschen, kosten, verkauft, rest }, ueber, fehlt: Namen berührter Abfüllungen ohne Kosten }.
+   */
+  function fifoKosten(zeilen, schichten) {
+    const liste = Array.isArray(zeilen) ? zeilen : [];
+    const n = schichten.length;
+    const grenzen = [];
+    let summe = 0;
+    schichten.forEach((x) => { grenzen.push([summe, summe + x.flaschen]); summe += x.flaschen; });
+    const fehlt = Object.create(null);
+    // Kosten der Flaschen Nummer a bis b (a < b), der Reihe nach durch die Schichten; null, wenn eine ohne Kosten dabei ist
+    const strecke = (a, b) => {
+      let k = 0;
+      let offen = false;
+      const teil = (von, bis, i) => {
+        if (!(bis - von > 1e-9)) return; // auch kein Hauch über die Grenze (Gleitkomma), sonst gälte die nächste Schicht als berührt
+        if (schichten[i].kosten === null) { offen = true; fehlt[schichten[i].name] = true; } else k += (bis - von) * schichten[i].kosten;
+      };
+      if (!n) return null;
+      teil(a, Math.min(b, 0), 0); // vor der ersten Flasche (mehr gutgeschrieben als verkauft): Kosten der ersten Abfüllung
+      for (let i = 0; i < n; i++) teil(Math.max(a, grenzen[i][0]), Math.min(b, grenzen[i][1]), i);
+      teil(Math.max(a, summe), b, n - 1); // über alle Abfüllungen hinaus: Kosten der letzten
+      return offen ? null : k;
+    };
+    const wann = (z) => z.monat + '|' + (datumGueltig(z.datum) ? z.datum : '9999-99-99');
+    const reihenfolge = liste.map((z, i) => i).sort((i, j) => (wann(liste[i]) < wann(liste[j]) ? -1 : wann(liste[i]) > wann(liste[j]) ? 1 : i - j));
+    const kosten = liste.map(() => 0);
+    let pos = 0;
+    reihenfolge.forEach((i) => {
+      const q = liste[i].flaschen;
+      if (!istZahl(q) || q === 0) return;
+      const k = q > 0 ? strecke(pos, pos + q) : strecke(pos + q, pos);
+      kosten[i] = k === null ? null : q > 0 ? k : -k;
+      pos = Math.round((pos + q) * 1e6) / 1e6; // Stand glatt halten: 0,05 + 7,98 + 1,97 sind genau 10
+    });
+    const verkauft = Math.max(0, pos);
+    return {
+      kosten: kosten,
+      schichten: schichten.map((x, i) => {
+        const v = Math.max(0, Math.min(verkauft, grenzen[i][1]) - grenzen[i][0]);
+        return { name: x.name, monat: x.monat, flaschen: x.flaschen, kosten: x.kosten, verkauft: runde(v), rest: runde(x.flaschen - v) };
+      }),
+      ueber: runde(Math.max(0, pos - summe)), fehlt: Object.keys(fehlt),
+    };
+  }
+
   /** Liter pro Flasche (0,33-l-Longneck), nur für die Spielerei „Liter seit dem Start“. */
   const FLASCHE_LITER = 0.33;
 
@@ -1327,9 +1443,21 @@
    *   top: die zehn größten Kunden des Jahres, je { rang, kunde, flaschen, umsatz, anteil, kumuliert (Prozent der
    *     Flaschen aller Kunden mit Flaschen im Plus) },
    *   rekorde: { monatFlaschen ({monat, flaschen}), monatUmsatz ({monat, umsatz}), bestellung, kunde ({kunde, flaschen,
-   *     umsatz}), treu ({kunde, anzahl}) }, jeweils null, wenn es nichts gibt }.
+   *     umsatz}), treu ({kunde, anzahl}) }, jeweils null, wenn es nichts gibt,
+   *   marge: nur wenn `abfuellungen` (aus der Schnittstelle) Herstellkosten je Abfüllung mitbringt, sonst null. Die
+   *     Kosten jeder Verkaufszeile kommen nach First in, First out aus den Abfüllungen (fifoSchichten, fifoKosten).
+   *     Rohertrag = Umsatz (netto mit Pfand) − Herstellkosten; jeder Posten ist { flaschen, umsatz, kosten, rohertrag,
+   *     marge (Rohertrag in Prozent vom Umsatz), aufschlag (in Prozent der Kosten), proFlasche, kostenProFlasche },
+   *     ohne Kosten einer berührten Abfüllung bis auf Flaschen und Umsatz null: `jahr` (Januar bis heute),
+   *     `vorjahr` (ganzes Jahr; ohne Verkäufe null), `gesamt`, `monate` (die zwölf vollen Monate, dazu `balken` in
+   *     Prozent des stärksten), `kanaele` und `top` (zehn Kunden nach Rohertrag; beide über alle Kanäle bzw. Kunden des
+   *     Jahres, auch mit Gutschriften, damit die Zeilen zusammen den Jahreswert ergeben) mit `anteil` am Rohertrag im Plus, `unterKosten`
+   *     ({ anzahl, flaschen, anteil }: Bestellungen des Jahres, deren Umsatz die Herstellkosten nicht deckt), dazu
+   *     `schichten` (Abfüllungen mit `verkauft` und `rest`), `aktuell` (die Abfüllung, aus der gerade verkauft wird),
+   *     `ueber` (mehr verkauft als abgefüllt), `fehlt` (berührte Abfüllungen ohne Kosten) und `abweichung` (Flaschen, um
+   *     die die Schichten über der Summe im Tab Abfüllungen liegen, weil eine Minus-Zeile zu keiner Abfüllung passt) }.
    */
-  function dashboardMehr(zeilen, werte, heute, flaschenProKiste) {
+  function dashboardMehr(zeilen, werte, heute, flaschenProKiste, abfuellungen) {
     if (!datumGueltig(heute) || typeof werte !== 'function') return null;
     const jetzt = heute.slice(0, 7);
     const jahr = Number(jetzt.slice(0, 4));
@@ -1386,7 +1514,7 @@
     const tempo = bisher ? { tage: tage, flaschenProTag: runde(bisher.flaschen / tage), umsatzProTag: runde(bisher.umsatz / tage) } : null;
 
     const aus = { jahr: jahr, letzterMonat: lfm, trend: trend, vorjahrMonate: vorjahrMonate, quartale: quartale, tempo: tempo,
-      kanaele: [], jahre: [], gesamt: null, preise: [], bestellungen: null, groessen: [], kunden: null, top: [], rekorde: null };
+      kanaele: [], jahre: [], gesamt: null, preise: [], bestellungen: null, groessen: [], kunden: null, top: [], rekorde: null, marge: null };
     if (!Array.isArray(zeilen)) return aus;
 
     const proFlasche = (x) => (x && x.flaschen > 0 ? runde(x.umsatz / x.flaschen) : null);
@@ -1408,7 +1536,6 @@
     // Ein Kunde zählt in einem Jahr (und insgesamt), wenn unter dem Strich Flaschen bei ihm bleiben: Wer kauft und
     // alles gutgeschrieben bekommt, zählt nicht. So passen „Kunden“ hier, bei den Jahren und im Abschnitt Kunden zusammen.
     const proJahr = Object.create(null);
-    const erstKauf = Object.create(null); // erster Monat mit einem Kauf (Gutschriften zählen dafür nicht)
     zeilen.forEach((z) => {
       if (z.monat > jetzt) return;
       const j = z.monat.slice(0, 4);
@@ -1416,7 +1543,6 @@
       x.flaschen += z.flaschen;
       x.umsatz += z.umsatz;
       x.kunden[z.schluessel] = (x.kunden[z.schluessel] || 0) + z.flaschen;
-      if (z.flaschen > 0 && (!erstKauf[z.schluessel] || z.monat < erstKauf[z.schluessel])) erstKauf[z.schluessel] = z.monat;
     });
     aus.jahre = Object.keys(proJahr).sort().reverse().map((j) => {
       const x = { flaschen: runde(proJahr[j].flaschen), umsatz: runde(proJahr[j].umsatz) };
@@ -1478,7 +1604,7 @@
     const warVorjahr = Object.create(null);
     vorjahr.forEach((k) => { warVorjahr[k.schluessel] = true; });
     const aktivFl = aktiv.reduce((x, k) => x + k.flaschen, 0);
-    aus.kunden = { aktiv: aktiv.length, neu: aktiv.filter((k) => erstKauf[k.schluessel] >= anfang).length, wieder: aktiv.filter((k) => warVorjahr[k.schluessel]).length,
+    aus.kunden = { aktiv: aktiv.length, neu: aktiv.filter((k) => k.erster >= anfang).length, wieder: aktiv.filter((k) => warVorjahr[k.schluessel]).length,
       nichtMehr: vorjahr.filter((k) => !istAktiv[k.schluessel]).length, flaschen: aktiv.length ? runde(aktivFl / aktiv.length) : null,
       umsatz: aktiv.length ? runde(aktiv.reduce((x, k) => x + k.umsatz, 0) / aktiv.length) : null,
       bestellungen: aktiv.length ? runde(bj.filter((b) => istAktiv[b.schluessel]).length / aktiv.length) : null };
@@ -1503,6 +1629,80 @@
     aus.rekorde = { monatFlaschen: mf ? { monat: mf.monat, flaschen: mf.flaschen } : null, monatUmsatz: mu ? { monat: mu.monat, umsatz: mu.umsatz } : null,
       bestellung: gb ? Object.assign(kurz(gb), { kunde: name[gb.schluessel] || gb.kunde }) : null,
       kunde: gk ? { kunde: gk.kunde, flaschen: gk.flaschen, umsatz: gk.umsatz } : null, treu: treu };
+
+    // Rohertrag und Marge (seit v32): Herstellkosten je Abfüllung aus der Schnittstelle, verteilt nach First in, First out
+    const schichten = fifoSchichten(abfuellungen);
+    if (schichten && schichten.length) {
+      const fifo = fifoKosten(zeilen, schichten);
+      const leer = () => ({ flaschen: 0, umsatz: 0, kosten: 0, offen: false });
+      const dazu = (x, z, i) => {
+        x.flaschen += z.flaschen;
+        x.umsatz += z.umsatz;
+        if (fifo.kosten[i] === null) x.offen = true; else x.kosten += fifo.kosten[i];
+        return x;
+      };
+      // Posten: Rohertrag = Umsatz − Herstellkosten. Fehlen Kosten einer berührten Abfüllung, bleibt alles außer Flaschen und Umsatz leer.
+      const roh = (x) => {
+        const flaschen = runde(x.flaschen);
+        const umsatz = runde(x.umsatz);
+        if (x.offen) return { flaschen: flaschen, umsatz: umsatz, kosten: null, rohertrag: null, marge: null, aufschlag: null, proFlasche: null, kostenProFlasche: null };
+        const kosten = runde(x.kosten);
+        const ertrag = runde(umsatz - kosten);
+        return { flaschen: flaschen, umsatz: umsatz, kosten: kosten, rohertrag: ertrag,
+          marge: umsatz > 0 ? zehntel((ertrag / umsatz) * 100) : null, aufschlag: kosten > 0 ? zehntel((ertrag / kosten) * 100) : null,
+          proFlasche: flaschen > 0 ? runde(ertrag / flaschen) : null, kostenProFlasche: flaschen > 0 ? runde(kosten / flaschen) : null };
+      };
+      const jahrS = leer();
+      const vorS = leer();
+      const gesS = leer();
+      const monS = Object.create(null);
+      const kanS = Object.create(null);
+      const kunS = Object.create(null);
+      zeilen.forEach((z, i) => {
+        if (z.monat > jetzt) return;
+        dazu(gesS, z, i);
+        dazu(monS[z.monat] = monS[z.monat] || leer(), z, i);
+        const j = Number(z.monat.slice(0, 4));
+        if (j === jahr) {
+          dazu(jahrS, z, i);
+          dazu(kanS[z.kanal] = kanS[z.kanal] || leer(), z, i);
+          dazu(kunS[z.schluessel] = kunS[z.schluessel] || leer(), z, i);
+        } else if (j === jahr - 1) {
+          dazu(vorS, z, i);
+        }
+      });
+      // Anteil am Rohertrag: nur was im Plus liegt, teilt sich die 100 %
+      const mitAnteil = (liste) => {
+        const plus = liste.reduce((x, y) => x + Math.max(0, y.rohertrag || 0), 0);
+        liste.forEach((y) => { y.anteil = plus > 0 ? zehntel((Math.max(0, y.rohertrag || 0) / plus) * 100) : 0; });
+        return liste;
+      };
+      const mMonate = vorjahrMonate.map((m) => Object.assign({ monat: m.monat, balken: 0 }, roh(monS[m.monat] || leer())));
+      const mHoch = Math.max.apply(null, mMonate.map((m) => (m.rohertrag > 0 ? m.rohertrag : 0)).concat([0]));
+      if (mHoch > 0) mMonate.forEach((m) => { m.balken = m.rohertrag > 0 ? zehntel((m.rohertrag / mHoch) * 100) : 0; });
+      // Bestellungen des Jahres, deren Umsatz ihre Herstellkosten nicht deckt (auf den Cent, Gleichstand zählt nicht)
+      const unter = bj.filter((b) => {
+        const k = b.zeilenNr.reduce((x, i) => (x === null || fifo.kosten[i] === null ? null : x + fifo.kosten[i]), 0);
+        return k !== null && b.umsatz < runde(k);
+      });
+      const unterFl = unter.reduce((x, b) => x + b.flaschen, 0);
+      // Alle Kanäle und Kunden des Jahres, auch mit Gutschriften oder ohne Flaschen unter dem Strich: Nur so ergeben die
+      // Zeilen zusammen den Rohertrag des Jahres. Die Reihenfolge der Kanäle bleibt die der Balken.
+      const hat = (x) => x.flaschen !== 0 || x.umsatz !== 0;
+      // In den Listen bleibt auch, wer bei Flaschen und Umsatz auf 0 steht, aber Kosten trägt (Kauf aus einer Abfüllung,
+      // Gutschrift nach dem Wechsel zur nächsten)
+      const zeigt = (x) => hat(x) || x.kosten === null || x.kosten !== 0;
+      const nachErtrag = (x, y) => (y.rohertrag === null ? -Infinity : y.rohertrag) - (x.rohertrag === null ? -Infinity : x.rohertrag) || y.flaschen - x.flaschen;
+      // Passt eine Minus-Zeile im Tab Abfüllungen zu keiner Abfüllung, weichen die Schichten von der Summe im Sheet ab
+      const imSheet = (Array.isArray(abfuellungen) ? abfuellungen : []).reduce((x, y) => x + (y && istZahl(y.flaschen) ? y.flaschen : 0), 0);
+      const abweichung = runde(schichten.reduce((x, y) => x + y.flaschen, 0) - imSheet);
+      aus.marge = { schichten: fifo.schichten, aktuell: fifo.schichten.find((x) => x.rest > 0) || null, ueber: fifo.ueber, fehlt: fifo.fehlt, abweichung: abweichung,
+        jahr: roh(jahrS), vorjahr: hat(zv) ? roh(vorS) : null, gesamt: roh(gesS), monate: mMonate,
+        kanaele: mitAnteil(zj.kanaele.map((x) => Object.assign({ kanal: x.kanal }, roh(kanS[x.kanal] || leer()))).filter(zeigt)),
+        top: mitAnteil(zj.kunden.map((x) => Object.assign({ kunde: x.kunde }, roh(kunS[x.schluessel] || leer()))).filter(zeigt)).sort(nachErtrag)
+          .slice(0, 10).map((x, i) => Object.assign({ rang: i + 1 }, x)),
+        unterKosten: { anzahl: unter.length, flaschen: runde(unterFl), anteil: flSumme > 0 ? zehntel((unterFl / flSumme) * 100) : 0 } };
+    }
     return aus;
   }
 
@@ -1516,7 +1716,7 @@
     MAX_FLASCHEN, datumKurz, monateAnzahl, zeitraumKurz, monatBisher, kistenKurz, anteileSinnvoll, hinweiseOrdnen, verlaufOhneStorno, schrittWert,
     kundeSchluessel, rechnungOhnePosition, STANDORT_VERSCHIEDEN, standortAuswahl, verkaufZeilen, monatsWerte, jahresVergleich, kumuliert, zeitraumAuswerten, kundeDetails, nachfassen,
     bestellungenZaehlen, wannText, abstandText, monatName, wochentagText, dauerText, datumAbkuerzungen, buchungVorschau, standText, frageTeilen, inventurAm, jahresStichtag, prognoseSaison, aktivitaet, monatsTage, letzteBestellungen,
-    datumMonatePlus, ersterVerkaufsmonat, bekannteRechnungen, bestellPrognose, dashboardDaten, dashboardMehr, bestellListe,
+    datumMonatePlus, ersterVerkaufsmonat, bekannteRechnungen, bestellPrognose, dashboardDaten, dashboardMehr, bestellListe, fifoSchichten, fifoKosten, kostenAusEingabe, MAX_KOSTEN_PRO_FLASCHE,
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = hilfen;
   else wurzel.SATE_HILFEN = hilfen;

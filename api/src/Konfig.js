@@ -138,14 +138,24 @@ const MAX_VERKAUF_LISTE = 100;
 /** Zahlenformate beim Anhängen (Spalte 1 = A). */
 const LL_SPALTEN = 10;
 const LL_FORMATE = { 1: 'dd.MM.yyyy', 8: 'dd.MM.yyyy HH:mm:ss' };
-/** Tab Abfüllungen: A Abfüllung, B Monat, C Flaschen, D Quelle. */
-const AB = { NAME: 0, MONAT: 1, FLASCHEN: 2, QUELLE: 3 };
+/** Tab Abfüllungen: A Abfüllung, B Monat, C Flaschen, D Quelle, E Herstellkosten pro Flasche (freiwillige Spalte). */
+const AB = { NAME: 0, MONAT: 1, FLASCHEN: 2, QUELLE: 3, KOSTEN: 4 };
 const AB_KOPF = { 0: 'Abfüllung', 1: 'Monat', 2: 'Flaschen' };
+/**
+ * Kopf der freiwilligen Spalte E (seit 2026-11-10). Nur wenn er genau so in E1 steht, liest die App die Herstellkosten
+ * pro Flasche je Abfüllung (für Rohertrag und Marge nach First in, First out) und schreibt sie bei einer neuen
+ * Abfüllung dazu. Die Zahlen stehen nur im Sheet, nie im Repo.
+ */
+const AB_KOSTEN_KOPF = 'Kosten/Fl (€)';
 const AB_FORMATE = { 2: 'MM.yyyy', 3: '#,##0' };
+const AB_FORMATE_KOSTEN = { 2: 'MM.yyyy', 3: '#,##0', 5: '0.0000 "€"' };
+/** Herstellkosten pro Flasche beim Eintragen: über 0 bis so viele Euro. */
+const MAX_KOSTEN_PRO_FLASCHE = 100;
 
 /** Fehlertexte beim Eintragen (die App zeigt sie so an). */
 const FEHLER_BESCHAEFTIGT = 'Gerade trägt jemand anderes ein, bitte gleich nochmal versuchen';
 const FEHLER_ART = 'Bitte eine gültige Art wählen';
+const FEHLER_KOSTEN = 'Herstellkosten pro Flasche: bitte einen Betrag über 0 bis 100 Euro';
 const FEHLER_STANDORT = 'Standort unbekannt';
 const FEHLER_NACH = 'Nach-Standort fehlt, ist unbekannt oder gleich dem Standort';
 const FEHLER_FLASCHEN = 'Flaschen: bitte eine ganze Zahl von 1 bis 50.000';

@@ -316,11 +316,24 @@ test('PWA: Dashboard (v30, erweitert in v31) – Kapsel auf dem Start, eigenes B
   assert.match(dash, /\.dash-s5 \.dash-zeile \{ grid-template-columns: minmax\(0, 1fr\) 52px 50px 68px 50px; \}/);
   assert.match(dash, /@media \(max-width: 350px\) \{[\s\S]*\.dash-s5 \.dash-zeile > :last-child, \.dash-kan \.dash-zeile > :last-child \{ display: none; \}/);
   // Seit v31: viele weitere Abschnitte zum Runterscrollen, jede Tabellenart hat ihre Spalten, Gruppen als Überschriften
-  assert.match(ansichten, /H\.dashboardMehr\(a\.zeilen, a\.werte, a\.heute, k\.flaschenProKiste\)/);
+  assert.match(ansichten, /H\.dashboardMehr\(a\.zeilen, a\.werte, a\.heute, k\.flaschenProKiste, u\.abfuellungen\)/);
   const arten = Array.from(new Set(Array.from(ansichten.matchAll(/dashTabelle\('([a-z0-9]+)/g), (m) => m[1])));
-  assert.deepStrictEqual(arten.sort(), ['gr', 'jahre', 'kan', 'lager', 'preis', 's5', 'top', 'vj']);
+  assert.deepStrictEqual(arten.sort(), ['abf', 'gr', 'jahre', 'kan', 'lager', 'preis', 'roh', 'rohkan', 's5', 'top', 'vj']);
   arten.forEach((art) => assert.match(dash, new RegExp('\\.dash-' + art + ' \\.dash-zeile \\{ grid-template-columns: '), art));
-  assert.strictEqual((ansichten.match(/class: 'dash-gruppe'/g) || []).length, 5);
+  assert.strictEqual((ansichten.match(/class: 'dash-gruppe'/g) || []).length, 6, 'fünf Gruppen, dazu Rohertrag und Marge');
+  // Herstellkosten (v32): je Abfüllung aus dem Sheet (Spalte E im Tab Abfüllungen), verteilt nach First in, First out.
+  // Im öffentlichen Repo steht keine Kostenzahl: nur der Spaltenkopf, das Eingabefeld und die Rechnung.
+  const konfig = lies('api/src/Konfig.js');
+  assert.match(konfig, /const AB = \{ NAME: 0, MONAT: 1, FLASCHEN: 2, QUELLE: 3, KOSTEN: 4 \};/);
+  assert.match(konfig, /const AB_KOSTEN_KOPF = 'Kosten\/Fl \(€\)';/);
+  assert.match(lies('docs/hilfen.js'), /function fifoSchichten\(abfuellungen\)[\s\S]*function fifoKosten\(zeilen, schichten\)/);
+  // Eingabe: Feld nur bei einer Abfüllung sichtbar, gesendet nur mit Wert
+  assert.match(html, /<div class="feld" id="b-kosten-feld" hidden>\s*<label for="b-kosten" class="feld-label">Herstellkosten pro Flasche in Euro/);
+  assert.match(html, /<input id="b-kosten" type="text" inputmode="decimal" autocomplete="off"/);
+  const eintragen = lies('docs/eintragen.js');
+  assert.match(eintragen, /S\.el\('b-kosten-feld'\)\.hidden = art\(\) !== 'Abfüllung' \|\| !kostenMoeglich\(\);/);
+  assert.match(eintragen, /const kostenMoeglich = \(\) => !!\(Z\.daten && Z\.daten\.kennzahlen\.abfuellungKosten === true\);/, 'ohne Kosten-Spalte kein Feld');
+  assert.match(eintragen, /if \(b\.art === 'Abfüllung' && b\.kosten !== null\) daten\.kostenProFlasche = b\.kosten;/);
   assert.match(dash, /\.dash-zeile \{[^}]*min-height: 27px;/);
   assert.doesNotMatch(dash, /var\(--akzent\)/, 'im Dashboard ist nichts antippbar, also keine Akzentfarbe');
 });

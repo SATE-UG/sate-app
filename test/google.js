@@ -79,8 +79,8 @@ function neueWelt() {
   }
 
   /**
-   * Erlaubte Schreibbereiche: Lager!B2:F<Summe> (bis 20 Zeilen), eine ganze Zeile A–J im Lager-Log, A–D in Abfüllungen, eine Zelle in
-   * Verkäufe Spalte L. Alles andere wirft (so fällt jeder Schreibversuch in A–K der Verkäufe sofort auf).
+   * Erlaubte Schreibbereiche: Lager!B2:F<Summe> (bis 20 Zeilen), eine ganze Zeile A–J im Lager-Log, A–D in Abfüllungen (mit der
+   * Kosten-Spalte A–E), eine Zelle in Verkäufe Spalte L. Alles andere wirft (so fällt jeder Schreibversuch in A–K der Verkäufe sofort auf).
    */
   function erlaubt(name, z, sp, nz, ns) {
     if (welt.schreibenKaputt[name]) return false;
@@ -90,7 +90,11 @@ function neueWelt() {
       return z === 1 && sp === 1 && ns === 5 && summe >= 1 && z + nz - 1 === summe;
     }
     if (name === 'Lager-Log') return z >= 1 && sp === 0 && nz === 1 && ns === 10;
-    if (name === 'Abfüllungen') return z >= 1 && sp === 0 && nz === 1 && ns === 4;
+    // A–D, mit der freiwilligen Kosten-Spalte (Kopf in E1) auch A–E
+    if (name === 'Abfüllungen') {
+      const mitKosten = String(((welt.tabs[name] || [])[0] || [])[4] || '').trim() === 'Kosten/Fl (€)';
+      return z >= 1 && sp === 0 && nz === 1 && (ns === 4 || (ns === 5 && mitKosten));
+    }
     if (name === 'Verkäufe') return z >= 1 && sp === 11 && nz === 1 && ns === 1;
     return false;
   }
@@ -146,7 +150,8 @@ function neueWelt() {
         },
         setNumberFormat: (f) => {
           if (welt.formatKaputt[name]) throw new Error('Format kaputt');
-          if (!erlaubt(name, z, 0, 1, name === 'Abfüllungen' ? 4 : 10) && !(name === 'Lager' && text === 'B2:F5')) {
+          const zeileOk = name === 'Abfüllungen' ? (sp <= 3 ? erlaubt(name, z, 0, 1, 4) : erlaubt(name, z, 0, 1, 5)) : erlaubt(name, z, 0, 1, 10);
+          if (!zeileOk && !(name === 'Lager' && text === 'B2:F5')) {
             throw new Error('Format in ' + name + '!' + text + ' nicht erlaubt');
           }
           welt.formate[name + '!' + text] = f;

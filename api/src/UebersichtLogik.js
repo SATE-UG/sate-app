@@ -2,11 +2,26 @@
  * Baut aus den Rohwerten der Tabs (getValues) die Antwort der Aktion `uebersicht` (rein, unter Node testbar).
  */
 
-/** Tab Abfüllungen (A Abfüllung, B Monat, C Flaschen, erste Zeile Kopf) → [{abfuellung, monat, flaschen}]. */
+/** Hat der Tab Abfüllungen die freiwillige Spalte E „Kosten/Fl (€)“ (genau dieser Kopf in E1)? */
+function abfuellungenMitKosten(zeilen) {
+  return String((((zeilen && zeilen[0]) || [])[AB.KOSTEN]) || '').trim() === AB_KOSTEN_KOPF;
+}
+
+/**
+ * Tab Abfüllungen (A Abfüllung, B Monat, C Flaschen, erste Zeile Kopf) → [{abfuellung, monat, flaschen}]. Mit der
+ * freiwilligen Spalte E dazu `kostenProFlasche` (Herstellkosten in Euro; leer, unlesbar oder ≤ 0 → null). Ohne die
+ * Spalte fehlt das Feld, dann zeigt die App keinen Rohertrag.
+ */
 function abfuellungenLesen(zeilen, formatieren) {
-  return (zeilen || []).slice(1).filter((z) => z && String(z[0] || '').trim()).map((z) => ({
-    abfuellung: String(z[0]).trim(), monat: zelleMonat(z[1], formatieren), flaschen: betragLesen(z[2]),
-  }));
+  const mitKosten = abfuellungenMitKosten(zeilen);
+  return (zeilen || []).slice(1).filter((z) => z && String(z[0] || '').trim()).map((z) => {
+    const a = { abfuellung: String(z[0]).trim(), monat: zelleMonat(z[1], formatieren), flaschen: betragLesen(z[2]) };
+    if (mitKosten) {
+      const k = betragLesen(z[AB.KOSTEN]);
+      a.kostenProFlasche = k !== null && k > 0 ? k : null;
+    }
+    return a;
+  });
 }
 
 /**
@@ -45,6 +60,8 @@ function uebersichtBauen(roh, formatieren, jetzt) {
       gesamtbestand: gesamt.wert, gesamtQuelle: gesamt.quelle, bestandGezaehlt: gesamt.summeBekannt,
       kisten: kiste(gesamt.wert), flaschenProKiste: e.flaschenProKiste, mindestbestand: e.mindestbestand,
       abverkaufProMonat: ab.wert, abverkaufVon: ab.von, abverkaufBis: ab.bis,
+      // Gibt es im Tab Abfüllungen die Spalte „Kosten/Fl (€)“? Nur dann zeigt die App beim Eintragen das Kostenfeld.
+      abfuellungKosten: abfuellungenMitKosten(roh.abfuellungen),
     },
     bestellung: Object.assign(bestellung, { vorlaufMonate: e.vorlaufMonate, pufferWochen: e.pufferWochen }),
     lager: lager.standorte.map((s) => ({

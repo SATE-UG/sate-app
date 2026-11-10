@@ -19,6 +19,9 @@
   const einzel = S.el('b-flaschen');
   const datum = S.el('b-datum');
   const kommentar = S.el('b-kommentar');
+  const kosten = S.el('b-kosten');
+  const kostenHinweis = S.el('b-kosten-hinweis');
+  const KOSTEN_TEXT = kostenHinweis.textContent;
   const senden = S.el('buchen-senden');
   const fehlerFeld = S.el('buchen-fehler');
   const offenFeld = S.el('buchen-offen');
@@ -78,6 +81,7 @@
     S.el('art-text').hidden = !info;
     formular.hidden = !a;
     S.el('b-nach-feld').hidden = a !== 'Umlagerung';
+    kostenFeldZeigen();
     S.el('b-standort-label').textContent = { Umlagerung: 'Von', Abfüllung: 'Angekommen in', Inventur: 'Gezählt in' }[a] || 'Standort';
     S.el('b-flaschen-legende').textContent = a === 'Inventur' ? 'Wie viele stehen da?' : 'Wie viele Flaschen?';
     standortVorwaehlen();
@@ -89,6 +93,30 @@
     summeFeld.textContent = r.fehler || (r.leer ? '' : '= ' + H.zahlFormat(r.flaschen, 0) + (r.flaschen === 1 ? ' Flasche' : ' Flaschen'));
     summeFeld.hidden = !summeFeld.textContent;
     if (summeFeld.classList) summeFeld.classList.toggle('summe-fehler', !!r.fehler);
+  }
+
+  /**
+   * Kann die Schnittstelle Herstellkosten speichern? Nur wenn der Tab Abfüllungen die Kosten-Spalte hat (und die
+   * Schnittstelle das meldet). Sonst bleibt das Feld weg, damit niemand etwas einträgt, das nirgends landet.
+   */
+  const kostenMoeglich = () => !!(Z.daten && Z.daten.kennzahlen.abfuellungKosten === true);
+  /** Das Kostenfeld gibt es nur bei einer Abfüllung. */
+  function kostenFeldZeigen() {
+    S.el('b-kosten-feld').hidden = art() !== 'Abfüllung' || !kostenMoeglich();
+  }
+
+  /** Herstellkosten pro Flasche aus dem Feld, nur bei einer Abfüllung (sonst leer): { leer, wert, fehler }. */
+  function kostenEingabe() {
+    return art() === 'Abfüllung' && kostenMoeglich() ? H.kostenAusEingabe(kosten.value) : { leer: true, wert: null, fehler: '' };
+  }
+
+  /** Unter dem Kostenfeld: Fehler in Rot, sonst die Erklärung und (mit Menge) was die Abfüllung zusammen gekostet hat. */
+  function kostenZeigen() {
+    const k = kostenEingabe();
+    const r = H.flaschenAusEingabe(kisten.value, einzel.value, proKiste());
+    kostenHinweis.textContent = k.fehler || (k.wert !== null && !r.fehler && !r.leer
+      ? 'Zusammen ' + H.euroFormat(k.wert * r.flaschen) + ' für ' + H.zahlFormat(r.flaschen, 0) + (r.flaschen === 1 ? ' Flasche.' : ' Flaschen.') : KOSTEN_TEXT);
+    if (kostenHinweis.classList) kostenHinweis.classList.toggle('feld-fehler', !!k.fehler);
   }
 
   /** Lager-Eintrag eines Standorts aus der Antwort (oder null). */
@@ -149,10 +177,11 @@
     if (Z.schreibt && !gesperrt) return 'Moment, gerade wird woanders gespeichert …';
     const r = H.flaschenAusEingabe(kisten.value, einzel.value, proKiste());
     if (r.fehler) return r.fehler;
+    const k = kostenEingabe();
     const p = H.buchungPruefen({ art: art(), standort: standortSel.value, nach: nachSel.value, flaschen: r.leer ? null : r.flaschen,
-      datum: datum.value, kommentar: kommentar.value.trim() }, orte(), H.heuteBerlin());
+      datum: datum.value, kommentar: kommentar.value.trim(), kosten: k.wert }, orte(), H.heuteBerlin());
     if (r.leer && /^Flaschen:/.test(p)) return 'Trag noch ein, wie viele Flaschen.';
-    return p;
+    return p || k.fehler;
   }
 
   /** „Speichern“ nur freigeben, wenn alles gültig ist; darunter leise, was noch fehlt (Fehler der Zahl steht schon an der Summe). */
@@ -160,7 +189,8 @@
     const p = offen();
     senden.disabled = gesperrt || Z.schreibt || !!p;
     const r = H.flaschenAusEingabe(kisten.value, einzel.value, proKiste());
-    offenFeld.textContent = p && !r.fehler ? p : '';
+    // Fehler der Zahl steht schon an der Summe, der der Kosten unter ihrem Feld
+    offenFeld.textContent = p && !r.fehler && p !== kostenEingabe().fehler ? p : '';
     offenFeld.hidden = !offenFeld.textContent;
   }
 
@@ -193,6 +223,7 @@
     datumGrenzen(true);
     artAnpassen();
     summeZeigen();
+    kostenZeigen();
     vorschauZeigen();
     chipsZeigen();
     pruefen();
@@ -205,6 +236,7 @@
     if (ziel && ziel.name === 'art') artAnpassen();
     if (ziel === standortSel) standortAuto = false;
     summeZeigen();
+    kostenZeigen();
     vorschauZeigen();
     chipsZeigen();
     pruefen();
@@ -242,7 +274,7 @@
    * Kommentar eingetragen oder ein anderes Datum als heute.
    */
   S.eintragenHatEingaben = function () {
-    return !!(art() || standortSel.value || nachSel.value || kisten.value.trim() || einzel.value.trim() || kommentar.value.trim() ||
+    return !!(art() || standortSel.value || nachSel.value || kisten.value.trim() || einzel.value.trim() || kommentar.value.trim() || kosten.value.trim() ||
       (datum.value && datum.value !== H.heuteBerlin()));
   };
 
@@ -257,7 +289,9 @@
     S.el('b-kisten-label').textContent = pk > 0 ? 'Kisten à ' + H.zahlFormat(pk, 0) : 'Kisten';
     S.el('b-flaschen-label').textContent = pk > 0 ? 'Einzelne Flaschen' : 'Flaschen';
     datumGrenzen(false);
+    kostenFeldZeigen();
     summeZeigen();
+    kostenZeigen();
     vorschauZeigen();
     chipsZeigen();
     pruefen();
@@ -312,7 +346,10 @@
     const r = H.flaschenAusEingabe(kisten.value, einzel.value, proKiste());
     if (r.fehler) return fehler(r.fehler);
     if (r.leer) return fehler('Bitte eintragen, wie viele Flaschen.');
-    const b = { art: art(), standort: standortSel.value, nach: nachSel.value, flaschen: r.flaschen, datum: datum.value, kommentar: kommentar.value.trim() };
+    const k = kostenEingabe();
+    if (k.fehler) return fehler(k.fehler);
+    const b = { art: art(), standort: standortSel.value, nach: nachSel.value, flaschen: r.flaschen, datum: datum.value, kommentar: kommentar.value.trim(),
+      kosten: k.wert };
     const problem = H.buchungPruefen(b, orte(), H.heuteBerlin());
     if (problem) return fehler(problem);
 
@@ -320,6 +357,7 @@
     const sitzung = Z.sitzung;
     const daten = { art: b.art, standort: b.standort, flaschen: b.flaschen, datum: b.datum, kommentar: b.kommentar, anfrageId: entwurfId };
     if (b.art === 'Umlagerung') daten.nachStandort = b.nach;
+    if (b.art === 'Abfüllung' && b.kosten !== null) daten.kostenProFlasche = b.kosten; // Herstellkosten pro Flasche (freiwillig)
     sperren(true);
     let e;
     try {

@@ -19,7 +19,17 @@ const HEUTE = '2026-11-08';
 test('buchungPruefen: Art, Standort, Nach-Standort, Flaschen, Datum, Kommentar', () => {
   const gut = { art: 'Promo', standort: 'Lager Süd', flaschen: 12, datum: HEUTE };
   const p = (x) => roh(k.buchungPruefen(Object.assign({}, gut, x), e, HEUTE));
-  assert.deepStrictEqual(p({}), { buchung: { art: 'Promo', standort: 'Lager Süd', nach: '', flaschen: 12, datum: HEUTE, kommentar: '' } });
+  assert.deepStrictEqual(p({}), { buchung: { art: 'Promo', standort: 'Lager Süd', nach: '', flaschen: 12, datum: HEUTE, kommentar: '', kosten: null } });
+  // Herstellkosten pro Flasche: nur bei einer Abfüllung, freiwillig, Komma oder Punkt, vier Nachkommastellen
+  const abf = (x) => p(Object.assign({ art: 'Abfüllung' }, x));
+  for (const w of ['', null, undefined]) assert.strictEqual(abf({ kostenProFlasche: w }).buchung.kosten, null, String(w));
+  for (const [roh, soll] of [[0.8765, 0.8765], ['0,85', 0.85], [' 0.8 ', 0.8], ['1', 1], [100, 100], [0.87654, 0.8765], [100.00004, 100]]) {
+    assert.strictEqual(abf({ kostenProFlasche: roh }).buchung.kosten, soll, String(roh));
+  }
+  for (const w of [0, -1, 0.00001, 100.01, '0,85 €', 'viel', '1,23456', true, {}, NaN, Infinity]) { // 0,00001 wäre gerundet 0
+    assert.strictEqual(abf({ kostenProFlasche: w }).fehler, 'Herstellkosten pro Flasche: bitte einen Betrag über 0 bis 100 Euro', String(w));
+  }
+  assert.strictEqual(p({ art: 'Promo', kostenProFlasche: 'Quatsch' }).buchung.kosten, null, 'bei anderen Arten wird das Feld nicht beachtet');
   // Art: nur aus der Liste, kein Storno
   for (const art of ['Storno', 'promo', '', undefined, 3, 'Verkauf']) assert.strictEqual(p({ art }).fehler, 'Bitte eine gültige Art wählen', String(art));
   for (const art of ['Inventur', 'Abfüllung', 'Umlagerung', 'Promo', 'Eigenverbrauch', 'Bruch']) {
@@ -322,6 +332,51 @@ test('Abfüllung: Hauptlager, Zeile in Abfüllungen mit fortlaufender Nummer, Mo
   assert.strictEqual(w.formate['Abfüllungen!B3'], 'MM.yyyy');
   assert.strictEqual(a.uebersicht.abfuellungen[1].flaschen, 1200);
   assert.strictEqual(a.uebersicht.abfuellungen[1].monat, heuteText().slice(0, 7));
+});
+
+test('Abfüllung mit Herstellkosten: Spalte E „Kosten/Fl (€)“ wird mitgeschrieben, ohne die Spalte bleibt es bei A–D', () => {
+  const { w, p } = welt();
+  // Tab ohne die Spalte: die Zeile bleibt A–D, die Kosten werden nicht gespeichert (Hinweis)
+  const ohne = p('buchen', { art: 'Abfüllung', flaschen: 1200, datum: heuteText(), kostenProFlasche: '0,85' });
+  assert.strictEqual(ohne.ok, true, JSON.stringify(ohne));
+  assert.deepStrictEqual(w.sheetSchreiben, ['Lager-Log!A5:J5', 'Abfüllungen!A3:D3', 'Lager!B2:F5']);
+  assert.deepStrictEqual(ohne.hinweise, ['Im Tab Abfüllungen als „2. Abfüllung“ eingetragen.',
+    'Die Herstellkosten wurden nicht gespeichert: Im Tab Abfüllungen fehlt die Spalte „Kosten/Fl (€)“. Bitte Mark Bescheid geben.']);
+  assert.strictEqual(w.tabs['Abfüllungen'][2].length, 4);
+  assert.ok(ohne.uebersicht.abfuellungen.every((x) => !('kostenProFlasche' in x)), 'ohne die Spalte liefert die Übersicht keine Kosten');
+  assert.strictEqual(ohne.uebersicht.kennzahlen.abfuellungKosten, false, 'die App zeigt dann kein Kostenfeld');
+
+  // mit der Spalte (Kopf in E1): Kosten in E, eigenes Zahlenformat, die Übersicht liefert sie je Abfüllung
+  w.tabs['Abfüllungen'][0][4] = 'Kosten/Fl (€)';
+  w.tabs['Abfüllungen'][1][4] = '0,80 €';
+  w.sheetSchreiben.length = 0;
+  const mit = p('buchen', { art: 'Abfüllung', flaschen: 1000, datum: heuteText(), kostenProFlasche: 0.8765 });
+  assert.strictEqual(mit.ok, true, JSON.stringify(mit));
+  assert.deepStrictEqual(w.sheetSchreiben, ['Lager-Log!A6:J6', 'Abfüllungen!A4:E4', 'Lager!B2:F5']);
+  assert.deepStrictEqual(mit.hinweise, ['Im Tab Abfüllungen als „3. Abfüllung“ eingetragen.']);
+  assert.deepStrictEqual([w.tabs['Abfüllungen'][3][0], w.tabs['Abfüllungen'][3][2], w.tabs['Abfüllungen'][3][4]], ['3. Abfüllung', 1000, 0.8765]);
+  assert.strictEqual(w.formate['Abfüllungen!E4'], '0.0000 "€"');
+  assert.strictEqual(w.formate['Abfüllungen!B4'], 'MM.yyyy');
+  assert.strictEqual(mit.uebersicht.kennzahlen.abfuellungKosten, true);
+  assert.deepStrictEqual(mit.uebersicht.abfuellungen.map((x) => [x.abfuellung, x.flaschen, x.kostenProFlasche]),
+    [['1. Abfüllung', 3000, 0.8], ['2. Abfüllung', 1200, null], ['3. Abfüllung', 1000, 0.8765]]);
+  assert.deepStrictEqual(w.tabs['Lager-Log'][5].slice(1, 5), ['Lager Süd', 'Abfüllung', 1000, ''], 'im Lager-Log stehen keine Kosten');
+
+  // ohne Kosten eingetragen: Zelle bleibt leer, Hinweis zum Nachtragen
+  const leer = p('buchen', { art: 'Abfüllung', flaschen: 500, datum: heuteText() });
+  assert.deepStrictEqual(leer.hinweise, ['Im Tab Abfüllungen als „4. Abfüllung“ eingetragen.',
+    'Ohne Herstellkosten eingetragen. Für die Marge bitte im Tab Abfüllungen in Spalte E nachtragen.']);
+  assert.strictEqual(w.tabs['Abfüllungen'][4][4], '');
+  // ungültige Kosten: nichts geschrieben
+  w.sheetSchreiben.length = 0;
+  assert.deepStrictEqual(p('buchen', { art: 'Abfüllung', flaschen: 500, datum: heuteText(), kostenProFlasche: -1 }),
+    { ok: false, fehler: 'Herstellkosten pro Flasche: bitte einen Betrag über 0 bis 100 Euro' });
+  assert.deepStrictEqual(w.sheetSchreiben, []);
+  // Storno: die Gegenzeile trägt dieselben Kosten, damit sich Flaschen und Kosten aufheben
+  const s = p('stornieren', { id: mit.id, bestaetigt: true });
+  assert.strictEqual(s.ok, true, JSON.stringify(s));
+  assert.deepStrictEqual(w.sheetSchreiben.filter((x) => /^Abfüllungen/.test(x)), ['Abfüllungen!A6:E6']);
+  assert.deepStrictEqual([w.tabs['Abfüllungen'][5][0], w.tabs['Abfüllungen'][5][2], w.tabs['Abfüllungen'][5][4]], ['Storno 3. Abfüllung', -1000, 0.8765]);
 });
 
 test('Negativ-Warnung: erst Bestätigung, dann schreiben; ohne Inventur keine Warnung', () => {

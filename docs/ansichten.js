@@ -426,7 +426,7 @@
   // Wunsch aus dem Team (2026-11-10): alles Wichtige klein auf einem Bildschirm, mit Umsatz, den Monaten samt Vergleich
   // zum Vormonat und den letzten Bestellungen. Der Start bleibt sonst, wie er ist: Die Karte „Dashboard“ ganz oben
   // (dashboardEinstieg) öffnet dieses Blatt. Oben der Überblick, darunter für Zahlenfreunde immer mehr: Vergleiche zum Vorjahr, Quartale,
-  // Jahre, Preise, Bestellgrößen, Kunden, Bestand, Rekorde. Gerechnet wird in H.dashboardDaten und H.dashboardMehr,
+  // Jahre, Rohertrag und Marge (seit v32), Preise, Bestellgrößen, Kunden, Bestand, Rekorde. Gerechnet wird in H.dashboardDaten und H.dashboardMehr,
   // hier steht nur die Darstellung.
 
   /** Kachel: Beschriftung, Hauptzahl mit Einheit, darunter weitere Zeilen (zweite Zahl, Vergleich). */
@@ -485,7 +485,7 @@
     const d = u && a ? H.dashboardDaten(a.zeilen, a.werte, a.jv, a.heute) : null;
     if (!d) return null;
     const k = u.kennzahlen;
-    const mehr = H.dashboardMehr(a.zeilen, a.werte, a.heute, k.flaschenProKiste);
+    const mehr = H.dashboardMehr(a.zeilen, a.werte, a.heute, k.flaschenProKiste, u.abfuellungen);
     const fl = (z) => H.zahlFormat(z, 0);
     const eur = (z) => H.euroFormat(z);
     const cent = (z) => (typeof z === 'number' ? H.zahlFormat(z, 2) + ' €' : '–');
@@ -581,6 +581,58 @@
       ]));
     }
 
+    // Rohertrag und Marge (seit v32) --------------------------------------------------------------------------------
+    // Nur wenn die Schnittstelle Herstellkosten je Abfüllung liefert (Spalte „Kosten/Fl (€)“ im Tab Abfüllungen, die
+    // Zahlen stehen nie im Code). Die Kosten jedes Verkaufs kommen nach First in, First out aus den Abfüllungen:
+    // erst die älteste, ist sie aufgebraucht, die nächste. Rohertrag = Umsatz (netto mit Pfand) minus Herstellkosten.
+    const mg = mehr.marge;
+    const margeText = (z) => (typeof z === 'number' ? H.zahlFormat(z, 1) + ' %' : '–');
+    const margeZelle = (z) => h('span', { class: 'dash-p' + (z < 0 ? ' runter' : ''), text: margeText(z) });
+    const ertragZelle = (z) => h('span', { class: 'dash-zahl' + (z < 0 ? ' minus' : ''), text: eur(z) });
+    if (mg) {
+      const j = mg.jahr;
+      const uk = mg.unterKosten;
+      const rohKopf = (erste) => [{ vorlesen: erste }, 'Umsatz', 'Kosten', 'Rohertrag', 'Marge'];
+      const rohZeile = (name, x, extra) => Object.assign({ zellen: [name, eur(x.umsatz), leise(eur(x.kosten)), ertragZelle(x.rohertrag), margeZelle(x.marge)] }, extra);
+      const bester = mg.top.length && mg.top[0].rohertrag > 0 ? mg.top[0].rohertrag : 0;
+      teile.push(
+        h('h3', { class: 'dash-gruppe', text: 'Rohertrag und Marge' }),
+        dashTitel('Rohertrag ' + jahr, 'Umsatz minus Herstellkosten'),
+        mg.fehlt.length ? h('p', { class: 'dash-fuss dash-fehlt', text: 'Für ' + mg.fehlt.join(', ') + ' fehlen die Herstellkosten (Tab Abfüllungen, Spalte „Kosten/Fl (€)“). ' +
+          'Wo daraus verkauft wurde, steht deshalb ein Strich.' }) : null,
+        mg.abweichung !== 0 ? h('p', { class: 'dash-fuss dash-fehlt', text: 'Im Tab Abfüllungen passt eine Minus-Zeile zu keiner Abfüllung (' + fl(Math.abs(mg.abweichung)) +
+          ' Flaschen). Die Zuordnung der Kosten ist deshalb unsicher.' }) : null,
+        mg.ueber > 0 ? h('p', { class: 'dash-fuss dash-fehlt', text: 'Verkauft sind ' + fl(mg.ueber) + ' Flaschen mehr, als im Tab Abfüllungen stehen. Für sie gelten die Kosten der letzten Abfüllung.' }) : null,
+        dashFakten([
+          mg.aktuell ? ['Verkauft wird gerade aus', mg.aktuell.name, cent(mg.aktuell.kosten) + ' pro Flasche, noch ' + fl(mg.aktuell.rest) + ' Fl.'] : null,
+          ['Ø Herstellkosten pro Flasche', cent(j.kostenProFlasche), 'nach First in, First out'],
+          ['Umsatz pro Flasche', cent(j.flaschen > 0 ? j.umsatz / j.flaschen : null)],
+          ['Rohertrag pro Flasche', cent(j.proFlasche)],
+          ['Rohertrag', eur(j.rohertrag), 'von ' + eur(j.umsatz) + ' Umsatz'],
+          ['Marge', margeText(j.marge), 'Rohertrag vom Umsatz'],
+          ['Aufschlag', margeText(j.aufschlag), 'Rohertrag auf die Herstellkosten'],
+          ['Bestellungen unter Herstellkosten', fl(uk.anzahl), uk.anzahl ? fl(uk.flaschen) + ' Fl., ' + anteil(uk.anteil) + ' der Flaschen' : ''],
+        ]),
+        dashTitel('Rohertrag je Jahr'),
+        dashTabelle('roh dash-zebra', 'Umsatz, Herstellkosten, Rohertrag und Marge je Jahr', rohKopf('Jahr'),
+          [rohZeile(jahr, j), mg.vorjahr ? rohZeile(String(mehr.jahr - 1), mg.vorjahr) : null, rohZeile('Gesamt', mg.gesamt, { klasse: 'dash-summe' })].filter(Boolean)),
+        mg.kanaele.length ? [
+          dashTitel('Rohertrag je Kanal ' + jahr, 'Anteil am Rohertrag'),
+          dashTabelle('rohkan dash-zebra', 'Rohertrag und Marge je Kanal ' + jahr, ['', { text: 'je Fl.', vorlesen: 'Rohertrag pro Flasche' }, 'Rohertrag', 'Marge', 'Anteil'],
+            mg.kanaele.map((x, i) => ({ zellen: [h('span', { class: 'dash-name' }, punkt(i), x.kanal), leise(cent(x.proFlasche)), ertragZelle(x.rohertrag), margeZelle(x.marge),
+              klein(anteil(x.anteil))] }))),
+        ] : null,
+        dashTitel('Zwölf Monate', 'Rohertrag und Marge'),
+        dashTabelle('roh', 'Rohertrag und Marge der letzten zwölf vollen Monate', rohKopf('Monat'), mg.monate.map((x) => rohZeile(monatKurz(x.monat), x, { balken: x.balken }))),
+        mg.top.length ? [
+          dashTitel('Top ' + mg.top.length + ' nach Rohertrag ' + jahr),
+          dashTabelle('top', 'Die Kunden mit dem höchsten Rohertrag ' + jahr, [{ vorlesen: 'Kunde' }, 'Flaschen', 'Marge', 'Rohertrag'],
+            mg.top.map((x) => ({ balken: bester > 0 ? (Math.max(0, x.rohertrag) / bester) * 100 : 0,
+              zellen: [h('span', { class: 'dash-name' }, h('small', { class: 'dash-rang', text: String(x.rang) }), x.kunde || 'Ohne Name'), fl(x.flaschen), margeZelle(x.marge),
+                ertragZelle(x.rohertrag)] }))),
+        ] : null);
+    }
+
     // Preise und Bestellungen -------------------------------------------------------------------------------------
     const b = mehr.bestellungen;
     const proKiste = k.flaschenProKiste > 0 ? k.flaschenProKiste : 24;
@@ -653,7 +705,14 @@
         dashTabelle('lager dash-zebra', 'Bestand je Lager', [{ vorlesen: 'Lager' }, 'Bestand', 'gezählt am'],
           u.lager.map((l) => ({ zellen: [l.standort, typeof l.bestand === 'number' ? fl(l.bestand) : '–', leise(l.letzteInventur ? H.datumKurz(l.letzteInventur) : 'noch nicht')] }))),
       ] : null,
-      abf.length ? [
+      mg ? [
+        // Mit Herstellkosten: jede Abfüllung als Schicht, was sie pro Flasche gekostet hat und wie viel davon nach
+        // First in, First out noch da ist (im Normalfall zusammen der rechnerische Bestand)
+        dashTitel('Abfüllungen', 'übrig nach First in, First out'),
+        dashTabelle('abf dash-zebra', 'Abfüllungen mit Herstellkosten pro Flasche und Rest', [{ vorlesen: 'Abfüllung' }, 'Flaschen', { text: 'je Fl.', vorlesen: 'Herstellkosten pro Flasche' }, 'übrig'],
+          mg.schichten.map((x) => ({ balken: x.flaschen > 0 ? (x.rest / x.flaschen) * 100 : 0,
+            zellen: [nameMit(x.name, x.monat ? monatKurz(x.monat) : ''), fl(x.flaschen), leise(cent(x.kosten)), fl(x.rest)] }))),
+      ] : abf.length ? [
         dashTitel('Abfüllungen'),
         dashTabelle('lager dash-zebra', 'Abfüllungen', [{ vorlesen: 'Abfüllung' }, 'Flaschen', 'Monat'],
           abf.map((x) => ({ zellen: [x.abfuellung, fl(x.flaschen), leise(H.monatFormat(x.monat) === '–' ? '–' : monatLang(x.monat))] }))),
@@ -683,7 +742,8 @@
         g.kunden ? ['Kunden mit mehr als einer Bestellung', fl(g.mehrfach), anteil((g.mehrfach / g.kunden) * 100) + ' der Kunden'] : null,
         g.proMonat ? ['Ø pro Monat', fl(g.proMonat.flaschen) + ' Fl.', eur(g.proMonat.umsatz) + ', volle Monate'] : null,
       ]),
-      h('p', { class: 'dash-fuss', text: 'Stand ' + H.datumText(a.heute) + '. Umsatz netto mit Pfand. Volle Monate heißt ohne den laufenden. Eine Bestellung ist eine Rechnung, ohne Nummer ein Kunde an einem Tag. Ältere Zeilen ohne Rechnungsdatum zählen je Zeile als eine Bestellung, das ist meist ein Kunde in einem Monat.' }));
+      h('p', { class: 'dash-fuss', text: 'Stand ' + H.datumText(a.heute) + '. Umsatz netto mit Pfand. Volle Monate heißt ohne den laufenden. Eine Bestellung ist eine Rechnung, ohne Nummer ein Kunde an einem Tag. Ältere Zeilen ohne Rechnungsdatum zählen je Zeile als eine Bestellung, das ist meist ein Kunde in einem Monat.' +
+        (mg ? ' Rohertrag ist Umsatz minus Herstellkosten, ohne Marketing, Lieferung und andere Kosten. Die Herstellkosten kommen nach First in, First out aus den Abfüllungen: erst die älteste, dann die nächste; Promo, Bruch und Eigenverbrauch zählen dabei nicht mit.' : '') }));
     return teile;
   }
 

@@ -95,8 +95,22 @@ function neueId_(lagerLog, ms, zufall) {
 // Buchen ---------------------------------------------------------------------------------------------------
 
 /**
- * Prüft `{art, standort, nachStandort, flaschen, datum, kommentar}` gegen die Einstellungen `e` und `heute`.
- * Rückgabe { buchung: {art, standort, nach, flaschen, datum, kommentar} } oder { fehler }.
+ * Herstellkosten pro Flasche aus der App (nur bei einer Abfüllung): Zahl oder Text mit Komma bzw. Punkt, über 0 bis
+ * MAX_KOSTEN_PRO_FLASCHE Euro, auf vier Nachkommastellen gerundet. Alles andere → null.
+ */
+function kostenLesen(wert) {
+  let z = null;
+  if (typeof wert === 'number') z = wert;
+  else if (typeof wert === 'string' && /^\s*\d{1,3}([.,]\d{1,4})?\s*$/.test(wert)) z = Number(wert.trim().replace(',', '.'));
+  if (z === null || !isFinite(z)) return null;
+  const rund = Math.round(z * 10000) / 10000; // erst runden, dann prüfen: 0,00001 wäre sonst als 0 gespeichert
+  return rund > 0 && rund <= MAX_KOSTEN_PRO_FLASCHE ? rund : null;
+}
+
+/**
+ * Prüft `{art, standort, nachStandort, flaschen, datum, kommentar, kostenProFlasche}` gegen die Einstellungen `e` und
+ * `heute`. Rückgabe { buchung: {art, standort, nach, flaschen, datum, kommentar, kosten} } oder { fehler }. `kosten` =
+ * Herstellkosten pro Flasche einer Abfüllung (freiwillig, sonst null; bei anderen Arten wird das Feld nicht beachtet).
  */
 function buchungPruefen(d, e, heute) {
   const art = typeof d.art === 'string' ? BUCHBARE_ARTEN.find((a) => a === d.art.trim()) : undefined;
@@ -121,7 +135,12 @@ function buchungPruefen(d, e, heute) {
   if (abstand < -MAX_TAGE_ZURUECK) return { fehler: FEHLER_DATUM_ALT };
   const kommentar = textBereinigen(d.kommentar);
   if (kommentar === null || Array.from(kommentar).length > MAX_KOMMENTAR) return { fehler: FEHLER_KOMMENTAR };
-  return { buchung: { art: art, standort: standort, nach: nach, flaschen: flaschen, datum: datum, kommentar: kommentar } };
+  let kosten = null;
+  if (art === 'Abfüllung' && d.kostenProFlasche !== undefined && d.kostenProFlasche !== null && d.kostenProFlasche !== '') {
+    kosten = kostenLesen(d.kostenProFlasche);
+    if (kosten === null) return { fehler: FEHLER_KOSTEN };
+  }
+  return { buchung: { art: art, standort: standort, nach: nach, flaschen: flaschen, datum: datum, kommentar: kommentar, kosten: kosten } };
 }
 
 /**
@@ -240,9 +259,10 @@ function abfuellungStorno(zeilen, id, wer, heute) {
   if (!orig || schon || fl === null) {
     return { hinweis: 'Im Tab Abfüllungen gibt es keine passende App-Zeile zu dieser Abfüllung. Mark muss sie dort von Hand korrigieren.' };
   }
-  return {
-    werte: ['Storno ' + String(orig[AB.NAME]).trim(), orig[AB.MONAT], -fl, 'SATE-App, Storno von ID ' + id + ', ' + wer + ', ' + heute],
-  };
+  const werte = ['Storno ' + String(orig[AB.NAME]).trim(), orig[AB.MONAT], -fl, 'SATE-App, Storno von ID ' + id + ', ' + wer + ', ' + heute];
+  // Mit der Kosten-Spalte trägt die Gegenzeile dieselben Kosten: So heben sich Flaschen und Kosten der Abfüllung auf
+  if (abfuellungenMitKosten(zeilen)) werte.push(orig[AB.KOSTEN] === undefined || orig[AB.KOSTEN] === null ? '' : orig[AB.KOSTEN]);
+  return { werte: werte };
 }
 
 /** Gibt es im Tab Abfüllungen schon die Gegenzeile zum Storno der Abfüllung `id`? */
@@ -469,11 +489,19 @@ function buchen_(daten, name, t, e, heute, jetzt, u, festeId) {
   } else if (b.art === 'Abfüllung') {
     const nummer = abfuellungNummer(t.abfuellungen) + '. Abfüllung';
     const abf = [nummer, u.datumZelle(b.datum.slice(0, 7) + '-01'), b.flaschen, abfuellungQuelle(name, b.datum, id)];
+    // Herstellkosten pro Flasche in Spalte E, wenn es die Spalte gibt (sonst bleibt die Zeile wie bisher A–D)
+    const mitKosten = abfuellungenMitKosten(t.abfuellungen);
+    if (mitKosten) abf.push(b.kosten === null ? '' : b.kosten);
     try {
       const anr = naechsteZeile(t.abfuellungen);
-      u.zeileSchreiben(ABFUELLUNGEN_TAB, anr, zellenSicher(abf), AB_FORMATE);
+      u.zeileSchreiben(ABFUELLUNGEN_TAB, anr, zellenSicher(abf), mitKosten ? AB_FORMATE_KOSTEN : AB_FORMATE);
       zeileSetzen_(t.abfuellungen, anr, abf);
       hinweise.push('Im Tab Abfüllungen als „' + nummer + '“ eingetragen.');
+      if (b.kosten !== null && !mitKosten) {
+        hinweise.push('Die Herstellkosten wurden nicht gespeichert: Im Tab Abfüllungen fehlt die Spalte „' + AB_KOSTEN_KOPF + '“. Bitte Mark Bescheid geben.');
+      } else if (b.kosten === null && mitKosten) {
+        hinweise.push('Ohne Herstellkosten eingetragen. Für die Marge bitte im Tab Abfüllungen in Spalte E nachtragen.');
+      }
     } catch (err) {
       hinweise.push('Im Lager-Log eingetragen, aber die Zeile im Tab Abfüllungen fehlt. Bitte Mark Bescheid geben.');
     }
@@ -509,7 +537,7 @@ function stornieren_(daten, name, t, e, heute, jetzt, u, festeId) {
   if (abf && abf.werte) {
     try {
       const anr = naechsteZeile(t.abfuellungen);
-      u.zeileSchreiben(ABFUELLUNGEN_TAB, anr, zellenSicher(abf.werte), AB_FORMATE);
+      u.zeileSchreiben(ABFUELLUNGEN_TAB, anr, zellenSicher(abf.werte), abf.werte.length > AB.KOSTEN ? AB_FORMATE_KOSTEN : AB_FORMATE);
       zeileSetzen_(t.abfuellungen, anr, abf.werte);
       hinweise.push('Im Tab Abfüllungen als Gegenzeile „' + abf.werte[0] + '“ eingetragen.');
     } catch (err) {

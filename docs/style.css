@@ -845,6 +845,7 @@ select:disabled, input:disabled, textarea:disabled { opacity: 0.5; }
 .buchen-offen { margin: 10px 4px 0; text-align: center; font-size: 13px; }
 /* Bestand laut App unter dem Standort, Vorschau (danach/Abweichung) unter der Summe, Datums-Abkürzungen */
 .feld-hinweis { margin: 8px 0 0; font-size: 13px; color: var(--leise); }
+.feld-hinweis.feld-fehler { color: var(--rot); }
 .vorschau { margin: 8px 0 0; font-size: 15px; font-weight: 600; color: var(--text); text-align: right; font-variant-numeric: tabular-nums; }
 .datum-chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
 .chip {
@@ -1310,6 +1311,9 @@ body.mit-leiste::after {
 .dash-gr .dash-zeile { grid-template-columns: minmax(0, 1fr) 46px 60px 48px; }             /* Größe, Anzahl, Flaschen, Anteil */
 .dash-top .dash-zeile { grid-template-columns: minmax(0, 1fr) 54px 46px 68px; }            /* Kunde, Flaschen, Anteil, Umsatz */
 .dash-lager .dash-zeile { grid-template-columns: minmax(0, 1fr) 64px 84px; }               /* Name, Zahl, Datum */
+.dash-abf .dash-zeile { grid-template-columns: minmax(0, 1fr) 58px 52px 58px; }             /* Abfüllung, Flaschen, je Fl., übrig */
+.dash-roh .dash-zeile { grid-template-columns: minmax(0, 1fr) 66px 62px 66px 52px; }       /* Zeitraum, Umsatz, Kosten, Rohertrag, Marge */
+.dash-rohkan .dash-zeile { grid-template-columns: minmax(0, 1fr) 50px 66px 52px 44px; }    /* Kanal, je Fl., Rohertrag, Marge, Anteil */
 .dash-zeile > :not(.dash-balken) { position: relative; z-index: 1; }
 .dash-balken { position: absolute; left: 0; top: 2px; bottom: 2px; z-index: 0; border-radius: 6px; background: rgba(255, 255, 255, 0.075); }
 /* Laufender Monat: schraffiert statt gefüllt, er zählt erst bis heute */
@@ -1324,6 +1328,7 @@ body.mit-leiste::after {
 .dash-rang { width: 14px; text-align: right; font-variant-numeric: tabular-nums; }
 .dash-zahl { text-align: right; font-weight: 600; white-space: nowrap; }
 .dash-zahl.leise { font-weight: 400; color: var(--leise); }
+.dash-zahl.minus { color: var(--rot); }
 .dash-p { display: block; text-align: right; font-size: 12px; font-weight: 600; white-space: nowrap; color: var(--leise); }
 .dash-p.hoch { color: var(--gruen); }
 .dash-p.runter { color: var(--rot); }
@@ -1344,6 +1349,7 @@ body.mit-leiste::after {
 .dash-fakt dd { margin: 0; flex: none; max-width: 62%; text-align: right; font-weight: 600; font-variant-numeric: tabular-nums; }
 .dash-unter { display: block; font-size: 12px; font-weight: 400; line-height: 16px; color: var(--leise); }
 .dash-fuss { margin: 22px 0 0; font-size: 12px; line-height: 1.45; color: var(--leise); }
+.dash-fuss.dash-fehlt { margin: 0 0 16px; font-size: 13px; }
 /* Schmale Geräte: die jeweils letzten Vergleichsspalten und das „zu 2025“ fallen weg, damit nichts umbricht */
 @media (max-width: 350px) {
   .dash-kacheln { gap: 6px; }
@@ -1356,6 +1362,10 @@ body.mit-leiste::after {
   .dash-s5 .dash-zeile > :last-child, .dash-kan .dash-zeile > :last-child { display: none; }
   .dash-vj .dash-zeile { grid-template-columns: minmax(0, 1fr) 46px 46px 60px; }
   .dash-vj .dash-zeile > :last-child, .dash-vj .dash-zeile > :nth-last-child(4) { display: none; }
+  .dash-roh .dash-zeile { grid-template-columns: minmax(0, 1fr) 62px 62px 50px; }
+  .dash-roh .dash-zeile > :nth-last-child(3) { display: none; }
+  .dash-rohkan .dash-zeile { grid-template-columns: minmax(0, 1fr) 46px 62px 50px; }
+  .dash-rohkan .dash-zeile > :last-child { display: none; }
   .dash-jahre .dash-zeile { grid-template-columns: minmax(0, 1fr) 54px 66px 50px; }
   .dash-jahre .dash-zeile > :last-child, .dash-jahre .dash-zeile > :nth-last-child(2) { display: none; }
   .dash-bestellung { grid-template-columns: 44px minmax(0, 1fr) auto 58px; column-gap: 6px; }
