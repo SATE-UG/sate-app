@@ -82,6 +82,8 @@
   // Symbole (selbst gezeichnet, 24×24, nur Linien in currentColor; die Reiter-Symbole stehen fest in index.html) ----
   const FLASCHE = 'M10 3h4v3.5l2.2 3.3c.5.7.8 1.6.8 2.5V20a1 1 0 0 1-1 1H8a1 1 0 0 1-1-1v-7.7c0-.9.3-1.8.8-2.5L10 6.5z';
   S.ICONS = {
+    raster: [['rect', { x: 4, y: 4, width: 6.5, height: 6.5, rx: 1.5 }], ['rect', { x: 13.5, y: 4, width: 6.5, height: 6.5, rx: 1.5 }],
+      ['rect', { x: 4, y: 13.5, width: 6.5, height: 6.5, rx: 1.5 }], ['rect', { x: 13.5, y: 13.5, width: 6.5, height: 6.5, rx: 1.5 }]],
     inventur: [['rect', { x: 5, y: 4.5, width: 14, height: 16.5, rx: 2 }], ['path', { d: 'M9 4.5V3h6v1.5' }], ['path', { d: 'M8.5 12.5l2.3 2.3 4.7-4.8' }]],
     umlagerung: [['path', { d: 'M4 8h14.5' }], ['path', { d: 'M15 4.5 18.5 8 15 11.5' }], ['path', { d: 'M20 16H5.5' }], ['path', { d: 'M9 12.5 5.5 16 9 19.5' }]],
     promo: [['rect', { x: 3.5, y: 8, width: 17, height: 4, rx: 1 }], ['path', { d: 'M5.5 12v8h13v-8' }], ['path', { d: 'M12 8v12' }],

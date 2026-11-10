@@ -1201,6 +1201,34 @@
     return 'vor ' + Math.round(tage / (365.25 / 12)) + ' Monaten';
   }
 
+  function zehntel(z) { return Math.round(z * 10) / 10; }
+
+  /**
+   * Bestellungen aus den Verkaufszeilen: Zeilen einer Rechnung desselben Kunden zusammengezählt, ohne Rechnungsnummer
+   * Zeilen desselben Kunden am selben Tag, Altzeilen ohne Nummer und Datum jede für sich. In der Reihenfolge der Zeilen,
+   * je { monat, datum ('' ohne Rechnungsdatum, sonst das späteste der Zeilen), kunde, schluessel, kanal, flaschen,
+   * umsatz, reihe (Stelle der ersten Zeile) }. Gutschriften sind dabei (Summe ≤ 0), der Aufrufer filtert.
+   */
+  function bestellListe(zeilen) {
+    const nach = Object.create(null);
+    const liste = [];
+    (Array.isArray(zeilen) ? zeilen : []).forEach((z, i) => {
+      if (!z || !istZahl(z.flaschen)) return;
+      const datum = datumGueltig(z.datum) ? z.datum : '';
+      // Rechnung und Kunde: Stünde dieselbe Nummer einmal bei zwei Kunden, blieben es zwei Bestellungen
+      const k = z.rechnung ? 'r\n' + z.rechnung + '\n' + z.schluessel : datum ? 'k\n' + z.schluessel + '\n' + datum : 'a\n' + i;
+      let b = nach[k];
+      if (!b) {
+        b = nach[k] = { monat: z.monat, datum: datum, kunde: z.kunde || '', schluessel: z.schluessel, kanal: z.kanal || '', flaschen: 0, umsatz: 0, reihe: i };
+        liste.push(b);
+      }
+      if (datum > b.datum) b.datum = datum;
+      b.flaschen = runde(b.flaschen + z.flaschen);
+      b.umsatz = runde(b.umsatz + (istZahl(z.umsatz) ? z.umsatz : 0));
+    });
+    return liste;
+  }
+
   /**
    * Zahlen fürs Dashboard (seit v30): alles Wichtige klein auf einem Bildschirm, gerechnet aus den schon geladenen
    * Verkäufen. `zeilen` aus verkaufZeilen (null bei einer älteren Schnittstelle), `werte` aus monatsWerte, `jv` aus
@@ -1218,7 +1246,7 @@
    *     Gutschriften (Summe ≤ 0) fehlen,
    *   kanaele: Kanäle des laufenden Jahres nach Flaschen, höchstens vier Teile (ab fünf Kanälen die drei größten und
    *     „Weitere“; Kanäle ohne Flaschen im Plus fehlen), je { kanal, flaschen, umsatz, anteil (Prozent der gezeigten
-   *     Flaschen) } }.
+   *     Flaschen), anteilUmsatz (Prozent des gezeigten Umsatzes) } }.
    */
   function dashboardDaten(zeilen, werte, jv, heute, anzahlMonate, anzahlBestellungen) {
     if (!datumGueltig(heute) || typeof werte !== 'function') return null;
@@ -1246,35 +1274,236 @@
         pUmsatz: vg ? veraenderung(vg.dieses.umsatz, vg.vorjahr.umsatz) : null }
       : null;
 
-    const nach = Object.create(null);
-    const liste = [];
-    (Array.isArray(zeilen) ? zeilen : []).forEach((z, i) => {
-      if (!z || !datumGueltig(z.datum) || z.datum > heute || !istZahl(z.flaschen)) return;
-      // Rechnung und Kunde: Stünde dieselbe Nummer einmal bei zwei Kunden, blieben es zwei Bestellungen
-      const k = z.rechnung ? 'r\n' + z.rechnung + '\n' + z.schluessel : 'k\n' + z.schluessel + '\n' + z.datum;
-      let b = nach[k];
-      if (!b) {
-        b = nach[k] = { datum: z.datum, kunde: z.kunde || '', kanal: z.kanal || '', flaschen: 0, umsatz: 0, reihe: i };
-        liste.push(b);
-      }
-      if (z.datum > b.datum) b.datum = z.datum;
-      b.flaschen = runde(b.flaschen + z.flaschen);
-      b.umsatz = runde(b.umsatz + (istZahl(z.umsatz) ? z.umsatz : 0));
-    });
     const nBest = anzahlBestellungen > 0 ? Math.floor(anzahlBestellungen) : 5;
-    const bestellungen = liste.filter((b) => b.flaschen > 0)
+    const bestellungen = bestellListe(zeilen).filter((b) => b.datum && b.datum <= heute && b.flaschen > 0)
       .sort((x, y) => (x.datum < y.datum ? 1 : x.datum > y.datum ? -1 : y.reihe - x.reihe)).slice(0, nBest)
       .map((b) => ({ datum: b.datum, kunde: b.kunde, kanal: b.kanal, flaschen: b.flaschen, umsatz: b.umsatz }));
 
     let kanaele = [];
     if (Array.isArray(zeilen)) {
       const alle = zeitraumAuswerten(zeilen, jetzt.slice(0, 4) + '-01', jetzt).kanaele.filter((k) => k.flaschen > 0);
-      const teile = alle.length > 4 ? alle.slice(0, 3).concat([alle.slice(3).reduce((x, k) => ({ kanal: 'Weitere',
-        flaschen: runde(x.flaschen + k.flaschen), umsatz: runde(x.umsatz + k.umsatz) }), { kanal: 'Weitere', flaschen: 0, umsatz: 0 })]) : alle;
+      // Umsatz je Kanal erst bei 0 kappen (Gutschriften), dann zusammenfassen: so stimmen die Anteile mit der Tabelle
+      // aller Kanäle (dashboardMehr) überein
+      const mit = alle.map((k) => ({ kanal: k.kanal, flaschen: k.flaschen, umsatz: k.umsatz, plus: Math.max(0, k.umsatz) }));
+      const teile = mit.length > 4 ? mit.slice(0, 3).concat([mit.slice(3).reduce((x, k) => ({ kanal: 'Weitere',
+        flaschen: runde(x.flaschen + k.flaschen), umsatz: runde(x.umsatz + k.umsatz), plus: x.plus + k.plus }), { kanal: 'Weitere', flaschen: 0, umsatz: 0, plus: 0 })]) : mit;
       const summe = teile.reduce((x, k) => x + k.flaschen, 0);
-      kanaele = teile.map((k) => ({ kanal: k.kanal, flaschen: k.flaschen, umsatz: k.umsatz, anteil: Math.round((k.flaschen / summe) * 1000) / 10 }));
+      const euro = teile.reduce((x, k) => x + k.plus, 0);
+      kanaele = teile.map((k) => ({ kanal: k.kanal, flaschen: k.flaschen, umsatz: k.umsatz, anteil: zehntel((k.flaschen / summe) * 100),
+        anteilUmsatz: euro > 0 ? zehntel((k.plus / euro) * 100) : 0 }));
     }
     return { heute: heute, monate: monate, laufend: monate[0], letzter: monate[1] || null, jahr: jahr, bestellungen: bestellungen, kanaele: kanaele };
+  }
+
+  /** Liter pro Flasche (0,33-l-Longneck), nur für die Spielerei „Liter seit dem Start“. */
+  const FLASCHE_LITER = 0.33;
+
+  /**
+   * Mehr Zahlen fürs Dashboard (seit v31, „zahlennerdig“ zum Runterscrollen). Eingaben wie dashboardDaten, dazu
+   * `flaschenProKiste` (Standard 24) für die Bestellgrößen. Ohne gültiges `heute` oder `werte` null. Rückgabe:
+   * { jahr, letzterMonat,
+   *   trend: volle Monate gegen dieselben Monate ein Jahr früher, je { art: 'monate' | 'jahr', monate, von, bis, flaschen,
+   *     umsatz, vjFlaschen, vjUmsatz, pFlaschen, pUmsatz } für 1, 3, 6 und 12 Monate und (außer im Januar) das Jahr
+   *     bis zum letzten vollen Monat. Fehlt ein Monat in den Daten: Zahlen null. Vorjahr ≤ 0: Prozent null,
+   *   vorjahrMonate: die letzten 12 vollen Monate, neuester zuerst, wie trend je Monat, dazu `monat` und `anteil`
+   *     (Flaschen in Prozent des stärksten der zwölf),
+   *   quartale: Quartale des laufenden Jahres bis heute, je { quartal, von, bis, laufend, flaschen, umsatz, pFlaschen,
+   *     pUmsatz (zum Vorjahresquartal; beim laufenden Quartal null) },
+   *   tempo: Januar bis heute { tage, flaschenProTag, umsatzProTag } (null, wenn ein Monat fehlt),
+   *   und nur mit Verkaufszeilen (sonst null bzw. leere Listen):
+   *   kanaele: alle Kanäle des laufenden Jahres mit Flaschen im Plus (Reihenfolge wie in dashboardDaten), je { kanal,
+   *     flaschen, umsatz, anteilFlaschen, anteilUmsatz (Prozent der Summe dieser Kanäle), proFlasche },
+   *   jahre: je Kalenderjahr (neuestes zuerst) { jahr, flaschen, umsatz, proFlasche, bestellungen, kunden }, `gesamt` dasselbe
+   *     über alles, dazu { erster (Monat), monate (seit dem Start, einschließlich laufendem), proMonat ({flaschen, umsatz}
+   *     über die vollen Monate oder null), liter, mehrfach (Kunden mit mindestens zwei Bestellungen) },
+   *   preise: Umsatz pro Flasche im laufenden Jahr und im ganzen Vorjahr, je { name ('' = alle Kanäle), proFlasche,
+   *     vorjahr, p } für alle zusammen und je Kanal mit Flaschen im Plus,
+   *   bestellungen: laufendes Jahr { anzahl, flaschen (Ø), median, umsatz (Ø), proMonat, groesste ({flaschen, umsatz,
+   *     kunde, datum, monat} oder null) }, `groessen`: fünf Klassen in Kisten, je { abKisten, bisKisten (null = offen),
+   *     anzahl, flaschen, anteil (Prozent der Flaschen) },
+   *   kunden: laufendes Jahr { aktiv (Flaschen im Jahr unter dem Strich im Plus), neu (erster Kauf überhaupt in diesem
+   *     Jahr, Gutschriften zählen dafür nicht), wieder (auch im Vorjahr gekauft),
+   *     nichtMehr (im Vorjahr gekauft, dieses Jahr noch nicht), flaschen, umsatz, bestellungen (jeweils Ø je Kunde) },
+   *   top: die zehn größten Kunden des Jahres, je { rang, kunde, flaschen, umsatz, anteil, kumuliert (Prozent der
+   *     Flaschen aller Kunden mit Flaschen im Plus) },
+   *   rekorde: { monatFlaschen ({monat, flaschen}), monatUmsatz ({monat, umsatz}), bestellung, kunde ({kunde, flaschen,
+   *     umsatz}), treu ({kunde, anzahl}) }, jeweils null, wenn es nichts gibt }.
+   */
+  function dashboardMehr(zeilen, werte, heute, flaschenProKiste) {
+    if (!datumGueltig(heute) || typeof werte !== 'function') return null;
+    const jetzt = heute.slice(0, 7);
+    const jahr = Number(jetzt.slice(0, 4));
+    const lfm = monatPlus(jetzt, -1);
+    const zwei = (n) => (n < 10 ? '0' : '') + n;
+    const wert = (m) => {
+      const x = werte(m);
+      return x && istZahl(x.flaschen) ? { flaschen: x.flaschen, umsatz: istZahl(x.umsatz) ? x.umsatz : 0 } : null;
+    };
+    const summe = (von, bis) => {
+      let f = 0;
+      let u = 0;
+      for (let m = von; m <= bis; m = monatPlus(m, 1)) {
+        const x = wert(m);
+        if (!x) return null;
+        f += x.flaschen;
+        u += x.umsatz;
+      }
+      return { flaschen: runde(f), umsatz: runde(u) };
+    };
+    // Zeitraum gegen dieselben Monate ein Jahr früher (`bisVoll`: nur bis hier mit dem Vorjahr vergleichen)
+    const vergleich = (von, bis, ohneVorjahr) => {
+      const d = summe(von, bis);
+      const v = ohneVorjahr ? null : summe(monatPlus(von, -12), monatPlus(bis, -12));
+      return { von: von, bis: bis, flaschen: d ? d.flaschen : null, umsatz: d ? d.umsatz : null,
+        vjFlaschen: v ? v.flaschen : null, vjUmsatz: v ? v.umsatz : null,
+        pFlaschen: d && v ? veraenderung(d.flaschen, v.flaschen) : null, pUmsatz: d && v ? veraenderung(d.umsatz, v.umsatz) : null };
+    };
+
+    const trend = [1, 3, 6, 12].map((n) => Object.assign({ art: 'monate', monate: n }, vergleich(monatPlus(lfm, -(n - 1)), lfm)));
+    if (lfm.slice(0, 4) === String(jahr)) trend.push(Object.assign({ art: 'jahr', monate: Number(lfm.slice(5, 7)) }, vergleich(jahr + '-01', lfm)));
+
+    const vorjahrMonate = [];
+    for (let i = 0; i < 12; i++) {
+      const m = monatPlus(lfm, -i);
+      vorjahrMonate.push(Object.assign({ monat: m, anteil: 0 }, vergleich(m, m)));
+    }
+    const hoch = Math.max.apply(null, vorjahrMonate.map((m) => (m.flaschen > 0 ? m.flaschen : 0)).concat([0]));
+    if (hoch > 0) vorjahrMonate.forEach((m) => { m.anteil = m.flaschen > 0 ? zehntel((m.flaschen / hoch) * 100) : 0; });
+
+    const quartale = [];
+    for (let q = 1; q <= 4; q++) {
+      const von = jahr + '-' + zwei(3 * q - 2);
+      const bis = jahr + '-' + zwei(3 * q);
+      if (von > jetzt) break;
+      const laufend = bis >= jetzt;
+      const v = vergleich(von, laufend ? jetzt : bis, laufend);
+      quartale.push({ quartal: q, von: von, bis: bis, laufend: laufend, flaschen: v.flaschen, umsatz: v.umsatz, pFlaschen: v.pFlaschen, pUmsatz: v.pUmsatz });
+    }
+
+    // Tempo: Januar bis heute auf den Tag gerechnet
+    const bisher = summe(jahr + '-01', jetzt);
+    const tage = tageZwischen(jahr + '-01-01', heute) + 1;
+    const tempo = bisher ? { tage: tage, flaschenProTag: runde(bisher.flaschen / tage), umsatzProTag: runde(bisher.umsatz / tage) } : null;
+
+    const aus = { jahr: jahr, letzterMonat: lfm, trend: trend, vorjahrMonate: vorjahrMonate, quartale: quartale, tempo: tempo,
+      kanaele: [], jahre: [], gesamt: null, preise: [], bestellungen: null, groessen: [], kunden: null, top: [], rekorde: null };
+    if (!Array.isArray(zeilen)) return aus;
+
+    const proFlasche = (x) => (x && x.flaschen > 0 ? runde(x.umsatz / x.flaschen) : null);
+    const anfang = jahr + '-01';
+    const zj = zeitraumAuswerten(zeilen, anfang, jetzt);
+    const zv = zeitraumAuswerten(zeilen, (jahr - 1) + '-01', (jahr - 1) + '-12');
+    const za = zeitraumAuswerten(zeilen, '0000-00', jetzt);
+    const best = bestellListe(zeilen).filter((b) => b.flaschen > 0 && b.monat <= jetzt);
+
+    // Kanäle des Jahres mit beiden Anteilen
+    const kan = zj.kanaele.filter((k) => k.flaschen > 0); // dieselben Kanäle und dieselbe Reihenfolge wie die Balken (dashboardDaten)
+    const kanFl = kan.reduce((x, k) => x + Math.max(0, k.flaschen), 0);
+    const kanEuro = kan.reduce((x, k) => x + Math.max(0, k.umsatz), 0);
+    aus.kanaele = kan.map((k) => ({ kanal: k.kanal, flaschen: k.flaschen, umsatz: k.umsatz,
+      anteilFlaschen: kanFl > 0 ? zehntel((Math.max(0, k.flaschen) / kanFl) * 100) : 0,
+      anteilUmsatz: kanEuro > 0 ? zehntel((Math.max(0, k.umsatz) / kanEuro) * 100) : 0, proFlasche: proFlasche(k) }));
+
+    // Jahre und Gesamt
+    // Ein Kunde zählt in einem Jahr (und insgesamt), wenn unter dem Strich Flaschen bei ihm bleiben: Wer kauft und
+    // alles gutgeschrieben bekommt, zählt nicht. So passen „Kunden“ hier, bei den Jahren und im Abschnitt Kunden zusammen.
+    const proJahr = Object.create(null);
+    const erstKauf = Object.create(null); // erster Monat mit einem Kauf (Gutschriften zählen dafür nicht)
+    zeilen.forEach((z) => {
+      if (z.monat > jetzt) return;
+      const j = z.monat.slice(0, 4);
+      const x = proJahr[j] = proJahr[j] || { flaschen: 0, umsatz: 0, kunden: Object.create(null) };
+      x.flaschen += z.flaschen;
+      x.umsatz += z.umsatz;
+      x.kunden[z.schluessel] = (x.kunden[z.schluessel] || 0) + z.flaschen;
+      if (z.flaschen > 0 && (!erstKauf[z.schluessel] || z.monat < erstKauf[z.schluessel])) erstKauf[z.schluessel] = z.monat;
+    });
+    aus.jahre = Object.keys(proJahr).sort().reverse().map((j) => {
+      const x = { flaschen: runde(proJahr[j].flaschen), umsatz: runde(proJahr[j].umsatz) };
+      return { jahr: Number(j), flaschen: x.flaschen, umsatz: x.umsatz, proFlasche: proFlasche(x),
+        bestellungen: best.filter((b) => b.monat.slice(0, 4) === j).length,
+        kunden: Object.keys(proJahr[j].kunden).filter((s2) => proJahr[j].kunden[s2] > 0).length };
+    });
+    const monListe = [];
+    const proMonat = Object.create(null);
+    zeilen.forEach((z) => {
+      if (z.monat > jetzt) return;
+      let x = proMonat[z.monat];
+      if (!x) { x = proMonat[z.monat] = { monat: z.monat, flaschen: 0, umsatz: 0 }; monListe.push(x); }
+      x.flaschen = runde(x.flaschen + z.flaschen);
+      x.umsatz = runde(x.umsatz + z.umsatz);
+    });
+    monListe.sort((x, y) => (x.monat < y.monat ? -1 : 1));
+    const erster = monListe.length ? monListe[0].monat : null;
+    const voll = erster && erster <= lfm ? summe(erster, lfm) : null;
+    const nVoll = voll ? monateAnzahl(erster, lfm) : 0;
+    aus.gesamt = { flaschen: za.flaschen, umsatz: za.umsatz, proFlasche: proFlasche(za), bestellungen: best.length,
+      kunden: za.kunden.filter((x) => x.flaschen > 0).length, erster: erster, monate: erster ? monateAnzahl(erster, jetzt) : 0,
+      proMonat: nVoll > 0 ? { flaschen: runde(voll.flaschen / nVoll), umsatz: runde(voll.umsatz / nVoll) } : null,
+      liter: runde(za.flaschen * FLASCHE_LITER) };
+
+    // Umsatz pro Flasche: dieses Jahr gegen das ganze Vorjahr
+    const vjKanal = Object.create(null);
+    zv.kanaele.forEach((k) => { vjKanal[k.kanal] = k; });
+    aus.preise = [{ name: '', jetzt: zj, vor: zv }].concat(zj.kanaele.filter((k) => k.flaschen > 0).map((k) => ({ name: k.kanal, jetzt: k, vor: vjKanal[k.kanal] })))
+      .map((x) => {
+        const neu = proFlasche(x.jetzt);
+        const alt = proFlasche(x.vor);
+        return { name: x.name, proFlasche: neu, vorjahr: alt, p: neu !== null && alt !== null ? veraenderung(neu, alt) : null };
+      });
+
+    // Bestellungen des Jahres und ihre Größen
+    const bj = best.filter((b) => b.monat >= anfang);
+    const mengen = bj.map((b) => b.flaschen).sort((x, y) => x - y);
+    const flSumme = mengen.reduce((x, y) => x + y, 0);
+    const mitte = mengen.length >> 1;
+    const gross = bj.reduce((x, b) => (!x || b.flaschen > x.flaschen ? b : x), null);
+    const kurz = (b) => (b ? { flaschen: b.flaschen, umsatz: b.umsatz, kunde: b.kunde, datum: b.datum, monat: b.monat } : null);
+    aus.bestellungen = { anzahl: bj.length, flaschen: bj.length ? runde(flSumme / bj.length) : null,
+      median: !mengen.length ? null : mengen.length % 2 ? mengen[mitte] : runde((mengen[mitte - 1] + mengen[mitte]) / 2),
+      umsatz: bj.length ? runde(bj.reduce((x, b) => x + b.umsatz, 0) / bj.length) : null,
+      proMonat: runde(bj.length / Number(jetzt.slice(5, 7))), groesste: kurz(gross) };
+    const kiste = flaschenProKiste > 0 ? flaschenProKiste : 24;
+    aus.groessen = [[0, 1], [1, 4], [4, 10], [10, 20], [20, null]].map((g) => {
+      const teil = bj.filter((b) => b.flaschen > g[0] * kiste && (g[1] === null || b.flaschen <= g[1] * kiste));
+      const fl = teil.reduce((x, b) => x + b.flaschen, 0);
+      return { abKisten: g[0], bisKisten: g[1], anzahl: teil.length, flaschen: runde(fl), anteil: flSumme > 0 ? zehntel((fl / flSumme) * 100) : 0 };
+    });
+
+    // Kunden des Jahres
+    const aktiv = zj.kunden.filter((k) => k.flaschen > 0);
+    const istAktiv = Object.create(null);
+    aktiv.forEach((k) => { istAktiv[k.schluessel] = true; });
+    const vorjahr = zv.kunden.filter((k) => k.flaschen > 0);
+    const warVorjahr = Object.create(null);
+    vorjahr.forEach((k) => { warVorjahr[k.schluessel] = true; });
+    const aktivFl = aktiv.reduce((x, k) => x + k.flaschen, 0);
+    aus.kunden = { aktiv: aktiv.length, neu: aktiv.filter((k) => erstKauf[k.schluessel] >= anfang).length, wieder: aktiv.filter((k) => warVorjahr[k.schluessel]).length,
+      nichtMehr: vorjahr.filter((k) => !istAktiv[k.schluessel]).length, flaschen: aktiv.length ? runde(aktivFl / aktiv.length) : null,
+      umsatz: aktiv.length ? runde(aktiv.reduce((x, k) => x + k.umsatz, 0) / aktiv.length) : null,
+      bestellungen: aktiv.length ? runde(bj.filter((b) => istAktiv[b.schluessel]).length / aktiv.length) : null };
+    let lauf = 0;
+    aus.top = aktiv.slice(0, 10).map((k, i) => {
+      lauf += k.flaschen;
+      return { rang: i + 1, kunde: k.kunde, flaschen: k.flaschen, umsatz: k.umsatz, anteil: zehntel((k.flaschen / aktivFl) * 100), kumuliert: zehntel((lauf / aktivFl) * 100) };
+    });
+
+    // Rekorde über alles
+    const groesster = (liste, feld) => liste.reduce((x, y) => (y[feld] > 0 && (!x || y[feld] > x[feld]) ? y : x), null);
+    const mf = groesster(monListe, 'flaschen');
+    const mu = groesster(monListe, 'umsatz');
+    const name = Object.create(null);
+    za.kunden.forEach((k) => { name[k.schluessel] = k.kunde; });
+    const zahlProKunde = Object.create(null);
+    best.forEach((b) => { zahlProKunde[b.schluessel] = (zahlProKunde[b.schluessel] || 0) + 1; });
+    const treu = za.kunden.reduce((x, k) => ((zahlProKunde[k.schluessel] || 0) > (x ? x.anzahl : 0) ? { kunde: k.kunde, anzahl: zahlProKunde[k.schluessel] } : x), null);
+    aus.gesamt.mehrfach = Object.keys(zahlProKunde).filter((s2) => zahlProKunde[s2] >= 2).length;
+    const gk = za.kunden.length && za.kunden[0].flaschen > 0 ? za.kunden[0] : null;
+    const gb = best.reduce((x, b) => (!x || b.flaschen > x.flaschen ? b : x), null);
+    aus.rekorde = { monatFlaschen: mf ? { monat: mf.monat, flaschen: mf.flaschen } : null, monatUmsatz: mu ? { monat: mu.monat, umsatz: mu.umsatz } : null,
+      bestellung: gb ? Object.assign(kurz(gb), { kunde: name[gb.schluessel] || gb.kunde }) : null,
+      kunde: gk ? { kunde: gk.kunde, flaschen: gk.flaschen, umsatz: gk.umsatz } : null, treu: treu };
+    return aus;
   }
 
   const hilfen = {
@@ -1287,7 +1516,7 @@
     MAX_FLASCHEN, datumKurz, monateAnzahl, zeitraumKurz, monatBisher, kistenKurz, anteileSinnvoll, hinweiseOrdnen, verlaufOhneStorno, schrittWert,
     kundeSchluessel, rechnungOhnePosition, STANDORT_VERSCHIEDEN, standortAuswahl, verkaufZeilen, monatsWerte, jahresVergleich, kumuliert, zeitraumAuswerten, kundeDetails, nachfassen,
     bestellungenZaehlen, wannText, abstandText, monatName, wochentagText, dauerText, datumAbkuerzungen, buchungVorschau, standText, frageTeilen, inventurAm, jahresStichtag, prognoseSaison, aktivitaet, monatsTage, letzteBestellungen,
-    datumMonatePlus, ersterVerkaufsmonat, bekannteRechnungen, bestellPrognose, dashboardDaten,
+    datumMonatePlus, ersterVerkaufsmonat, bekannteRechnungen, bestellPrognose, dashboardDaten, dashboardMehr, bestellListe,
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = hilfen;
   else wurzel.SATE_HILFEN = hilfen;

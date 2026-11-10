@@ -443,8 +443,6 @@
   });
 
   el('neu-laden').addEventListener('click', () => { S.aktualisieren(); });
-  // Fokus auf die Kapsel, damit er nach dem Schließen des Blatts dorthin zurückkommt (Safari fokussiert Knöpfe beim Tippen nicht)
-  el('dashboard-knopf').addEventListener('click', (ev) => { ev.currentTarget.focus({ preventScroll: true }); S.dashboardZeigen(); });
 
   /**
    * Stand teilen: kurzes Update (H.standText) ins iOS-Teilen-Menü (z. B. WhatsApp-Gruppe). Ohne Teilen-Menü in die

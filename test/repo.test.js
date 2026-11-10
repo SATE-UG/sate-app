@@ -292,15 +292,17 @@ test('PWA: automatisches Update – Service Worker nennt seine Version, App such
   assert.doesNotMatch(lies('docs/app.js'), /serviceWorker/, 'Registrierung nur noch in update.js');
 });
 
-test('PWA: Dashboard (v30) – Kapsel auf dem Start, eigenes Blatt, nur Darstellung in ansichten.js', () => {
+test('PWA: Dashboard (v30, erweitert in v31) – Kapsel auf dem Start, eigenes Blatt, nur Darstellung in ansichten.js', () => {
   const html = lies('docs/index.html');
   const css = lies('docs/style.css');
   const ansichten = lies('docs/ansichten.js');
-  // Kapsel neben dem Datum, ohne Daten ausgeblendet (hidden im HTML, ansichten.js schaltet sie frei)
-  assert.match(html, /<div class="gruss-zeile">\s*<p id="datum-zeile" class="datum-zeile"><\/p>\s*<button id="dashboard-knopf" type="button" class="kapsel-knopf" hidden>/);
-  assert.match(html, /<span>Dashboard<\/span>/);
-  assert.match(ansichten, /S\.el\('dashboard-knopf'\)\.hidden = !u;/);
-  assert.match(lies('docs/app.js'), /el\('dashboard-knopf'\)\.addEventListener\('click'/);
+  // Einstieg (seit v31): eigene Karte ganz oben auf dem Start, vor der Bestell-Karte; die Kapsel neben dem Datum ist weg
+  assert.match(html, /<p id="datum-zeile" class="datum-zeile"><\/p>\s*<div id="uebersicht-inhalt"><\/div>/);
+  assert.doesNotMatch(html + css + lies('docs/app.js'), /kapsel-knopf|gruss-zeile/);
+  assert.match(ansichten, /id: 'dashboard-knopf', class: 'karte zeilen-karte dash-einstieg', onclick: \(\) => S\.dashboardZeigen\(\)/);
+  assert.match(ansichten, /S\.fuellen\(ziel,\s*dashboardEinstieg\(a\),\s*bestellKarte\(u, a\),/);
+  // kein erzwungener Fokus beim Tippen (auf dem iPhone blieb sonst der blaue Fokusring stehen)
+  assert.doesNotMatch(ansichten + lies('docs/app.js'), /dashboard-knopf'\)\.focus|currentTarget\.focus\(\{ preventScroll: true \}\); S\.dashboardZeigen/);
   // Das Blatt nutzt das vorhandene Blatt (zieht sich nach unten zu), gerechnet wird in hilfen.js
   assert.match(ansichten, /S\.dashboardZeigen = function/);
   assert.match(ansichten, /H\.dashboardDaten\(a\.zeilen, a\.werte, a\.jv, a\.heute\)/);
@@ -308,15 +310,17 @@ test('PWA: Dashboard (v30) – Kapsel auf dem Start, eigenes Blatt, nur Darstell
   // Neuer Stand bei offenem Dashboard: Inhalt wird an Ort und Stelle neu gebaut (Codex v30)
   assert.match(ansichten, /S\.dashboardAuffrischen = function/);
   assert.match(lies('docs/app.js'), /S\.renderAlle = function \(\) \{[\s\S]{0,200}S\.dashboardAuffrischen\(\);/);
-  // Tippfläche der Kapsel 44 px, sichtbare Rückmeldung beim Drücken, dichte Zeilen, schmale Geräte ohne Umbruch
-  const kapsel = /\.kapsel-knopf \{[^}]*\}/.exec(css)[0];
-  assert.match(kapsel, /min-height: 36px/);
-  assert.match(css, /\.kapsel-knopf::after \{ content: ""; position: absolute; inset: -4px 0; \}/);
-  assert.match(css, /\.kapsel-knopf\.gedrueckt \{/);
   const dash = css.slice(css.indexOf('/* Dashboard (Blatt, seit v30)'), css.indexOf('/* Trends (Verkäufe, Kunden, Start)'));
   assert.ok(dash.length > 500);
   assert.doesNotMatch(dash, /!important/);
-  assert.match(dash, /\.dash-zeile \{[^}]*grid-template-columns: minmax\(0, 1fr\) 52px 50px 68px 50px;/);
-  assert.match(dash, /@media \(max-width: 350px\) \{[\s\S]*\.dash-pu \{ display: none; \}/);
+  assert.match(dash, /\.dash-s5 \.dash-zeile \{ grid-template-columns: minmax\(0, 1fr\) 52px 50px 68px 50px; \}/);
+  assert.match(dash, /@media \(max-width: 350px\) \{[\s\S]*\.dash-s5 \.dash-zeile > :last-child, \.dash-kan \.dash-zeile > :last-child \{ display: none; \}/);
+  // Seit v31: viele weitere Abschnitte zum Runterscrollen, jede Tabellenart hat ihre Spalten, Gruppen als Überschriften
+  assert.match(ansichten, /H\.dashboardMehr\(a\.zeilen, a\.werte, a\.heute, k\.flaschenProKiste\)/);
+  const arten = Array.from(new Set(Array.from(ansichten.matchAll(/dashTabelle\('([a-z0-9]+)/g), (m) => m[1])));
+  assert.deepStrictEqual(arten.sort(), ['gr', 'jahre', 'kan', 'lager', 'preis', 's5', 'top', 'vj']);
+  arten.forEach((art) => assert.match(dash, new RegExp('\\.dash-' + art + ' \\.dash-zeile \\{ grid-template-columns: '), art));
+  assert.strictEqual((ansichten.match(/class: 'dash-gruppe'/g) || []).length, 5);
+  assert.match(dash, /\.dash-zeile \{[^}]*min-height: 27px;/);
   assert.doesNotMatch(dash, /var\(--akzent\)/, 'im Dashboard ist nichts antippbar, also keine Akzentfarbe');
 });
