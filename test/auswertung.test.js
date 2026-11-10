@@ -466,3 +466,82 @@ test('Codex 2026-11-10: Standort-Auswahl, eine gemischte Rechnung lässt sich mi
   assert.deepStrictEqual(z.map((x) => x.rechnung), ['R #x', 'R #y', 'RE8', '760175', 'RE8']);
   assert.strictEqual(H.bestellungenZaehlen(z), 4);
 });
+
+test('Dashboard (v30): Monate mit Vormonat, Jahr, letzte Bestellungen, Kanäle', () => {
+  const heute = '2026-11-10';
+  const verkaeufe = { zeilen: [
+    ['2025-10', '2025-10-05', 'Karlsruhe', 'Alt', 100, 120, 'RE1'],
+    ['2025-11', '2025-11-20', 'Karlsruhe', 'Alt', 50, 60, 'RE2'],
+    ['2026-07', '2026-07-03', 'Berlin', 'Späti', 200, 250, 'RE10'],
+    ['2026-08', '2026-08-10', 'Karlsruhe', 'Bar', 400, 480, 'RE11'],
+    ['2026-09', '', 'Ape', 'Fest', 100, 700, ''], // Altliste ohne Rechnungsdatum: zählt im Monat, ist aber keine „letzte Bestellung“
+    ['2026-10', '2026-10-08', 'Karlsruhe', 'Bar', 300, 360, 'RE12'],
+    ['2026-10', '2026-10-20', 'Karlsruhe', 'Bar', -20, -24, 'GS1'], // Gutschrift
+    ['2026-11', '2026-11-06', 'Karlsruhe', 'Fachschaft', 103, 130.81, 'RE20'],
+    ['2026-11', '2026-11-06', 'Karlsruhe', 'Fachschaft', 41, 38.28, 'RE20 #2'], // zweite Position derselben Rechnung
+    ['2026-11', '2026-11-06', 'Heilbronn', 'Kiosk', 24, 30, ''],
+    ['2026-11', '2026-11-06', 'Heilbronn', 'Kiosk', 12, 15, ''], // ohne Nummer: gleicher Kunde, gleicher Tag
+    ['2026-11', '2026-11-09', 'Event', 'Messe', 10, 20, 'RE21'],
+    ['2026-11', '2026-11-12', 'Berlin', 'Zukunft', 5, 5, 'RE22'], // Rechnungsdatum nach heute
+  ] };
+  const zeilen = H.verkaufZeilen(verkaeufe, heute);
+  const werte = H.monatsWerte(verkaeufe, zeilen);
+  const jv = H.jahresVergleich(werte, heute);
+  const d = H.dashboardDaten(zeilen, werte, jv, heute);
+  assert.strictEqual(d.heute, heute);
+  assert.deepStrictEqual(d.monate, [
+    { monat: '2026-11', laufend: true, flaschen: 195, umsatz: 239.09, pFlaschen: null, pUmsatz: null, anteil: 48.8 },
+    { monat: '2026-10', laufend: false, flaschen: 280, umsatz: 336, pFlaschen: 180, pUmsatz: -52, anteil: 70 },
+    { monat: '2026-09', laufend: false, flaschen: 100, umsatz: 700, pFlaschen: -75, pUmsatz: 46, anteil: 25 },
+    { monat: '2026-08', laufend: false, flaschen: 400, umsatz: 480, pFlaschen: 100, pUmsatz: 92, anteil: 100 },
+    { monat: '2026-07', laufend: false, flaschen: 200, umsatz: 250, pFlaschen: null, pUmsatz: null, anteil: 50 }, // Juni war 0: kein Vergleich
+    { monat: '2026-06', laufend: false, flaschen: 0, umsatz: 0, pFlaschen: null, pUmsatz: null, anteil: 0 },
+  ]);
+  assert.strictEqual(d.laufend, d.monate[0]);
+  assert.strictEqual(d.letzter, d.monate[1]);
+  // Jahr: Januar bis heute; Vergleich über die vollen Monate beider Jahre (Jan–Okt: 980 Fl./1.766 € gegen 100 Fl./120 €)
+  assert.deepStrictEqual(d.jahr, { jahr: 2026, flaschen: 1175, umsatz: 2005.09, pFlaschen: 880, pUmsatz: 1372 });
+  // Bestellungen: neueste zuerst, am selben Tag die spätere Zeile zuerst; Positionen und „ohne Nummer“ zusammengezählt
+  assert.deepStrictEqual(d.bestellungen, [
+    { datum: '2026-11-09', kunde: 'Messe', kanal: 'Event', flaschen: 10, umsatz: 20 },
+    { datum: '2026-11-06', kunde: 'Kiosk', kanal: 'Heilbronn', flaschen: 36, umsatz: 45 },
+    { datum: '2026-11-06', kunde: 'Fachschaft', kanal: 'Karlsruhe', flaschen: 144, umsatz: 169.09 },
+    { datum: '2026-10-08', kunde: 'Bar', kanal: 'Karlsruhe', flaschen: 300, umsatz: 360 },
+    { datum: '2026-08-10', kunde: 'Bar', kanal: 'Karlsruhe', flaschen: 400, umsatz: 480 },
+  ]);
+  assert.deepStrictEqual(H.dashboardDaten(zeilen, werte, jv, heute, 3, 2).bestellungen.map((b) => b.kunde), ['Messe', 'Kiosk']);
+  assert.deepStrictEqual(H.dashboardDaten(zeilen, werte, jv, heute, 3, 2).monate.map((m) => m.monat), ['2026-11', '2026-10', '2026-09']);
+  // Kanäle dieses Jahr: fünf Kanäle → die drei größten und „Weitere“, Anteile an den gezeigten Flaschen
+  assert.deepStrictEqual(d.kanaele, [
+    { kanal: 'Karlsruhe', flaschen: 824, umsatz: 985.09, anteil: 70.1 },
+    { kanal: 'Berlin', flaschen: 205, umsatz: 255, anteil: 17.4 },
+    { kanal: 'Ape', flaschen: 100, umsatz: 700, anteil: 8.5 },
+    { kanal: 'Weitere', flaschen: 46, umsatz: 65, anteil: 3.9 },
+  ]);
+  // bis vier Kanäle bleibt jeder für sich
+  const vier = H.dashboardDaten(zeilen.filter((z) => z.kanal !== 'Event'), werte, jv, heute).kanaele;
+  assert.deepStrictEqual(vier.map((k) => k.kanal), ['Karlsruhe', 'Berlin', 'Ape', 'Heilbronn']);
+
+  // Codex v30: dieselbe Rechnungsnummer bei zwei Kunden (Tippfehler im Sheet) bleibt zwei Bestellungen
+  const doppelt = H.verkaufZeilen({ zeilen: [['2026-11', '2026-11-08', 'Berlin', 'A', 24, 30, 'R1'], ['2026-11', '2026-11-09', 'Berlin', 'B', 48, 60, 'R1'],
+    ['2026-11', '2026-11-09', 'Berlin', 'B', 12, 15, 'R1 #2']] }, heute);
+  assert.deepStrictEqual(H.dashboardDaten(doppelt, werte, jv, heute).bestellungen.map((b) => [b.datum, b.kunde, b.flaschen, b.umsatz]),
+    [['2026-11-09', 'B', 60, 75], ['2026-11-08', 'A', 24, 30]]);
+
+  // Ältere Schnittstelle ohne Zeilen: Monate und Jahr aus den Monatswerten, keine Bestellungen und Kanäle
+  const alt = H.dashboardDaten(null, werte, jv, heute);
+  assert.deepStrictEqual(alt.monate, d.monate);
+  assert.deepStrictEqual([alt.bestellungen, alt.kanaele], [[], []]);
+  // Monat fehlt in den Daten (werte → null): Strich statt Zahl, kein Vergleich mit ihm
+  const luecke = H.dashboardDaten(zeilen, (m) => (m === '2026-09' ? null : werte(m)), null, heute);
+  assert.deepStrictEqual(luecke.monate.slice(1, 3).map((m) => [m.flaschen, m.pFlaschen]), [[280, null], [null, null]]);
+  assert.strictEqual(luecke.jahr, null);
+  // Januar: der letzte volle Monat ist der Dezember des Vorjahres, im neuen Jahr gibt es noch keine Kanäle
+  const januar = H.dashboardDaten(zeilen, werte, H.jahresVergleich(werte, '2027-01-05'), '2027-01-05');
+  assert.deepStrictEqual(januar.monate.slice(0, 3).map((m) => [m.monat, m.flaschen, m.pFlaschen]), [['2027-01', 0, null], ['2026-12', 0, -100], ['2026-11', 195, -30]]);
+  assert.deepStrictEqual(januar.kanaele, []);
+  assert.strictEqual(januar.bestellungen[0].kunde, 'Zukunft');
+  // ungültige Eingaben
+  assert.strictEqual(H.dashboardDaten(zeilen, werte, jv, 'gestern'), null);
+  assert.strictEqual(H.dashboardDaten(zeilen, null, jv, heute), null);
+});

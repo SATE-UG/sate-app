@@ -290,6 +290,33 @@ h2 {
 /* Begrüßung: Datum klein unter „Hallo Mark“ */
 .titel-gruss { margin-bottom: 4px; }
 .datum-zeile { margin: 0 0 16px; font-size: 15px; color: var(--leise); min-height: 1.4em; }
+/* Datum links, rechts die Kapsel zum Dashboard (seit v30): 36 px sichtbar, Tippfläche 44 px */
+.gruss-zeile { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 6px 12px; min-height: 36px; margin: 0 0 12px; }
+.gruss-zeile .datum-zeile { margin: 0; }
+.kapsel-knopf {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  flex: none;
+  min-height: 36px;
+  padding: 0 14px 0 12px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--karte);
+  box-shadow: var(--glas-kante);
+  color: var(--text);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  -webkit-appearance: none;
+  appearance: none;
+}
+.kapsel-knopf::after { content: ""; position: absolute; inset: -4px 0; }
+.kapsel-knopf .icon { width: 15px; height: 15px; stroke-width: 2; }
+.kapsel-knopf.gedrueckt { background: var(--feld-aktiv); transform: scale(0.96); }
+.kapsel-knopf:focus-visible { outline: 2px solid var(--akzent); outline-offset: 2px; }
 
 /* Kachel als Knopf (z. B. „Dieses Jahr“ öffnet Verkäufe) */
 .kachel-knopf { display: flex; flex-direction: column; width: 100%; border: 0; color: var(--text); font: inherit; text-align: left; cursor: pointer;
@@ -1263,6 +1290,71 @@ body.mit-leiste::after {
 }
 .update-banner.gedrueckt { transform: scale(0.98); }
 .update-banner:focus-visible { outline: 2px solid var(--akzent); outline-offset: 2px; }
+
+/* Dashboard (Blatt, seit v30): alles Wichtige klein auf einem Bildschirm. Drei Kacheln (laufender Monat, Jahr, Bestand),
+   die Monate als dichte Tabelle (der Balken dahinter zeigt die Flaschen im Verhältnis zum stärksten Monat, der laufende
+   Monat gestrichelt wie in den Diagrammen), letzte Bestellungen, Kanäle. Abstände so, dass es am iPhone ohne Scrollen passt. */
+.dash-kacheln { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin: 4px 0 16px; }
+.dash-kachel { background: var(--feld); border-radius: var(--radius-klein); padding: 9px 10px 10px; min-width: 0; }
+.dash-kachel p { margin: 0; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.dash-label { font-size: 12px; font-weight: 500; line-height: 16px; color: var(--leise); }
+.dash-kachel .dash-wert { margin-top: 4px; font-size: 18px; font-weight: 700; line-height: 22px; letter-spacing: -0.01em; }
+.dash-einheit { font-size: 12px; font-weight: 500; letter-spacing: 0; color: var(--leise); }
+.dash-kachel .dash-zweit { margin-top: 2px; font-size: 15px; font-weight: 600; line-height: 19px; }
+.dash-zweit.warn { color: var(--warn); }
+.dash-klein, .dash-kachel .trend { font-size: 12px; line-height: 16px; }
+.dash-kachel .dash-klein { margin-top: 3px; color: var(--leise); }
+.dash-kachel .dash-klein + .dash-zweit { margin-top: 1px; }
+.dash-kopf { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin: 0 0 5px; }
+.dash-titel { margin: 0; font-family: var(--schrift); font-size: 13px; font-weight: 600; color: var(--leise); -webkit-text-stroke: 0; }
+.dash-erklaerung { font-size: 12px; color: var(--leise); white-space: nowrap; }
+.dash-tab { margin: 0 0 16px; }
+.dash-zeile {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 52px 50px 68px 50px;
+  align-items: center;
+  column-gap: 6px;
+  min-height: 27px;
+  padding: 0 8px;
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+}
+.dash-zeile > :not(.dash-balken) { position: relative; z-index: 1; }
+.dash-balken { position: absolute; left: 0; top: 2px; bottom: 2px; z-index: 0; border-radius: 6px; background: rgba(255, 255, 255, 0.075); }
+/* Laufender Monat: schraffiert statt gefüllt, er zählt erst bis heute */
+.dash-zeile.laufend .dash-balken { background: repeating-linear-gradient(135deg, rgba(255, 255, 255, 0.11) 0 3px, rgba(255, 255, 255, 0.03) 3px 7px); }
+.dash-kopfzeile { min-height: 17px; font-size: 12px; color: var(--leise); }
+.dash-kopfzeile .dash-zahl { font-weight: 400; }
+.dash-monat { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dash-monat small { font-size: 12px; color: var(--leise); }
+.dash-zahl { text-align: right; font-weight: 600; white-space: nowrap; }
+.dash-p { display: block; text-align: right; font-size: 12px; font-weight: 600; white-space: nowrap; color: var(--leise); }
+.dash-p.hoch { color: var(--gruen); }
+.dash-p.runter { color: var(--rot); }
+.dash-liste { list-style: none; margin: 0 0 16px; padding: 0; }
+.dash-bestellung { display: grid; grid-template-columns: 50px minmax(0, 1fr) auto 68px; align-items: center; column-gap: 8px; min-height: 27px; padding: 0 8px;
+  border-radius: 6px; font-size: 14px; font-variant-numeric: tabular-nums; }
+.dash-bestellung:nth-child(odd) { background: rgba(255, 255, 255, 0.04); }
+.dash-datum { font-size: 13px; color: var(--leise); white-space: nowrap; }
+.dash-kunde { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dash-euro { text-align: right; color: var(--leise); white-space: nowrap; }
+.dash-kanaele { list-style: none; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin: 8px 0 0; padding: 0; }
+.dash-kanal { display: flex; align-items: center; gap: 5px; min-width: 0; font-size: 12px; line-height: 16px; color: var(--leise); }
+.dash-kanal .vt-punkt { flex: none; }
+.dash-kanal-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dash-anteil { display: block; margin-top: 1px; font-size: 14px; font-weight: 600; line-height: 18px; font-variant-numeric: tabular-nums; }
+/* Schmale Geräte: die Veränderung beim Umsatz und das „zu 2025“ fallen weg, die Einheit rückt in die nächste Zeile nicht */
+@media (max-width: 350px) {
+  .dash-kacheln { gap: 6px; }
+  .dash-kachel { padding-left: 8px; padding-right: 8px; }
+  .dash-kachel .dash-wert { font-size: 16px; }
+  .dash-kachel .dash-zweit { font-size: 14px; }
+  .dash-kachel .trend-wozu { display: none; }
+  .dash-zeile { grid-template-columns: minmax(0, 1fr) 50px 48px 62px; }
+  .dash-pu { display: none; }
+  .dash-bestellung { grid-template-columns: 44px minmax(0, 1fr) auto 58px; column-gap: 6px; }
+}
 
 /* Trends (Verkäufe, Kunden, Start): nur die Zahl farbig („+12 %“), der Rest grau; kein Pfeil, kein Hintergrund */
 .trend-zeile { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0 0; }

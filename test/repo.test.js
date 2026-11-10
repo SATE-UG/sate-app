@@ -291,3 +291,32 @@ test('PWA: automatisches Update – Service Worker nennt seine Version, App such
   assert.match(lies('docs/index.html'), /<button id="update" type="button" class="banner update-banner" hidden>/);
   assert.doesNotMatch(lies('docs/app.js'), /serviceWorker/, 'Registrierung nur noch in update.js');
 });
+
+test('PWA: Dashboard (v30) – Kapsel auf dem Start, eigenes Blatt, nur Darstellung in ansichten.js', () => {
+  const html = lies('docs/index.html');
+  const css = lies('docs/style.css');
+  const ansichten = lies('docs/ansichten.js');
+  // Kapsel neben dem Datum, ohne Daten ausgeblendet (hidden im HTML, ansichten.js schaltet sie frei)
+  assert.match(html, /<div class="gruss-zeile">\s*<p id="datum-zeile" class="datum-zeile"><\/p>\s*<button id="dashboard-knopf" type="button" class="kapsel-knopf" hidden>/);
+  assert.match(html, /<span>Dashboard<\/span>/);
+  assert.match(ansichten, /S\.el\('dashboard-knopf'\)\.hidden = !u;/);
+  assert.match(lies('docs/app.js'), /el\('dashboard-knopf'\)\.addEventListener\('click'/);
+  // Das Blatt nutzt das vorhandene Blatt (zieht sich nach unten zu), gerechnet wird in hilfen.js
+  assert.match(ansichten, /S\.dashboardZeigen = function/);
+  assert.match(ansichten, /H\.dashboardDaten\(a\.zeilen, a\.werte, a\.jv, a\.heute\)/);
+  assert.match(ansichten, /S\.blattZeigen\('Dashboard'/);
+  // Neuer Stand bei offenem Dashboard: Inhalt wird an Ort und Stelle neu gebaut (Codex v30)
+  assert.match(ansichten, /S\.dashboardAuffrischen = function/);
+  assert.match(lies('docs/app.js'), /S\.renderAlle = function \(\) \{[\s\S]{0,200}S\.dashboardAuffrischen\(\);/);
+  // Tippfläche der Kapsel 44 px, sichtbare Rückmeldung beim Drücken, dichte Zeilen, schmale Geräte ohne Umbruch
+  const kapsel = /\.kapsel-knopf \{[^}]*\}/.exec(css)[0];
+  assert.match(kapsel, /min-height: 36px/);
+  assert.match(css, /\.kapsel-knopf::after \{ content: ""; position: absolute; inset: -4px 0; \}/);
+  assert.match(css, /\.kapsel-knopf\.gedrueckt \{/);
+  const dash = css.slice(css.indexOf('/* Dashboard (Blatt, seit v30)'), css.indexOf('/* Trends (Verkäufe, Kunden, Start)'));
+  assert.ok(dash.length > 500);
+  assert.doesNotMatch(dash, /!important/);
+  assert.match(dash, /\.dash-zeile \{[^}]*grid-template-columns: minmax\(0, 1fr\) 52px 50px 68px 50px;/);
+  assert.match(dash, /@media \(max-width: 350px\) \{[\s\S]*\.dash-pu \{ display: none; \}/);
+  assert.doesNotMatch(dash, /var\(--akzent\)/, 'im Dashboard ist nichts antippbar, also keine Akzentfarbe');
+});

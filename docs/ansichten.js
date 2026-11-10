@@ -387,6 +387,7 @@
     const ziel = leeren('uebersicht-inhalt');
     const u = Z.daten;
     S.el('datum-zeile').textContent = u && H.datumGueltig(u.heute) ? H.wochentagText(u.heute) : '';
+    S.el('dashboard-knopf').hidden = !u; // ohne Daten gibt es nichts zu zeigen
     if (!u) return platzhalter(ziel, ['gross', 'reihe', 'reihe', 'zeile']);
     const a = auswertung();
     const hw = H.hinweiseOrdnen(u.hinweise);
@@ -402,6 +403,110 @@
           h('div', {}, h('p', { class: 'info-titel', text: 'Aus dem Sheet' }), h('ul', { class: 'hinweise', role: 'list' }, hw.andere.map((t) => h('li', { text: t })))))
         : null);
     S.aktivitaetZeigen();
+  };
+
+  // Dashboard (Blatt, seit v30) -------------------------------------------------------------------------------------
+  // Wunsch aus dem Team (2026-11-10): alles Wichtige klein auf einem Bildschirm, mit Umsatz, den Monaten samt Vergleich
+  // zum Vormonat und den letzten Bestellungen. Der Start bleibt, wie er ist: Die Kapsel „Dashboard“ neben dem Datum
+  // öffnet dieses Blatt. Gerechnet wird in H.dashboardDaten, hier steht nur die Darstellung.
+
+  /** Kachel: Beschriftung, Hauptzahl mit Einheit, darunter weitere Zeilen (zweite Zahl, Vergleich). */
+  function dashKachel(label, wert, einheit, zeilen) {
+    return h('div', { class: 'dash-kachel' },
+      h('p', { class: 'dash-label', text: label }),
+      h('p', { class: 'dash-wert' }, wert, einheit ? h('span', { class: 'dash-einheit', text: ' ' + einheit }) : null),
+      zeilen);
+  }
+
+  /** Veränderung als Tabellenzelle: „+12 %“ grün, „−5 %“ rot, ohne Zahl leer. */
+  function dashProzent(p) {
+    const r = p === null ? '' : H.richtung(p);
+    return h('span', { class: 'dash-p' + (r ? ' ' + r : ''), role: 'cell', text: p === null ? '' : H.prozentText(p) });
+  }
+
+  /** Überschrift eines Abschnitts im Dashboard, rechts optional eine kleine Erklärung. */
+  function dashTitel(text, rechts) {
+    return h('div', { class: 'dash-kopf' }, h('h3', { class: 'dash-titel', text: text }), rechts ? h('span', { class: 'dash-erklaerung', text: rechts }) : null);
+  }
+
+  /** Inhalt des Dashboards aus dem gezeigten Stand; ohne Daten null. */
+  function dashboardInhalt() {
+    const u = Z.daten;
+    const a = auswertung();
+    const d = u && a ? H.dashboardDaten(a.zeilen, a.werte, a.jv, a.heute) : null;
+    if (!d) return null;
+    const fl = (z) => H.zahlFormat(z, 0);
+    const trend = (p, wozu) => (p === null ? null : trendChip({ prozent: p }, wozu));
+    const lm = d.letzter;
+    // Bestand: rechts der Bestelltermin (weit weg nur Monat und Jahr), orange, sobald bestellt werden sollte
+    const p = a.prognose;
+    const stufe = H.bestellStufe(p ? p.status : null).stufe;
+    const termin = p && H.datumGueltig(p.spaetestensBestellen) ? p.spaetestensBestellen : null;
+    const terminText = !termin ? '' : H.tageZwischen(a.heute, termin) > 300 ? H.monatFormat(termin.slice(0, 7)) + ' ' + termin.slice(0, 4) : H.datumKurz(termin);
+    const zweit = (text, klasse) => h('p', { class: 'dash-zweit' + (klasse ? ' ' + klasse : ''), text: text });
+    const klein = (inhalt) => h('p', { class: 'dash-klein' }, inhalt);
+    const kacheln = h('div', { class: 'dash-kacheln' },
+      dashKachel(H.monatFormat(d.laufend.monat) + ' bisher', fl(d.laufend.flaschen), 'Fl.', [zweit(H.euroFormat(d.laufend.umsatz)),
+        lm && lm.flaschen !== null ? klein(H.monatFormat(lm.monat) + ' ' + fl(lm.flaschen) + ' Fl.') : null]),
+      d.jahr ? dashKachel(String(d.jahr.jahr), fl(d.jahr.flaschen), 'Fl.', [zweit(H.euroFormat(d.jahr.umsatz)),
+        d.jahr.pFlaschen !== null ? klein(trend(d.jahr.pFlaschen, 'zu ' + (d.jahr.jahr - 1))) : null]) : null,
+      dashKachel('Bestand', fl(u.kennzahlen.gesamtbestand), 'Fl.', termin
+        ? [klein(termin < a.heute ? 'überfällig seit' : 'bestellen bis'), zweit(terminText, stufe === 'bald' || stufe === 'jetzt' ? 'warn' : '')] : null));
+    const monate = h('div', { class: 'dash-tab', role: 'table', 'aria-label': 'Flaschen und Umsatz pro Monat, jeweils mit Veränderung zum Vormonat' },
+      h('div', { class: 'dash-zeile dash-kopfzeile', role: 'row' },
+        h('span', { role: 'columnheader' }, h('span', { class: 'nur-vorlesen', text: 'Monat' })),
+        h('span', { class: 'dash-zahl', role: 'columnheader', text: 'Flaschen' }),
+        h('span', { role: 'columnheader' }, h('span', { class: 'nur-vorlesen', text: 'Flaschen zum Vormonat' })),
+        h('span', { class: 'dash-zahl', role: 'columnheader', text: 'Umsatz' }),
+        h('span', { class: 'dash-pu', role: 'columnheader' }, h('span', { class: 'nur-vorlesen', text: 'Umsatz zum Vormonat' }))),
+      d.monate.map((m) => h('div', { class: 'dash-zeile' + (m.laufend ? ' laufend' : ''), role: 'row' },
+        prozent(h('span', { class: 'dash-balken', 'aria-hidden': 'true' }), m.anteil),
+        h('span', { class: 'dash-monat', role: 'rowheader' }, H.monatFormat(m.monat), m.laufend ? h('small', { text: ' bisher' }) : null),
+        h('span', { class: 'dash-zahl', role: 'cell', text: fl(m.flaschen) }),
+        dashProzent(m.pFlaschen),
+        h('span', { class: 'dash-zahl', role: 'cell', text: H.euroFormat(m.umsatz) }),
+        h('span', { class: 'dash-pu', role: 'presentation' }, dashProzent(m.pUmsatz)))));
+    return [
+      kacheln,
+      dashTitel('Monate', 'Veränderung zum Vormonat'),
+      monate,
+      d.bestellungen.length ? [
+        dashTitel('Letzte Bestellungen'),
+        h('ul', { class: 'dash-liste', role: 'list' }, d.bestellungen.map((b) => h('li', { class: 'dash-bestellung' },
+          h('span', { class: 'dash-datum', text: H.datumKurz(b.datum) }),
+          h('span', { class: 'dash-kunde', text: b.kunde || 'Ohne Name' }),
+          h('span', { class: 'dash-zahl', text: fl(b.flaschen) + ' Fl.' }),
+          h('span', { class: 'dash-euro', text: H.euroFormat(b.umsatz) })))),
+      ] : null,
+      d.kanaele.length ? [
+        dashTitel('Kanäle ' + a.heute.slice(0, 4), 'Anteil an den Flaschen'),
+        h('div', { class: 'verteilung-balken', 'aria-hidden': 'true' }, d.kanaele.map((k, i) => prozent(h('span', { class: 'vt-teil vt-' + i }), k.anteil))),
+        // Legende als vier feste Spalten (bricht nie um): Name mit Farbpunkt, darunter der Anteil
+        h('ul', { class: 'dash-kanaele', role: 'list' }, d.kanaele.map((k, i) => h('li', {},
+          h('span', { class: 'dash-kanal' }, h('span', { class: 'vt-punkt vt-' + i, 'aria-hidden': 'true' }), h('span', { class: 'dash-kanal-name', text: k.kanal })),
+          h('span', { class: 'dash-anteil', text: H.zahlFormat(k.anteil, 0) + ' %' })))),
+      ] : null,
+    ];
+  }
+
+  S.dashboardZeigen = function () {
+    const inhalt = dashboardInhalt();
+    if (inhalt) S.blattZeigen('Dashboard', inhalt, () => S.el('dashboard-knopf'));
+  };
+
+  /**
+   * Kommt ein neuer Stand, während das Dashboard offen ist (z. B. gleich nach dem Start aus dem gespeicherten Stand
+   * geöffnet): Inhalt an Ort und Stelle neu, ohne Bewegung, die Scrollstelle bleibt. Andere Blätter bleiben unberührt.
+   */
+  S.dashboardAuffrischen = function () {
+    const b = S.el('blatt');
+    const ziel = S.el('blatt-inhalt');
+    if (!b || !b.open || b.classList.contains('geht') || !ziel.querySelector('.dash-kacheln')) return;
+    const inhalt = dashboardInhalt();
+    if (!inhalt) return;
+    const oben = ziel.scrollTop;
+    S.fuellen(ziel, inhalt);
+    ziel.scrollTop = oben;
   };
 
   // Verkäufe ----------------------------------------------------------------------------------------------------

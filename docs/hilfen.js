@@ -1201,6 +1201,82 @@
     return 'vor ' + Math.round(tage / (365.25 / 12)) + ' Monaten';
   }
 
+  /**
+   * Zahlen fürs Dashboard (seit v30): alles Wichtige klein auf einem Bildschirm, gerechnet aus den schon geladenen
+   * Verkäufen. `zeilen` aus verkaufZeilen (null bei einer älteren Schnittstelle), `werte` aus monatsWerte, `jv` aus
+   * jahresVergleich, `heute` = `JJJJ-MM-TT`. Rückgabe (ohne gültiges `heute` oder `werte` null):
+   * { heute,
+   *   monate: die letzten `anzahlMonate` (Standard 6) Monate, neuester zuerst, je { monat, laufend, flaschen, umsatz
+   *     (null, wenn der Monat in den Daten fehlt), pFlaschen, pUmsatz (Veränderung zum Vormonat in Prozent; null beim
+   *     laufenden Monat, der erst „bis heute“ zählt, und wenn der Vormonat fehlt oder ≤ 0 ist), anteil (Flaschen in
+   *     Prozent des stärksten gezeigten Monats, für den Balken) },
+   *   laufend, letzter: der laufende und der letzte volle Monat (dieselben Objekte wie in `monate`),
+   *   jahr: { jahr, flaschen, umsatz, pFlaschen, pUmsatz (zum Vorjahr über die vollen Monate beider Jahre) } oder null,
+   *   bestellungen: die letzten `anzahlBestellungen` (Standard 5) Bestellungen mit Rechnungsdatum bis heute, neueste
+   *     zuerst (am selben Tag die spätere Zeile im Sheet zuerst), je { datum, kunde, kanal, flaschen, umsatz }; Zeilen
+   *     einer Rechnung desselben Kunden sind zusammengezählt, ohne Rechnungsnummer Zeilen desselben Kunden am selben Tag;
+   *     Gutschriften (Summe ≤ 0) fehlen,
+   *   kanaele: Kanäle des laufenden Jahres nach Flaschen, höchstens vier Teile (ab fünf Kanälen die drei größten und
+   *     „Weitere“; Kanäle ohne Flaschen im Plus fehlen), je { kanal, flaschen, umsatz, anteil (Prozent der gezeigten
+   *     Flaschen) } }.
+   */
+  function dashboardDaten(zeilen, werte, jv, heute, anzahlMonate, anzahlBestellungen) {
+    if (!datumGueltig(heute) || typeof werte !== 'function') return null;
+    const jetzt = heute.slice(0, 7);
+    const wert = (m) => {
+      const x = werte(m);
+      return x && istZahl(x.flaschen) ? { flaschen: x.flaschen, umsatz: istZahl(x.umsatz) ? x.umsatz : 0 } : null;
+    };
+    const nMonate = anzahlMonate > 0 ? Math.floor(anzahlMonate) : 6;
+    const monate = [];
+    for (let i = 0; i < nMonate; i++) {
+      const m = monatPlus(jetzt, -i);
+      const x = wert(m);
+      const vor = i === 0 || !x ? null : wert(monatPlus(m, -1));
+      monate.push({ monat: m, laufend: i === 0, flaschen: x ? x.flaschen : null, umsatz: x ? x.umsatz : null,
+        pFlaschen: vor ? veraenderung(x.flaschen, vor.flaschen) : null, pUmsatz: vor ? veraenderung(x.umsatz, vor.umsatz) : null, anteil: 0 });
+    }
+    const hoch = Math.max.apply(null, monate.map((m) => (m.flaschen > 0 ? m.flaschen : 0)).concat([0]));
+    if (hoch > 0) monate.forEach((m) => { m.anteil = m.flaschen > 0 ? Math.round((m.flaschen / hoch) * 1000) / 10 : 0; });
+
+    const vg = jv && jv.vergleich;
+    const jahr = jv && jv.bisher && istZahl(jv.bisher.flaschen)
+      ? { jahr: jv.jahr, flaschen: jv.bisher.flaschen, umsatz: istZahl(jv.bisher.umsatz) ? jv.bisher.umsatz : 0,
+        pFlaschen: vg ? veraenderung(vg.dieses.flaschen, vg.vorjahr.flaschen) : null,
+        pUmsatz: vg ? veraenderung(vg.dieses.umsatz, vg.vorjahr.umsatz) : null }
+      : null;
+
+    const nach = Object.create(null);
+    const liste = [];
+    (Array.isArray(zeilen) ? zeilen : []).forEach((z, i) => {
+      if (!z || !datumGueltig(z.datum) || z.datum > heute || !istZahl(z.flaschen)) return;
+      // Rechnung und Kunde: Stünde dieselbe Nummer einmal bei zwei Kunden, blieben es zwei Bestellungen
+      const k = z.rechnung ? 'r\n' + z.rechnung + '\n' + z.schluessel : 'k\n' + z.schluessel + '\n' + z.datum;
+      let b = nach[k];
+      if (!b) {
+        b = nach[k] = { datum: z.datum, kunde: z.kunde || '', kanal: z.kanal || '', flaschen: 0, umsatz: 0, reihe: i };
+        liste.push(b);
+      }
+      if (z.datum > b.datum) b.datum = z.datum;
+      b.flaschen = runde(b.flaschen + z.flaschen);
+      b.umsatz = runde(b.umsatz + (istZahl(z.umsatz) ? z.umsatz : 0));
+    });
+    const nBest = anzahlBestellungen > 0 ? Math.floor(anzahlBestellungen) : 5;
+    const bestellungen = liste.filter((b) => b.flaschen > 0)
+      .sort((x, y) => (x.datum < y.datum ? 1 : x.datum > y.datum ? -1 : y.reihe - x.reihe)).slice(0, nBest)
+      .map((b) => ({ datum: b.datum, kunde: b.kunde, kanal: b.kanal, flaschen: b.flaschen, umsatz: b.umsatz }));
+
+    let kanaele = [];
+    if (Array.isArray(zeilen)) {
+      const alle = zeitraumAuswerten(zeilen, jetzt.slice(0, 4) + '-01', jetzt).kanaele.filter((k) => k.flaschen > 0);
+      const teile = alle.length > 4 ? alle.slice(0, 3).concat([alle.slice(3).reduce((x, k) => ({ kanal: 'Weitere',
+        flaschen: runde(x.flaschen + k.flaschen), umsatz: runde(x.umsatz + k.umsatz) }), { kanal: 'Weitere', flaschen: 0, umsatz: 0 })]) : alle;
+      const summe = teile.reduce((x, k) => x + k.flaschen, 0);
+      kanaele = teile.map((k) => ({ kanal: k.kanal, flaschen: k.flaschen, umsatz: k.umsatz, anteil: Math.round((k.flaschen / summe) * 1000) / 10 }));
+    }
+    return { heute: heute, monate: monate, laufend: monate[0], letzter: monate[1] || null, jahr: jahr, bestellungen: bestellungen, kanaele: kanaele };
+  }
+
   const hilfen = {
     CODE_LAENGE, ARTEN, MAX_KOMMENTAR, codeBereinigen, codePruefen, apiUrlGueltig, zahlFormat, euroFormat, kistenFormat,
     zeitFormat, datumGueltig, datumFormat, datumText, monatFormat, zeitraumFormat, heuteBerlin, tagePlus, tageZwischen, bestellStufe,
@@ -1211,7 +1287,7 @@
     MAX_FLASCHEN, datumKurz, monateAnzahl, zeitraumKurz, monatBisher, kistenKurz, anteileSinnvoll, hinweiseOrdnen, verlaufOhneStorno, schrittWert,
     kundeSchluessel, rechnungOhnePosition, STANDORT_VERSCHIEDEN, standortAuswahl, verkaufZeilen, monatsWerte, jahresVergleich, kumuliert, zeitraumAuswerten, kundeDetails, nachfassen,
     bestellungenZaehlen, wannText, abstandText, monatName, wochentagText, dauerText, datumAbkuerzungen, buchungVorschau, standText, frageTeilen, inventurAm, jahresStichtag, prognoseSaison, aktivitaet, monatsTage, letzteBestellungen,
-    datumMonatePlus, ersterVerkaufsmonat, bekannteRechnungen, bestellPrognose,
+    datumMonatePlus, ersterVerkaufsmonat, bekannteRechnungen, bestellPrognose, dashboardDaten,
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = hilfen;
   else wurzel.SATE_HILFEN = hilfen;
