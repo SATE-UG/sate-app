@@ -8,6 +8,7 @@ const assert = require('node:assert');
 const { lade, ladeAlles, roh } = require('./lade');
 const { neueWelt } = require('./google');
 const D = require('./daten');
+const H = require('../docs/hilfen.js');
 
 const k = lade();
 const e = k.einstellungenLesen(D.einstellungen());
@@ -157,6 +158,46 @@ test('verkaufStandortPruefen und verkaufListeBauen', () => {
     { rechnung: 'R-9', datum: '2026-11-05', kunde: 'Bar', kanal: 'Karlsruhe', flaschen: 6, standort: 'Lager Ost', standortGesetzt: true, gemischt: false },
     { rechnung: 'R-7', datum: '2026-11-03', kunde: 'Späti', kanal: 'Berlin', flaschen: 36, standort: 'Lager Nord', standortGesetzt: false, gemischt: false },
   ]);
+});
+
+test('Codex 2026-11-10: mehrere Positionen einer Rechnung („R-7“, „R-7 #2“) sind eine Rechnung', () => {
+  const faelle = ['RE760175', ' RE760175 #2 ', 'RE760175#3', 'RE760175  # 12', 760175, 0, '', null, undefined, '#2', '#2 #3', 'R #x', 'R #y',
+    'R-7 #2 Rest', 'R-7 #2 #3', 're7 #2'];
+  const erwartet = ['RE760175', 'RE760175', 'RE760175', 'RE760175', '760175', '0', '', '', '', '#2', '#2 #3', 'R #x', 'R #y',
+    'R-7 #2 Rest', 'R-7', 're7'];
+  assert.deepStrictEqual(faelle.map((x) => k.rechnungOhnePosition(x)), erwartet);
+  // App und Schnittstelle kürzen gleich; zweimal kürzen ändert nichts mehr (die App schickt die gekürzte Nummer zurück)
+  assert.deepStrictEqual(faelle.map((x) => H.rechnungOhnePosition(x)), erwartet);
+  erwartet.forEach((x) => assert.strictEqual(k.rechnungOhnePosition(x), x, x));
+
+  const zeilen = [D.verkaufKopf(), D.rechnungszeile(2026, 11, 3, 'Berlin', 'Späti', 24, 30), D.rechnungszeile(2026, 11, 3, 'Berlin', 'Späti', 12, 15),
+    D.rechnungszeile(2026, 11, 3, 'Berlin', 'Späti', 6, 8), D.rechnungszeile(2026, 11, 4, 'Berlin', 'Andere', 6, 8)];
+  zeilen[1][9] = 'R-7';
+  zeilen[2][9] = 'R-7 #2';
+  zeilen[3][9] = 'R-7 #3';
+  zeilen[4][9] = 'R-70';
+  // egal, mit welcher Position gefragt wird: alle Zeilen der Rechnung, die Nummer ohne Zusatz
+  ['R-7', 'R-7 #2', ' R-7 #3 ', 'R-7#2', 'R-7 #4 #5'].forEach((frage) => {
+    assert.deepStrictEqual(roh(k.verkaufStandortPruefen({ rechnung: frage, standort: 'Lager Ost' }, e, zeilen)),
+      { rechnung: 'R-7', standort: 'Lager Ost', zeilen: [2, 3, 4] }, frage);
+  });
+  assert.deepStrictEqual(roh(k.verkaufStandortPruefen({ rechnung: 'R-70', standort: '' }, e, zeilen)), { rechnung: 'R-70', standort: '', zeilen: [5] });
+  assert.strictEqual(k.verkaufStandortPruefen({ rechnung: 'R-7 #2 Rest', standort: '' }, e, zeilen).fehler, 'Rechnung nicht gefunden');
+  assert.strictEqual(k.verkaufStandortPruefen({ rechnung: 'r-7', standort: '' }, e, zeilen).fehler, 'Rechnung nicht gefunden', 'Groß/klein zählt wie bisher');
+
+  const liste = () => roh(k.verkaufListeBauen(k.verkaeufeLesen(zeilen, D.berlin).verkaeufe, e, HEUTE));
+  assert.deepStrictEqual(liste(), [
+    { rechnung: 'R-70', datum: '2026-11-04', kunde: 'Andere', kanal: 'Berlin', flaschen: 6, standort: 'Lager Nord', standortGesetzt: false, gemischt: false },
+    { rechnung: 'R-7', datum: '2026-11-03', kunde: 'Späti', kanal: 'Berlin', flaschen: 42, standort: 'Lager Nord', standortGesetzt: false, gemischt: false },
+  ]);
+  // nur eine Position umgehängt (so entstand der Fehler): ein Eintrag mit Warnung statt zwei Rechnungen
+  zeilen[2][11] = 'Lager Ost';
+  assert.deepStrictEqual(liste()[1], { rechnung: 'R-7', datum: '2026-11-03', kunde: 'Späti', kanal: 'Berlin', flaschen: 42,
+    standort: 'Lager Nord', standortGesetzt: false, gemischt: true });
+  // erste Position ohne Flaschen (zählt nicht): die zweite steht trotzdem unter der Nummer ohne Zusatz
+  zeilen[1][5] = 0;
+  assert.deepStrictEqual(liste()[1], { rechnung: 'R-7', datum: '2026-11-03', kunde: 'Späti', kanal: 'Berlin', flaschen: 18,
+    standort: 'Lager Ost', standortGesetzt: true, gemischt: true });
 });
 
 test('idErzeugen: Zeitstempel + 4 Zufallszeichen, neueId_ weicht vorhandenen aus', () => {
@@ -583,6 +624,64 @@ test('Codex: verkaufStandort, Fehler beim zweiten Schreiben → erste Zelle zur�
   assert.strictEqual(c.ok, true, JSON.stringify(c));
   assert.deepStrictEqual(w.sheetSchreiben, ['Verkäufe!L3', 'Verkäufe!L4', 'Lager!B2:F5']);
   assert.deepStrictEqual(w.tabs['Verkäufe'].map((z) => z[11]), ['Standort', '', 'Lager Ost', 'Lager Ost', '', '']);
+});
+
+test('Codex 2026-11-10: verkaufStandort hängt alle Positionen einer Rechnung um, auch wenn mit „#2“ gefragt wird', () => {
+  const { w, p } = welt();
+  w.tabs['Verkäufe'][3][9] = 'R-100 #2'; // zweite Flaschenzeile derselben Rechnung, wie die Belege-Kette sie schreibt
+  w.tabs['Verkäufe'][3][11] = 'Lager Ost'; // früher nur diese Position umgehängt
+  const vorher = JSON.stringify(w.tabs['Verkäufe'].map((z) => z.slice(0, 11)));
+  const u = p('uebersicht');
+  assert.deepStrictEqual(u.verkaufListe.filter((x) => /^R-100/.test(x.rechnung)), [{ rechnung: 'R-100', datum: tag(-5), kunde: 'Späti Zwei',
+    kanal: 'Berlin', flaschen: 48, standort: 'Lager Nord', standortGesetzt: false, gemischt: true }]);
+  assert.strictEqual(u.lager[1].bestand, 126, 'Lager Nord: 100 + 50 − 24, die zweite Position zählt bei Lager Ost');
+
+  // eine ältere App schickt noch die Nummer mit Zusatz
+  w.sheetSchreiben.length = 0;
+  const a = p('verkaufStandort', { rechnung: 'R-100 #2', standort: 'Lager Ost' });
+  assert.strictEqual(a.ok, true, JSON.stringify(a));
+  assert.strictEqual(a.geaendert, 2);
+  assert.deepStrictEqual(w.sheetSchreiben, ['Verkäufe!L3', 'Verkäufe!L4', 'Lager!B2:F5']);
+  assert.deepStrictEqual(w.tabs['Verkäufe'].map((z) => z[11]), ['Standort', '', 'Lager Ost', 'Lager Ost', '', '']);
+  assert.strictEqual(JSON.stringify(w.tabs['Verkäufe'].map((z) => z.slice(0, 11))), vorher, 'A–K unverändert');
+  assert.deepStrictEqual(a.uebersicht.verkaufListe.filter((x) => /^R-100/.test(x.rechnung)), [{ rechnung: 'R-100', datum: tag(-5),
+    kunde: 'Späti Zwei', kanal: 'Berlin', flaschen: 48, standort: 'Lager Ost', standortGesetzt: true, gemischt: false }]);
+  assert.strictEqual(a.uebersicht.lager[1].bestand, 150);
+
+  const b = p('verkaufStandort', { rechnung: 'R-100', standort: '' });
+  assert.deepStrictEqual(b.hinweise, ['Rechnung R-100 zählt wieder beim Standard-Standort.']);
+  assert.deepStrictEqual(w.tabs['Verkäufe'].map((z) => z[11]), ['Standort', '', '', '', '', '']);
+  assert.strictEqual(b.uebersicht.lager[1].bestand, 102);
+});
+
+test('Codex 2026-11-10: mehrere Positionen, gleiche anfrageId, Negativ-Warnung aus der Summe, Zurückrollen', () => {
+  const { w, p } = welt();
+  w.tabs['Verkäufe'][3][9] = 'R-100 #2';
+  // gleiche anfrageId, erst mit, dann ohne Zusatz: nur einmal geschrieben
+  const a = p('verkaufStandort', { rechnung: 'R-100 #2', standort: 'Lager Süd', anfrageId: 'zuordnen-0001' });
+  assert.strictEqual(a.geaendert, 2, JSON.stringify(a));
+  w.sheetSchreiben.length = 0;
+  const a2 = p('verkaufStandort', { rechnung: 'R-100', standort: 'Lager Süd', anfrageId: 'zuordnen-0001' });
+  assert.strictEqual(a2.wiederholt, true);
+  assert.deepStrictEqual(w.sheetSchreiben, []);
+  // Lager Nord: 100 + 50 = 150, nach 120 Promo noch 30. Eine Position (24) passt, beide zusammen (48) nicht.
+  assert.strictEqual(p('buchen', { art: 'Promo', standort: 'Lager Nord', flaschen: 120, datum: heuteText() }).ok, true);
+  w.sheetSchreiben.length = 0;
+  const v = p('verkaufStandort', { rechnung: 'R-100', standort: 'Lager Nord' });
+  assert.strictEqual(v.brauchtBestaetigung, true, JSON.stringify(v));
+  assert.match(v.warnung, /Lager Nord -18 Flaschen/);
+  assert.deepStrictEqual(w.sheetSchreiben, []);
+  // Schreibfehler bei der zweiten Position: die erste kommt auf ihren alten Wert zurück
+  w.schreibFehler = (tab, bereich) => tab === 'Verkäufe' && bereich === 'L4';
+  assert.deepStrictEqual(p('verkaufStandort', { rechnung: 'R-100', standort: 'Lager Nord', bestaetigt: true }),
+    { ok: false, fehler: 'Speichern hat nicht geklappt, nichts geändert. Bitte gleich nochmal versuchen' });
+  assert.deepStrictEqual(w.sheetSchreiben, ['Verkäufe!L3', 'Verkäufe!L4', 'Verkäufe!L3']);
+  assert.deepStrictEqual(w.tabs['Verkäufe'].map((z) => z[11]), ['Standort', '', 'Lager Süd', 'Lager Süd', '', '']);
+  w.schreibFehler = null;
+  const c = p('verkaufStandort', { rechnung: 'R-100 #2', standort: 'Lager Nord', bestaetigt: true });
+  assert.strictEqual(c.ok, true, JSON.stringify(c));
+  assert.deepStrictEqual(w.tabs['Verkäufe'].map((z) => z[11]), ['Standort', '', 'Lager Nord', 'Lager Nord', '', '']);
+  assert.strictEqual(c.uebersicht.lager[1].bestand, -18);
 });
 
 test('Codex: keine Buchung in die Zukunft, Zukunftszeilen im Log zählen nicht (Hinweis)', () => {

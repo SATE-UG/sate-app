@@ -15,6 +15,17 @@ function kundeSchluessel(kunde) {
 }
 
 /**
+ * Rechnungsnummer ohne den Positions-Zusatz aus Spalte J: Die Belege-Kette schreibt jede weitere Flaschenzeile
+ * derselben Rechnung als „RE… #2“, „RE… #3“. „RE760175 #2“ → „RE760175“. Bliebe nichts übrig, gilt der Text wie er ist.
+ * Zweimal angewendet ändert sich nichts mehr (die App schickt die gekürzte Nummer zurück). Dieselbe Regel steht in
+ * docs/hilfen.js (`rechnungOhnePosition`), ein Test hält beide gleich.
+ */
+function rechnungOhnePosition(text) {
+  const t = String(text === undefined || text === null ? '' : text).trim();
+  return t.replace(/(\s*#\s*\d+)+$/, '') || t;
+}
+
+/**
  * Tab Verkäufe (Zeilen A–L, erste Zeile Kopf) → [{zeile, monat, datum, kanal, kunde, flaschen, umsatz, standort, rechnung}].
  * monat = Rechnungsmonat aus A (sonst aus B), datum = B oder null (Altliste). Gutschriften bleiben negativ.
  * Zeilen ohne Flaschen fallen still weg, Zeilen ohne lesbaren Monat mit Hinweis.

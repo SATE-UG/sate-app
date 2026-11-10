@@ -291,17 +291,20 @@ function verlaufBauen(zeilen, formatieren, n) {
 /**
  * Für die App: Rechnungen mit Rechnungsdatum in den letzten VERKAUF_LISTE_TAGE Tagen, neueste zuerst, je
  * {rechnung, datum, kunde, kanal, flaschen, standort (effektiv), standortGesetzt (Spalte L belegt), gemischt}.
+ * Mehrere Positionen einer Rechnung („RE…“, „RE… #2“) sind ein Eintrag unter der Nummer ohne Zusatz, die Flaschen
+ * zusammengezählt; `gemischt`, wenn die Positionen bei verschiedenen Standorten zählen.
  */
 function verkaufListeBauen(verkaeufe, e, heute) {
   const grenze = tagePlus(heute, -VERKAUF_LISTE_TAGE);
   const nach = Object.create(null);
   const liste = [];
   verkaeufe.forEach((v) => {
-    if (!v.rechnung || !v.datum || v.datum < grenze) return;
-    let r = nach[v.rechnung];
+    const nummer = rechnungOhnePosition(v.rechnung);
+    if (!nummer || !v.datum || v.datum < grenze) return;
+    let r = nach[nummer];
     if (!r) {
-      r = nach[v.rechnung] = {
-        rechnung: v.rechnung, datum: v.datum, kunde: v.kunde, kanal: v.kanal, flaschen: 0,
+      r = nach[nummer] = {
+        rechnung: nummer, datum: v.datum, kunde: v.kunde, kanal: v.kanal, flaschen: 0,
         standort: verkaufStandort(v, e), standortGesetzt: !!v.standort, gemischt: false,
       };
       liste.push(r);
@@ -316,18 +319,20 @@ function verkaufListeBauen(verkaeufe, e, heute) {
 
 /**
  * Prüft `{rechnung, standort}`: Standort aus den Einstellungen oder leer (= zurück auf Standard), Rechnung muss in
- * Spalte J stehen. Rückgabe { rechnung, standort, zeilen: [Zeilennummern 1-basiert] } oder { fehler }.
+ * Spalte J stehen. Es zählen alle Positionen der Rechnung („RE…“, „RE… #2“, …), egal mit welcher davon gefragt wird.
+ * Rückgabe { rechnung (ohne Zusatz), standort, zeilen: [Zeilennummern 1-basiert] } oder { fehler }.
  */
 function verkaufStandortPruefen(d, e, zeilen) {
-  const rechnung = typeof d.rechnung === 'string' || typeof d.rechnung === 'number' ? String(d.rechnung).trim() : '';
-  if (!rechnung || rechnung.length > 60) return { fehler: FEHLER_RECHNUNG };
+  const roh = typeof d.rechnung === 'string' || typeof d.rechnung === 'number' ? String(d.rechnung).trim() : '';
+  if (!roh || roh.length > 60) return { fehler: FEHLER_RECHNUNG };
+  const rechnung = rechnungOhnePosition(roh);
   if (d.standort !== undefined && d.standort !== null && typeof d.standort !== 'string') return { fehler: FEHLER_STANDORT };
   const standort = (d.standort || '').trim();
   if (standort && e.standorte.indexOf(standort) < 0) return { fehler: FEHLER_STANDORT };
   const nr = [];
   for (let i = 1; i < (zeilen || []).length; i++) {
     const j = zeilen[i] && zeilen[i][VK.RECHNUNG];
-    if (j !== undefined && j !== null && String(j).trim() === rechnung) nr.push(i + 1);
+    if (j !== undefined && j !== null && rechnungOhnePosition(j) === rechnung) nr.push(i + 1);
   }
   if (!nr.length) return { fehler: FEHLER_RECHNUNG };
   return { rechnung: rechnung, standort: standort, zeilen: nr };

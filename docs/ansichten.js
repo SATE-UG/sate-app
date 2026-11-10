@@ -1312,6 +1312,7 @@
   }
 
   async function zuordnen(r, standort, auswahl) {
+    if (standort === H.STANDORT_VERSCHIEDEN) return; // gesperrte Anzeige-Zeile
     auswahl.disabled = true;
     const e = await S.schreiben('verkaufStandort', { rechnung: r.rechnung, standort: standort });
     if (e.art === 'ok') {
@@ -1328,14 +1329,15 @@
    * zeigt es den Standard-Standort grau; gewählte Standorte weiß. Option '' = Standard.
    */
   function standortWahl(r, i, orte) {
-    const gesetzt = r.standortGesetzt ? r.standort : '';
-    const liste = orte.concat(gesetzt && orte.indexOf(gesetzt) < 0 ? [gesetzt] : [])
-      .filter((o) => r.standortGesetzt || o !== r.standort); // ohne eigene Zuordnung steht der Standard schon oben
-    const auswahl = h('select', { id: 'vk-' + i, class: 'ort-wahl' + (gesetzt ? ' gesetzt' : ''),
+    const a = H.standortAuswahl(r, orte);
+    const auswahl = h('select', { id: 'vk-' + i, class: 'ort-wahl' + (a.gesetzt ? ' gesetzt' : ''),
       onchange: (ev) => zuordnen(r, ev.currentTarget.value, ev.currentTarget) },
-    h('option', { value: '', text: r.standortGesetzt ? 'Standard (zurücksetzen)' : r.standort }),
-    liste.map((o) => h('option', { value: o, text: o })));
-    auswahl.value = gesetzt;
+    a.optionen.map((o) => {
+      const zeile = h('option', { value: o.wert, text: o.text });
+      if (o.gesperrt) zeile.disabled = true; // „Verschieden“: nur Anzeige, nicht wählbar
+      return zeile;
+    }));
+    auswahl.value = a.wert;
     if (Z.schreibt) auswahl.disabled = true;
     return auswahl;
   }
@@ -1371,7 +1373,7 @@
           // Beschriftung nur für Vorleseprogramme, sichtbar stehen Rechnung und Kunde schon daneben
           h('label', { for: 'vk-' + i, class: 'nur-vorlesen', text: 'Standort für Rechnung ' + r.rechnung + ', ' + r.kunde }),
           standortWahl(r, i, orte)),
-        r.gemischt ? h('p', { class: 'nebenzeile warnung', text: 'Achtung: Teile dieser Rechnung zählen bei verschiedenen Standorten.' }) : null))))));
+        r.gemischt ? h('p', { class: 'nebenzeile warnung', text: 'Teile dieser Rechnung zählen bei verschiedenen Standorten. Standort wählen, dann zählt die ganze Rechnung dort.' }) : null))))));
   }
 
   /** Vom Start („Alle Buchungen“) direkt zum Verlauf im Lager. */

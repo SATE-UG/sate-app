@@ -917,6 +917,43 @@
   }
 
   /**
+   * Rechnungsnummer ohne den Positions-Zusatz: weitere Flaschenzeilen derselben Rechnung stehen im Sheet als „RE… #2“,
+   * „RE… #3“. „RE760175 #2“ → „RE760175“. Bliebe nichts übrig, gilt der Text wie er ist. Dieselbe Regel wie in der
+   * Schnittstelle (api/src/VerkaufLogik.js), ein Test hält beide gleich.
+   */
+  function rechnungOhnePosition(text) {
+    const t = String(text === undefined || text === null ? '' : text).trim();
+    return t.replace(/(\s*#\s*\d+)+$/, '') || t;
+  }
+
+  /** Wert der gesperrten Zeile „Verschieden“ in der Standort-Auswahl (kein Standort heißt so). */
+  const STANDORT_VERSCHIEDEN = '__verschieden__';
+
+  /**
+   * Auswahl „Standort einer Rechnung“ (Verkäufe zuordnen) für einen Eintrag `r` der `verkaufListe` und die Standorte
+   * `orte`: { wert (vorgewählt), gesetzt (eigene Zuordnung, weiß statt grau), optionen: [{ wert, text, gesperrt }] }.
+   * Wert '' = Standard. Ohne eigene Zuordnung steht der Standard-Standort oben und fehlt in der Liste darunter, mit
+   * Zuordnung heißt die erste Zeile „Standard (zurücksetzen)“. Zählen die Positionen der Rechnung bei verschiedenen
+   * Standorten (`gemischt`), ist die gesperrte Zeile „Verschieden“ vorgewählt: So ist jede Wahl, auch der Standard oder
+   * der Standort der ersten Position, eine Änderung und setzt alle Positionen gleich.
+   */
+  function standortAuswahl(r, orte) {
+    const liste = (Array.isArray(orte) ? orte : []).filter((o) => typeof o === 'string' && o);
+    const zeile = (o) => ({ wert: o, text: o, gesperrt: false });
+    if (r && r.gemischt) {
+      return { wert: STANDORT_VERSCHIEDEN, gesetzt: true, optionen: [{ wert: STANDORT_VERSCHIEDEN, text: 'Verschieden', gesperrt: true },
+        { wert: '', text: 'Standard (zurücksetzen)', gesperrt: false }].concat(liste.map(zeile)) };
+    }
+    const standort = r && typeof r.standort === 'string' ? r.standort : '';
+    const eigen = !!(r && r.standortGesetzt);
+    const gesetzt = eigen ? standort : '';
+    const rest = liste.concat(gesetzt && liste.indexOf(gesetzt) < 0 ? [gesetzt] : [])
+      .filter((o) => eigen || o !== standort); // ohne eigene Zuordnung steht der Standard schon oben
+    return { wert: gesetzt, gesetzt: !!gesetzt,
+      optionen: [{ wert: '', text: eigen ? 'Standard (zurücksetzen)' : standort, gesperrt: false }].concat(rest.map(zeile)) };
+  }
+
+  /**
    * Verkaufszeilen der Schnittstelle (`verkaeufe.zeilen`, je [Monat, Datum, Kanal, Kunde, Flaschen, Umsatz, Rechnung])
    * → Objekte { monat, datum ('' ohne Rechnungsdatum), kanal, kunde, schluessel, flaschen, umsatz, rechnung }.
    * `rechnung` ohne Zusatz wie „#2“ (zweite Zeile derselben Rechnung), '' ohne Nummer. Unlesbare Zeilen fallen weg, mit
@@ -930,7 +967,7 @@
       .filter((z) => Array.isArray(z) && typeof z[0] === 'string' && MONAT_MUSTER.test(z[0]) && istZahl(z[4]) && (!bis || z[0] <= bis))
       .map((z) => {
         const kunde = String(z[3] === undefined || z[3] === null ? '' : z[3]).trim();
-        const rechnung = String(z[6] === undefined || z[6] === null ? '' : z[6]).split('#')[0].trim();
+        const rechnung = rechnungOhnePosition(z[6]);
         return { monat: z[0], datum: datumGueltig(z[1]) ? z[1] : '', kanal: String(z[2] || '').trim() || 'Sonstiges', kunde: kunde,
           schluessel: kundeSchluessel(kunde) || '(ohne name)', flaschen: z[4], umsatz: istZahl(z[5]) ? z[5] : 0, rechnung: rechnung };
       });
@@ -1172,7 +1209,7 @@
     achsenText, achseMitMinus, antwortDeuten, uebersichtGueltig, neuer,
     relativZeit, monatPlus, veraenderung, prozentText, richtung, monatsTrend, reiterPosition, ziehRichtung, gummiband, ziehTempo, blattSchliesst,
     MAX_FLASCHEN, datumKurz, monateAnzahl, zeitraumKurz, monatBisher, kistenKurz, anteileSinnvoll, hinweiseOrdnen, verlaufOhneStorno, schrittWert,
-    kundeSchluessel, verkaufZeilen, monatsWerte, jahresVergleich, kumuliert, zeitraumAuswerten, kundeDetails, nachfassen,
+    kundeSchluessel, rechnungOhnePosition, STANDORT_VERSCHIEDEN, standortAuswahl, verkaufZeilen, monatsWerte, jahresVergleich, kumuliert, zeitraumAuswerten, kundeDetails, nachfassen,
     bestellungenZaehlen, wannText, abstandText, monatName, wochentagText, dauerText, datumAbkuerzungen, buchungVorschau, standText, frageTeilen, inventurAm, jahresStichtag, prognoseSaison, aktivitaet, monatsTage, letzteBestellungen,
     datumMonatePlus, ersterVerkaufsmonat, bekannteRechnungen, bestellPrognose,
   };

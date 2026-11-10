@@ -433,3 +433,36 @@ test('Mark 2026-11-09: Wachstum über die letzten 12 Monate, Monate vor dem Star
   // 7 von 12 reichen
   assert.strictEqual(H.bestellPrognose(ub(5000, zwoelf), w, '2026-11-09', '2025-04').art, 'saison');
 });
+
+test('Codex 2026-11-10: Standort-Auswahl, eine gemischte Rechnung lässt sich mit jeder Wahl vereinheitlichen', () => {
+  const orte = ['Lager Süd', 'Lager Nord', 'Lager Ost'];
+  const werte = (a) => a.optionen.map((x) => x.wert);
+  // ohne eigene Zuordnung: der Standard steht oben und nicht noch einmal darunter
+  assert.deepStrictEqual(H.standortAuswahl({ standort: 'Lager Nord', standortGesetzt: false, gemischt: false }, orte), {
+    wert: '', gesetzt: false, optionen: [{ wert: '', text: 'Lager Nord', gesperrt: false },
+      { wert: 'Lager Süd', text: 'Lager Süd', gesperrt: false }, { wert: 'Lager Ost', text: 'Lager Ost', gesperrt: false }] });
+  // mit Zuordnung: Zurücksetzen oben, darunter alle Standorte, auch ein inzwischen gestrichener
+  const mit = H.standortAuswahl({ standort: 'Lager Ost', standortGesetzt: true, gemischt: false }, orte);
+  assert.deepStrictEqual([mit.wert, mit.gesetzt], ['Lager Ost', true]);
+  assert.deepStrictEqual(mit.optionen.map((x) => [x.wert, x.text, x.gesperrt]),
+    [['', 'Standard (zurücksetzen)', false], ['Lager Süd', 'Lager Süd', false], ['Lager Nord', 'Lager Nord', false], ['Lager Ost', 'Lager Ost', false]]);
+  assert.deepStrictEqual(werte(H.standortAuswahl({ standort: 'Altes Lager', standortGesetzt: true }, orte)),
+    ['', 'Lager Süd', 'Lager Nord', 'Lager Ost', 'Altes Lager']);
+  // gemischt: die gesperrte Zeile ist vorgewählt, jede andere (Standard und alle Standorte) ist damit eine Änderung
+  [{ standort: 'Lager Nord', standortGesetzt: false, gemischt: true }, { standort: 'Lager Ost', standortGesetzt: true, gemischt: true }].forEach((r) => {
+    const g = H.standortAuswahl(r, orte);
+    assert.deepStrictEqual([g.wert, g.gesetzt], [H.STANDORT_VERSCHIEDEN, true]);
+    assert.deepStrictEqual(g.optionen[0], { wert: H.STANDORT_VERSCHIEDEN, text: 'Verschieden', gesperrt: true });
+    assert.deepStrictEqual(werte(g).slice(1), ['', 'Lager Süd', 'Lager Nord', 'Lager Ost']);
+    assert.ok(g.optionen.slice(1).every((x) => !x.gesperrt && x.wert !== g.wert));
+  });
+  // unlesbare Eingaben werfen nicht
+  assert.deepStrictEqual(H.standortAuswahl(null, null), { wert: '', gesetzt: false, optionen: [{ wert: '', text: '', gesperrt: false }] });
+
+  // Rechnungsnummer wie in der Schnittstelle: nur „#Zahl“ am Ende ist ein Positions-Zusatz
+  const z = H.verkaufZeilen({ zeilen: [['2026-02', '2026-02-03', 'Karlsruhe', 'A', 10, 12, 'R #x'], ['2026-02', '2026-02-03', 'Karlsruhe', 'A', 2, 0, 'R #y'],
+    ['2026-02', '2026-02-04', 'Karlsruhe', 'A', 2, 0, 'RE8 #2 #3'], ['2026-02', '2026-02-04', 'Karlsruhe', 'A', 2, 0, 760175],
+    ['2026-02', '2026-02-04', 'Karlsruhe', 'A', 2, 0, 'RE8']] });
+  assert.deepStrictEqual(z.map((x) => x.rechnung), ['R #x', 'R #y', 'RE8', '760175', 'RE8']);
+  assert.strictEqual(H.bestellungenZaehlen(z), 4);
+});
