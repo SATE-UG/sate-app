@@ -379,6 +379,52 @@ test('Abfüllung mit Herstellkosten: Spalte E „Kosten/Fl (€)“ wird mitgesc
   assert.deepStrictEqual([w.tabs['Abfüllungen'][5][0], w.tabs['Abfüllungen'][5][2], w.tabs['Abfüllungen'][5][4]], ['Storno 3. Abfüllung', -1000, 0.8765]);
 });
 
+test('Übersicht liefert Promo, Eigenverbrauch und Bruch als Abgänge (ohne Stornos, nach Datum) für First in, First out', () => {
+  const { w, p } = welt();
+  assert.deepStrictEqual(p('uebersicht').abgaenge, [], 'Inventur und Umlagerung sind keine Abgänge');
+  const promo = p('buchen', { art: 'Promo', standort: 'Lager Süd', flaschen: 24, datum: heuteText() });
+  p('buchen', { art: 'Bruch', standort: 'Lager Nord', flaschen: 3, datum: tag(-3) });
+  p('buchen', { art: 'Eigenverbrauch', standort: 'Lager Süd', flaschen: 6, datum: tag(-1) });
+  p('buchen', { art: 'Umlagerung', standort: 'Lager Süd', nachStandort: 'Lager Nord', flaschen: 10, datum: heuteText() });
+  p('buchen', { art: 'Abfüllung', flaschen: 100, datum: heuteText() });
+  assert.deepStrictEqual(p('uebersicht').abgaenge, [[tag(-3), 3, 'Bruch'], [tag(-1), 6, 'Eigenverbrauch'], [heuteText(), 24, 'Promo']]);
+  // storniert: fällt wieder heraus
+  assert.strictEqual(p('stornieren', { id: promo.id }).ok, true);
+  assert.deepStrictEqual(p('uebersicht').abgaenge, [[tag(-3), 3, 'Bruch'], [tag(-1), 6, 'Eigenverbrauch']]);
+  // Zeile mit Datum in der Zukunft (von Hand im Sheet): zählt noch nicht
+  w.tabs['Lager-Log'].push([D.zelle(2099, 1, 1), 'Lager Süd', 'Promo', 5, '', 'Mark', '', '', 'zukunft1', '']);
+  assert.strictEqual(p('uebersicht').abgaenge.length, 2);
+});
+
+test('Übersicht liefert den Schwund jeder Nachzählung an ihrem Tag und, sobald alle Lager gezählt sind, die Lücke vom Anfang', () => {
+  const { w, p } = welt();
+  // Lager Ost ist noch nie gezählt: kein „gezählt seit“, kein Schwund
+  let u = p('uebersicht');
+  assert.deepStrictEqual([u.schwund, u.kennzahlen.gezaehltSeit, u.lager[1].bestand], [[], null, 102]);
+  // Lager Nord nachgezählt: gerechnet 100 + 50 − 48 = 102, gezählt 90 → 12 Flaschen Schwund am Zähltag
+  assert.strictEqual(p('buchen', { art: 'Inventur', standort: 'Lager Nord', flaschen: 90, datum: heuteText() }).ok, true);
+  u = p('uebersicht');
+  assert.deepStrictEqual([u.schwund, u.kennzahlen.gezaehltSeit], [[[heuteText(), 12, 'Lager Nord']], null]);
+  // Lager Ost zum ersten Mal gezählt (5): jetzt sind alle gezählt. Lücke vom Anfang = abgefüllt 3.000 − verkauft 370
+  // − Abgänge 0 − Schwund 12 − Bestand (1.938 + 90 + 5) = 585, mit leerem Standort am Tag „alle gezählt“
+  assert.strictEqual(p('buchen', { art: 'Inventur', standort: 'Lager Ost', flaschen: 5, datum: heuteText() }).ok, true);
+  u = p('uebersicht');
+  assert.deepStrictEqual([u.kennzahlen.gesamtQuelle, u.kennzahlen.gesamtbestand, u.kennzahlen.gezaehltSeit], ['inventur', 2033, heuteText()]);
+  assert.deepStrictEqual(u.schwund, [[heuteText(), 12, 'Lager Nord'], [heuteText(), 585, '']]);
+  // Danach gebuchte Promo ändert die Lücke nicht (beide Seiten gehen gleich zurück), sie steht bei den Abgängen
+  assert.strictEqual(p('buchen', { art: 'Promo', standort: 'Lager Süd', flaschen: 20, datum: heuteText() }).ok, true);
+  u = p('uebersicht');
+  assert.deepStrictEqual([u.kennzahlen.gesamtbestand, u.abgaenge, u.schwund], [2013, [[heuteText(), 20, 'Promo']], [[heuteText(), 12, 'Lager Nord'], [heuteText(), 585, '']]]);
+  // Codex v33: Ein Verkauf mit unbekanntem Standort (Spalte L von Hand) verlässt kein Lager. Er darf die Lücke vom
+  // Anfang nicht rückwirkend verkleinern (sonst stünden 7 Flaschen als „mehr gezählt“ in der Vergangenheit)
+  const fremd = vz(tag(-1), 'Karlsruhe', 'Bar Vier', 7, 'R-200');
+  fremd[11] = 'Mond';
+  w.tabs['Verkäufe'].push(fremd);
+  u = p('uebersicht');
+  assert.deepStrictEqual([u.kennzahlen.gesamtbestand, u.schwund], [2013, [[heuteText(), 12, 'Lager Nord'], [heuteText(), 585, '']]]);
+  assert.ok(u.hinweise.some((x) => /Standort „Mond“ unbekannt/.test(x)), JSON.stringify(u.hinweise));
+});
+
 test('Negativ-Warnung: erst Bestätigung, dann schreiben; ohne Inventur keine Warnung', () => {
   const { w, p } = welt();
   const daten = { art: 'Promo', standort: 'Lager Nord', flaschen: 500, datum: heuteText() };

@@ -1313,6 +1313,8 @@ body.mit-leiste::after {
 .dash-lager .dash-zeile { grid-template-columns: minmax(0, 1fr) 64px 84px; }               /* Name, Zahl, Datum */
 .dash-abf .dash-zeile { grid-template-columns: minmax(0, 1fr) 58px 52px 58px; }             /* Abfüllung, Flaschen, je Fl., übrig */
 .dash-roh .dash-zeile { grid-template-columns: minmax(0, 1fr) 66px 62px 66px 52px; }       /* Zeitraum, Umsatz, Kosten, Rohertrag, Marge */
+.dash-weg .dash-zeile { grid-template-columns: minmax(0, 1fr) 72px 84px; }                 /* Art oder Monat, Flaschen, Herstellkosten */
+.dash-bleibt .dash-zeile { grid-template-columns: minmax(0, 1fr) 80px 70px 80px; }         /* Jahr, Rohertrag, ohne Verkauf weg, bleibt */
 .dash-rohkan .dash-zeile { grid-template-columns: minmax(0, 1fr) 50px 66px 52px 44px; }    /* Kanal, je Fl., Rohertrag, Marge, Anteil */
 .dash-zeile > :not(.dash-balken) { position: relative; z-index: 1; }
 .dash-balken { position: absolute; left: 0; top: 2px; bottom: 2px; z-index: 0; border-radius: 6px; background: rgba(255, 255, 255, 0.075); }

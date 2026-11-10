@@ -44,6 +44,14 @@ test('Verkäufe lesen: Monat aus Seriennummer, Datum oder Text; Kanal; Hinweise'
   assert.throws(() => k.verkaeufeLesen([['Monat', 'Datum', 'Quelle', 'Kunde']], D.berlin), /Spaltenkopf/);
 });
 
+test('Verkäufe lesen: unlesbarer Umsatz zählt als 0 € und wird gemeldet, ein leerer bleibt still 0 €', () => {
+  const zeilen = [D.verkaufKopf(), D.altzeile(2026, 8, 'Karlsruhe', 'Bar Eins', 10, '#REF!'), D.altzeile(2026, 8, 'Karlsruhe', 'Bar Zwei', 10, 'kaputt'),
+    D.altzeile(2026, 8, 'Karlsruhe', 'Bar Drei', 10, ''), D.altzeile(2026, 8, 'Karlsruhe', 'Bar Vier', 10, 0), D.altzeile(2026, 8, 'Karlsruhe', 'Bar Fünf', 10, '12,50 €')];
+  const r = k.verkaeufeLesen(zeilen, D.berlin);
+  assert.deepStrictEqual(roh(r.verkaeufe.map((v) => v.umsatz)), [0, 0, 0, 0, 12.5]);
+  assert.deepStrictEqual(roh(r.hinweise), ['Verkäufe Zeile 2: Umsatz unlesbar, zählt als 0 €.', 'Verkäufe Zeile 3: Umsatz unlesbar, zählt als 0 €.']);
+});
+
 test('Auswertung: 13 Monate inkl. laufendem, letzte 12 volle Monate, laufendes Jahr, Kunden zusammengefasst', () => {
   const v = k.verkaeufeLesen(verkaufZeilen(), D.berlin).verkaeufe;
   const a = roh(k.verkaeufeAuswerten(v, '2026-11-08'));

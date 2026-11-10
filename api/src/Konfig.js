@@ -81,6 +81,9 @@ const LAGER_ARTEN = {
   Inventur: 0, 'Abfüllung': 1, Umlagerung: -1, Promo: -1, Eigenverbrauch: -1, Bruch: -1, Storno: 0,
 };
 
+/** Arten, bei denen Flaschen ohne Verkauf weggehen (für `uebersicht.abgaenge`: Die App zieht ihre Herstellkosten vom Rohertrag ab). */
+const ABGANG_ARTEN = ['Promo', 'Eigenverbrauch', 'Bruch'];
+
 /** Tab App-Einstellungen: Text in Spalte A (exakt) → Schlüssel und Standardwert, falls die Zeile fehlt. */
 const EINSTELLUNGEN = [
   { text: 'Standorte', schluessel: 'standorte', standard: 'Dörflinger Karlsruhe;Dave Berlin;Mark Berlin' },

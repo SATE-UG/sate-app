@@ -316,17 +316,24 @@ test('PWA: Dashboard (v30, erweitert in v31) – Kapsel auf dem Start, eigenes B
   assert.match(dash, /\.dash-s5 \.dash-zeile \{ grid-template-columns: minmax\(0, 1fr\) 52px 50px 68px 50px; \}/);
   assert.match(dash, /@media \(max-width: 350px\) \{[\s\S]*\.dash-s5 \.dash-zeile > :last-child, \.dash-kan \.dash-zeile > :last-child \{ display: none; \}/);
   // Seit v31: viele weitere Abschnitte zum Runterscrollen, jede Tabellenart hat ihre Spalten, Gruppen als Überschriften
-  assert.match(ansichten, /H\.dashboardMehr\(a\.zeilen, a\.werte, a\.heute, k\.flaschenProKiste, u\.abfuellungen\)/);
+  assert.match(ansichten, /H\.dashboardMehr\(a\.zeilen, a\.werte, a\.heute, k\.flaschenProKiste, u\.abfuellungen, lagerStand\)/);
   const arten = Array.from(new Set(Array.from(ansichten.matchAll(/dashTabelle\('([a-z0-9]+)/g), (m) => m[1])));
-  assert.deepStrictEqual(arten.sort(), ['abf', 'gr', 'jahre', 'kan', 'lager', 'preis', 'roh', 'rohkan', 's5', 'top', 'vj']);
+  assert.deepStrictEqual(arten.sort(), ['abf', 'bleibt', 'gr', 'jahre', 'kan', 'lager', 'preis', 'roh', 'rohkan', 's5', 'top', 'vj', 'weg']);
   arten.forEach((art) => assert.match(dash, new RegExp('\\.dash-' + art + ' \\.dash-zeile \\{ grid-template-columns: '), art));
-  assert.strictEqual((ansichten.match(/class: 'dash-gruppe'/g) || []).length, 6, 'fünf Gruppen, dazu Rohertrag und Marge');
+  assert.strictEqual((ansichten.match(/class: 'dash-gruppe'/g) || []).length, 8, 'fünf Gruppen, dazu Rohertrag und Marge und (seit v33) Ohne Verkauf weg mit und ohne Abgänge');
+  // Seit v33: Was ohne Verkauf wegging, ist nicht „neutral“, sondern steht mit seinen Herstellkosten in einer eigenen Statistik
+  assert.doesNotMatch(ansichten + lies('docs/hilfen.js'), /neutral zum Herstellpreis/);
+  assert.match(ansichten, /dashTitel\('Was vom Rohertrag bleibt'/);
+  assert.match(ansichten, /dashTitel\('Flaschen-Abgleich'/);
+  // Die Marge bezieht sich nur auf verkaufte Flaschen (Mark, 2026-11-10): nach den Abgängen gibt es keinen Prozentwert
+  assert.doesNotMatch(ansichten, /nj\.marge|nach\.[a-z]+\.marge|Rohertrag nach Abgängen/);
+  assert.doesNotMatch(lies('docs/hilfen.js'), /marge: bleibt/);
   // Herstellkosten (v32): je Abfüllung aus dem Sheet (Spalte E im Tab Abfüllungen), verteilt nach First in, First out.
   // Im öffentlichen Repo steht keine Kostenzahl: nur der Spaltenkopf, das Eingabefeld und die Rechnung.
   const konfig = lies('api/src/Konfig.js');
   assert.match(konfig, /const AB = \{ NAME: 0, MONAT: 1, FLASCHEN: 2, QUELLE: 3, KOSTEN: 4 \};/);
   assert.match(konfig, /const AB_KOSTEN_KOPF = 'Kosten\/Fl \(€\)';/);
-  assert.match(lies('docs/hilfen.js'), /function fifoSchichten\(abfuellungen\)[\s\S]*function fifoKosten\(zeilen, schichten\)/);
+  assert.match(lies('docs/hilfen.js'), /function fifoSchichten\(abfuellungen\)[\s\S]*function fifoKosten\(zeilen, schichten, abgaenge\)/);
   // Eingabe: Feld nur bei einer Abfüllung sichtbar, gesendet nur mit Wert
   assert.match(html, /<div class="feld" id="b-kosten-feld" hidden>\s*<label for="b-kosten" class="feld-label">Herstellkosten pro Flasche in Euro/);
   assert.match(html, /<input id="b-kosten" type="text" inputmode="decimal" autocomplete="off"/);

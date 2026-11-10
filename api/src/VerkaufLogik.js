@@ -28,7 +28,7 @@ function rechnungOhnePosition(text) {
 /**
  * Tab Verkäufe (Zeilen A–L, erste Zeile Kopf) → [{zeile, monat, datum, kanal, kunde, flaschen, umsatz, standort, rechnung}].
  * monat = Rechnungsmonat aus A (sonst aus B), datum = B oder null (Altliste). Gutschriften bleiben negativ.
- * Zeilen ohne Flaschen fallen still weg, Zeilen ohne lesbaren Monat mit Hinweis.
+ * Zeilen ohne Flaschen fallen still weg, Zeilen ohne lesbaren Monat mit Hinweis. Unlesbarer Umsatz zählt als 0 € (mit Hinweis).
  */
 function verkaeufeLesen(zeilen, formatieren) {
   const kopf = (zeilen && zeilen[0]) || [];
@@ -49,9 +49,14 @@ function verkaeufeLesen(zeilen, formatieren) {
     const datum = zelleDatum(z[VK.DATUM], formatieren);
     const monat = zelleMonat(z[VK.MONAT], formatieren) || (datum ? datum.slice(0, 7) : null);
     if (!monat) { hinweise.push('Verkäufe Zeile ' + (i + 1) + ': kein Monat lesbar, zählt nicht.'); continue; }
+    // Umsatz: leer zählt still als 0 €; steht dort etwas Unlesbares (Text, #REF!), zählt es auch als 0 €, aber mit Hinweis
+    const umsatz = betragLesen(z[VK.UMSATZ]);
+    if (umsatz === null && z[VK.UMSATZ] !== '' && z[VK.UMSATZ] !== undefined && z[VK.UMSATZ] !== null) {
+      hinweise.push('Verkäufe Zeile ' + (i + 1) + ': Umsatz unlesbar, zählt als 0 €.');
+    }
     verkaeufe.push({
       zeile: i + 1, monat: monat, datum: datum, kanal: kanalName(z[VK.KANAL]), kunde: String(z[VK.KUNDE] || '').trim(),
-      flaschen: flaschen, umsatz: betragLesen(z[VK.UMSATZ]) || 0, standort: String(z[VK.STANDORT] || '').trim(),
+      flaschen: flaschen, umsatz: umsatz || 0, standort: String(z[VK.STANDORT] || '').trim(),
       rechnung: String(z[VK.RECHNUNG] === undefined || z[VK.RECHNUNG] === null ? '' : z[VK.RECHNUNG]).trim(),
     });
   }

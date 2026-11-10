@@ -304,6 +304,11 @@ function spaeterErfasst_(a, b) {
  * bestand/letzteInventur/schwund = null, solange es keine Inventur gibt (Schwund auch bei der ersten Inventur).
  * seitInventur = { verkauft, zugaenge, abgaenge } nach dem Inventurtag (Umlagerung hin = Zugang, weg = Abgang).
  * inventuren = die letzten INVENTUREN_ANZAHL Inventuren und alle zum 31.12. [{datum, flaschen}], neueste zuerst (ohne: []).
+ * Dazu `schwund`: jede Nachzählung eines Lagers mit Abweichung als { datum (Zähltag), flaschen (Soll − Ist, auch
+ * negativ), standort }, nach Datum; und `gezaehltSeit`: der Tag, seit dem jedes Lager mindestens einmal gezählt ist
+ * (die späteste erste Zählung), sonst null; `verkauftBisHeute`: Flaschen aller Verkäufe, die ein Lager schon
+ * verlassen haben (Lagerdatum bis heute, Standort bekannt). Ein Verkauf mit unbekanntem Standort zählt nicht mit: Er
+ * hat keinen Bestand verringert und darf deshalb auch keine Lücke in der Vergangenheit erzeugen (Hinweis oben).
  */
 function lagerBerechnen(buchungen, verkaeufe, e, heute) {
   const hinweise = [];
@@ -331,13 +336,14 @@ function lagerBerechnen(buchungen, verkaeufe, e, heute) {
   });
   const unbekannt = Object.create(null);
   let spaeter = 0;
+  let verkauftBisHeute = 0; // Verkäufe, die hier schon ein Lager verlassen haben
   verkaeufe.forEach((v) => {
     const s = verkaufStandort(v, e);
     const datum = verkaufLagerdatum(v);
     if (!bewegungen[s]) { unbekannt[s] = (unbekannt[s] || 0) + 1; return; }
     // Altliste ohne Rechnungsdatum (Lagerdatum = Monatsende): erst ein Monat nach dem laufenden ist Zukunft
     if (v.datum ? zukunft(datum) : !!heute && !!v.monat && v.monat > heute.slice(0, 7)) { spaeter++; return; }
-    if (datum) bewegungen[s].push({ datum: datum, menge: -v.flaschen, art: 'verkauf' });
+    if (datum) { bewegungen[s].push({ datum: datum, menge: -v.flaschen, art: 'verkauf' }); verkauftBisHeute += v.flaschen; }
   });
   Object.keys(unbekannt).forEach((s) => hinweise.push('Verkäufe: Standort „' + s + '“ unbekannt (' + unbekannt[s] +
     ' Zeilen), zählt bei keinem Lager.'));
@@ -355,9 +361,18 @@ function lagerBerechnen(buchungen, verkaeufe, e, heute) {
     });
     return { verkauft: runde_(t.verkauft, 2), zugaenge: runde_(t.zugaenge, 2), abgaenge: runde_(t.abgaenge, 2) };
   };
+  // Schwund jeder Nachzählung (für die App: geht von den Abfüllungen ab, zu ihren Herstellkosten) und der Tag der ersten Zählung je Lager
+  const schwundListe = [];
+  const ersteZaehlung = [];
   const standorte = e.standorte.map((s) => {
     const tage = Object.keys(inventuren[s]).sort();
     if (!tage.length) return { standort: s, bestand: null, letzteInventur: null, gezaehlt: null, schwund: null, seitInventur: null, inventuren: [] };
+    ersteZaehlung.push(tage[0]);
+    for (let i = 1; i < tage.length; i++) {
+      const davor = inventuren[s][tage[i - 1]];
+      const fehlt = runde_(davor.flaschen + summe(s, davor.datum, tage[i]) - inventuren[s][tage[i]].flaschen, 2);
+      if (fehlt !== 0) schwundListe.push({ datum: tage[i], flaschen: fehlt, standort: s });
+    }
     const letzte = inventuren[s][tage[tage.length - 1]];
     const vorige = tage.length > 1 ? inventuren[s][tage[tage.length - 2]] : null;
     const schwund = vorige ? runde_(vorige.flaschen + summe(s, vorige.datum, letzte.datum) - letzte.flaschen, 2) : null;
@@ -370,7 +385,9 @@ function lagerBerechnen(buchungen, verkaeufe, e, heute) {
         .map((t) => ({ datum: t, flaschen: inventuren[s][t].flaschen })),
     };
   });
-  return { standorte: standorte, hinweise: hinweise };
+  schwundListe.sort((a, b) => (a.datum < b.datum ? -1 : a.datum > b.datum ? 1 : 0));
+  return { standorte: standorte, hinweise: hinweise, schwund: schwundListe, verkauftBisHeute: runde_(verkauftBisHeute, 2),
+    gezaehltSeit: e.standorte.length && ersteZaehlung.length === e.standorte.length ? ersteZaehlung.sort().pop() : null };
 }
 
 /**

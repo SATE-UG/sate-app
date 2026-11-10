@@ -485,7 +485,10 @@
     const d = u && a ? H.dashboardDaten(a.zeilen, a.werte, a.jv, a.heute) : null;
     if (!d) return null;
     const k = u.kennzahlen;
-    const mehr = H.dashboardMehr(a.zeilen, a.werte, a.heute, k.flaschenProKiste, u.abfuellungen);
+    // Für die Abfüllungen als Schichten: was ohne Verkauf wegging (gebuchte Abgänge und Schwund aus den Zählungen)
+    const gezaehlt = k.gesamtQuelle === 'inventur' && typeof k.gesamtbestand === 'number';
+    const lagerStand = { abgaenge: u.abgaenge, schwund: u.schwund };
+    const mehr = H.dashboardMehr(a.zeilen, a.werte, a.heute, k.flaschenProKiste, u.abfuellungen, lagerStand);
     const fl = (z) => H.zahlFormat(z, 0);
     const eur = (z) => H.euroFormat(z);
     const cent = (z) => (typeof z === 'number' ? H.zahlFormat(z, 2) + ' €' : '–');
@@ -585,7 +588,14 @@
     // Nur wenn die Schnittstelle Herstellkosten je Abfüllung liefert (Spalte „Kosten/Fl (€)“ im Tab Abfüllungen, die
     // Zahlen stehen nie im Code). Die Kosten jedes Verkaufs kommen nach First in, First out aus den Abfüllungen:
     // erst die älteste, ist sie aufgebraucht, die nächste. Rohertrag = Umsatz (netto mit Pfand) minus Herstellkosten.
+    // Promo, Eigenverbrauch, Bruch und der Schwund aus den Zählungen brauchen die Abfüllungen mit auf. Diese Flaschen
+    // sind bezahlt und weg: Ihre Herstellkosten stehen in einer eigenen Statistik (seit v33, Gruppe „Ohne Verkauf weg“).
+    // Rohertrag und Marge beziehen sich nur auf verkaufte Flaschen, Abgänge senken die Marge nicht.
     const mg = mehr.marge;
+    const vl = mg ? mg.verluste : null; // null: Die Schnittstelle kennt Abgänge und Schwund noch nicht
+    // Flaschen, die weggehen, mit Minus (zurückgekommene mit Plus)
+    const wegText = (z) => (z > 0 ? '-' : z < 0 ? '+' : '') + fl(Math.abs(z)) + ' Fl.';
+    const artName = (art, flaschen) => (art !== 'Schwund' ? art : flaschen < 0 ? 'Mehr gezählt als gerechnet' : 'Schwund laut Inventur');
     const margeText = (z) => (typeof z === 'number' ? H.zahlFormat(z, 1) + ' %' : '–');
     const margeZelle = (z) => h('span', { class: 'dash-p' + (z < 0 ? ' runter' : ''), text: margeText(z) });
     const ertragZelle = (z) => h('span', { class: 'dash-zahl' + (z < 0 ? ' minus' : ''), text: eur(z) });
@@ -595,6 +605,20 @@
       const rohKopf = (erste) => [{ vorlesen: erste }, 'Umsatz', 'Kosten', 'Rohertrag', 'Marge'];
       const rohZeile = (name, x, extra) => Object.assign({ zellen: [name, eur(x.umsatz), leise(eur(x.kosten)), ertragZelle(x.rohertrag), margeZelle(x.marge)] }, extra);
       const bester = mg.top.length && mg.top[0].rohertrag > 0 ? mg.top[0].rohertrag : 0;
+      const nj = mg.nach ? mg.nach.jahr : null;
+      // Tabelle „ohne Verkauf weg“: je Art Flaschen und Herstellkosten, Balken = Anteil an den höchsten Kosten
+      const wegZeilen = (feld) => {
+        const hoch = Math.max.apply(null, vl.arten.map((x) => x[feld].kosten || 0).concat([0]));
+        const nichts = (y) => y.flaschen === 0 && y.kosten === 0; // nur ohne Flaschen und ohne Kosten leise; unbekannte Kosten bleiben ein Strich
+        return vl.arten.map((x) => ({ balken: hoch > 0 ? (Math.max(0, x[feld].kosten || 0) / hoch) * 100 : 0,
+          zellen: [artName(x.art, x[feld].flaschen), nichts(x[feld]) ? leise('0') : fl(x[feld].flaschen), nichts(x[feld]) ? leise(eur(0)) : eur(x[feld].kosten)] }))
+          .concat([{ klasse: 'dash-summe', zellen: ['Zusammen', fl(vl[feld].flaschen), eur(vl[feld].kosten)] }]);
+      };
+      const wegKopf = (erste) => [{ vorlesen: erste }, 'Flaschen', { text: 'Kosten', vorlesen: 'Herstellkosten' }];
+      const nachZeile = (name, x, extra) => Object.assign({ zellen: [name, eur(x.rohertrag), leise(eur(x.abgaenge)), ertragZelle(x.bleibt)] }, extra);
+      // „Seit dem Start“ nur weglassen, wenn es je Art dasselbe zeigt wie das Jahr (gleiche Summen allein reichen nicht:
+      // Promo und ein Mehrbestand aus früheren Jahren können sich aufheben)
+      const nurDiesesJahr = vl && vl.arten.every((x) => x.gesamt.flaschen === x.jahr.flaschen && x.gesamt.kosten === x.jahr.kosten);
       teile.push(
         h('h3', { class: 'dash-gruppe', text: 'Rohertrag und Marge' }),
         dashTitel('Rohertrag ' + jahr, 'Umsatz minus Herstellkosten'),
@@ -602,9 +626,10 @@
           'Wo daraus verkauft wurde, steht deshalb ein Strich.' }) : null,
         mg.abweichung !== 0 ? h('p', { class: 'dash-fuss dash-fehlt', text: 'Im Tab Abfüllungen passt eine Minus-Zeile zu keiner Abfüllung (' + fl(Math.abs(mg.abweichung)) +
           ' Flaschen). Die Zuordnung der Kosten ist deshalb unsicher.' }) : null,
-        mg.ueber > 0 ? h('p', { class: 'dash-fuss dash-fehlt', text: 'Verkauft sind ' + fl(mg.ueber) + ' Flaschen mehr, als im Tab Abfüllungen stehen. Für sie gelten die Kosten der letzten Abfüllung.' }) : null,
+        mg.ueber > 0 ? h('p', { class: 'dash-fuss dash-fehlt', text: 'Weggegangen sind ' + fl(mg.ueber) + ' Flaschen mehr, als im Tab Abfüllungen stehen. Für sie gelten die Kosten der letzten Abfüllung.' }) : null,
         dashFakten([
-          mg.aktuell ? ['Verkauft wird gerade aus', mg.aktuell.name, cent(mg.aktuell.kosten) + ' pro Flasche, noch ' + fl(mg.aktuell.rest) + ' Fl.'] : null,
+          mg.aktuell ? ['Verkauft wird gerade aus', mg.aktuell.mehr ? 'zurückgekommenen Flaschen' : mg.aktuell.name,
+            cent(mg.aktuell.kosten) + ' pro Flasche, noch ' + fl(mg.aktuell.rest) + ' Fl.'] : null,
           ['Ø Herstellkosten pro Flasche', cent(j.kostenProFlasche), 'nach First in, First out'],
           ['Umsatz pro Flasche', cent(j.flaschen > 0 ? j.umsatz / j.flaschen : null)],
           ['Rohertrag pro Flasche', cent(j.proFlasche)],
@@ -631,6 +656,38 @@
               zellen: [h('span', { class: 'dash-name' }, h('small', { class: 'dash-rang', text: String(x.rang) }), x.kunde || 'Ohne Name'), fl(x.flaschen), margeZelle(x.marge),
                 ertragZelle(x.rohertrag)] }))),
         ] : null);
+      // Ohne Verkauf weg (seit v33): Promo, Eigenverbrauch, Bruch und Schwund mit dem Geld, das in diesen Flaschen
+      // steckt. Eigene Gruppe, damit Rohertrag und Marge oben rein bei den verkauften Flaschen bleiben.
+      if (vl && !vl.anzahl) {
+        teile.push(
+          h('h3', { class: 'dash-gruppe', text: 'Ohne Verkauf weg' }),
+          dashFakten([['Promo, Eigenverbrauch, Bruch, Schwund', '0 Fl.', 'bisher keine Buchung und kein Schwund aus einer Zählung']]));
+      } else if (vl) {
+        const f = mg.flaschen;
+        teile.push(
+          h('h3', { class: 'dash-gruppe', text: 'Ohne Verkauf weg' }),
+          dashTitel(nurDiesesJahr ? 'Promo, Bruch, Schwund' : 'Promo, Bruch, Schwund ' + jahr, 'zum Herstellpreis'),
+          dashTabelle('weg', 'Flaschen, die ' + jahr + ' ohne Verkauf weggingen, mit ihren Herstellkosten', wegKopf('Art'), wegZeilen('jahr')),
+          nurDiesesJahr ? null : [
+            dashTitel('Seit dem Start', 'zum Herstellpreis'),
+            dashTabelle('weg', 'Flaschen, die seit dem Start ohne Verkauf weggingen, mit ihren Herstellkosten', wegKopf('Art'), wegZeilen('gesamt')),
+          ],
+          // In Euro, was vom Rohertrag der Verkäufe bleibt. Bewusst ohne Prozent: Die Marge gehört den verkauften Flaschen.
+          dashTitel('Was vom Rohertrag bleibt', 'Rohertrag minus Abgänge'),
+          dashTabelle('bleibt dash-zebra', 'Rohertrag der Verkäufe, Herstellkosten der Flaschen ohne Verkauf und was bleibt, je Jahr',
+            [{ vorlesen: 'Jahr' }, 'Rohertrag', { text: 'weg', vorlesen: 'Herstellkosten der Flaschen ohne Verkauf' }, 'bleibt'],
+            [nachZeile(jahr, nj), mg.nach.vorjahr ? nachZeile(String(mehr.jahr - 1), mg.nach.vorjahr) : null, nachZeile('Gesamt', mg.nach.gesamt, { klasse: 'dash-summe' })].filter(Boolean)),
+          dashFakten([
+            f.abgefuellt > 0 ? ['Anteil an allen abgefüllten Flaschen', anteil((vl.gesamt.flaschen / f.abgefuellt) * 100), fl(vl.gesamt.flaschen) + ' von ' + fl(f.abgefuellt) + ' Fl.'] : null,
+            nj && nj.proFlasche !== null ? ['Je verkaufter Flasche ' + jahr, cent(nj.proFlasche), 'kosten die Abgänge'] : null,
+            nj && nj.rohertrag > 0 && nj.abgaenge !== null ? ['Anteil am Rohertrag ' + jahr, anteil((nj.abgaenge / nj.rohertrag) * 100)] : null,
+          ]),
+          vl.monate.length ? [
+            dashTitel('Monate mit Abgängen'),
+            dashTabelle('weg dash-zebra', 'Monate, in denen Flaschen ohne Verkauf weggingen', wegKopf('Monat'),
+              vl.monate.map((x) => ({ zellen: [monatKurz(x.monat), fl(x.flaschen), eur(x.kosten)] }))),
+          ] : null);
+      }
     }
 
     // Preise und Bestellungen -------------------------------------------------------------------------------------
@@ -685,6 +742,10 @@
     // Bestand -----------------------------------------------------------------------------------------------------
     const geschaetzt = k.gesamtQuelle !== 'inventur';
     const wachstum = p && p.art === 'saison' && typeof p.wachstum === 'number' ? Math.round((p.wachstum - 1) * 100) : null;
+    // Was laut den Abfüllungen noch da ist (Reste, dazu Zurückgekommenes, ohne den Überhang)
+    const uebrig = mg ? mg.flaschen.uebrig : null;
+    // verglichen wird, was zu sehen ist: ganze Flaschen
+    const uebrigGleich = mg && typeof k.gesamtbestand === 'number' && Math.round(uebrig) === Math.round(k.gesamtbestand);
     const abf = Array.isArray(u.abfuellungen) ? u.abfuellungen : [];
     teile.push(
       h('h3', { class: 'dash-gruppe', text: 'Bestand' }),
@@ -712,6 +773,19 @@
         dashTabelle('abf dash-zebra', 'Abfüllungen mit Herstellkosten pro Flasche und Rest', [{ vorlesen: 'Abfüllung' }, 'Flaschen', { text: 'je Fl.', vorlesen: 'Herstellkosten pro Flasche' }, 'übrig'],
           mg.schichten.map((x) => ({ balken: x.flaschen > 0 ? (x.rest / x.flaschen) * 100 : 0,
             zellen: [nameMit(x.name, x.monat ? monatKurz(x.monat) : ''), fl(x.flaschen), leise(cent(x.kosten)), fl(x.rest)] }))),
+        // Flaschen-Abgleich: Abgefüllt minus alles, was wegging, ist das, was in den Abfüllungen übrig ist. Sind alle
+        // Lager gezählt, ist das der gezählte Bestand; sonst erklärt die letzte Zeile den Unterschied.
+        dashTitel('Flaschen-Abgleich', 'von abgefüllt bis übrig'),
+        dashFakten([
+          ['Abgefüllt', fl(mg.flaschen.abgefuellt) + ' Fl.'],
+          ['Verkauft', wegText(mg.flaschen.verkauft)],
+          vl ? ['Promo, Eigenverbrauch, Bruch', wegText(mg.flaschen.abgaenge)] : null,
+          vl ? [artName('Schwund', mg.flaschen.schwund), wegText(mg.flaschen.schwund)] : null,
+          ['Übrig in den Abfüllungen', fl(uebrig) + ' Fl.', uebrigGleich ? (gezaehlt ? 'wie gezählt' : 'wie der geschätzte Bestand')
+            : !gezaehlt ? 'der geschätzte Bestand (' + fl(k.gesamtbestand) + ') zählt Promo, Eigenverbrauch, Bruch und Schwund noch nicht mit'
+              : 'gezählt sind ' + fl(k.gesamtbestand) + ': Im Sheet hat ein Verkauf kein Lager oder ein Datum in der Zukunft, oder eine Abfüllung steht nur in einem der beiden Tabs'],
+          mg.mehr > 0 ? ['Davon zurück oder gefunden', fl(mg.mehr) + ' Fl.', 'gehören zu keiner Abfüllung, gehen als Nächste weg'] : null,
+        ]),
       ] : abf.length ? [
         dashTitel('Abfüllungen'),
         dashTabelle('lager dash-zebra', 'Abfüllungen', [{ vorlesen: 'Abfüllung' }, 'Flaschen', 'Monat'],
@@ -743,7 +817,7 @@
         g.proMonat ? ['Ø pro Monat', fl(g.proMonat.flaschen) + ' Fl.', eur(g.proMonat.umsatz) + ', volle Monate'] : null,
       ]),
       h('p', { class: 'dash-fuss', text: 'Stand ' + H.datumText(a.heute) + '. Umsatz netto mit Pfand. Volle Monate heißt ohne den laufenden. Eine Bestellung ist eine Rechnung, ohne Nummer ein Kunde an einem Tag. Ältere Zeilen ohne Rechnungsdatum zählen je Zeile als eine Bestellung, das ist meist ein Kunde in einem Monat.' +
-        (mg ? ' Rohertrag ist Umsatz minus Herstellkosten, ohne Marketing, Lieferung und andere Kosten. Die Herstellkosten kommen nach First in, First out aus den Abfüllungen: erst die älteste, dann die nächste; Promo, Bruch und Eigenverbrauch zählen dabei nicht mit.' : '') }));
+        (mg ? ' Rohertrag ist Umsatz minus Herstellkosten, ohne Marketing, Lieferung und andere Kosten. Die Herstellkosten kommen nach First in, First out aus den Abfüllungen: erst die älteste, dann die nächste. Promo, Eigenverbrauch, Bruch und Schwund laut Inventur brauchen die Abfüllungen genauso auf. Diese Flaschen sind bezahlt und weg: Ihre Herstellkosten stehen unter „Ohne Verkauf weg“. Rohertrag und Marge beziehen sich nur auf verkaufte Flaschen. Herstellkosten netto, wie im Tab Abfüllungen eingetragen.' : '') }));
     return teile;
   }
 
