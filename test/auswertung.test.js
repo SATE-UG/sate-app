@@ -1020,7 +1020,7 @@ test('Dashboard (v31, v32): mehr Zahlen – Vorjahresvergleiche, Quartale, Jahre
   assert.strictEqual(H.dashboardMehr(zeilen, null, heute, 24), null);
 });
 
-test('auswerten (v35): Verkäufe nach Kennzahl, Jahr und Kanal gefiltert, aufgeteilt nach Jahr, Monat, Kanal oder Kunde', () => {
+test('auswerten (v35, erweitert in v36): Verkäufe nach Kennzahl, Jahr und Kanal gefiltert, aufgeteilt nach Jahr, Monat, Kanal oder Kunde', () => {
   const heute = '2026-11-12';
   const zl = H.verkaufZeilen({ zeilen: zeilen() }, heute);
   const kosten = zl.map((x) => x.flaschen * 0.5); // erfunden: 0,50 € pro Flasche
@@ -1080,12 +1080,38 @@ test('auswerten (v35): Verkäufe nach Kennzahl, Jahr und Kanal gefiltert, aufget
   assert.deepStrictEqual([o.kennzahl, o.mitKosten, o.summe.flaschen, o.summe.umsatz, o.summe.kosten, o.summe.rohertrag, o.summe.marge, o.summe.proFlasche, o.summe.rohProFlasche],
     ['flaschen', false, 602, 1277, null, null, null, 2.12, null]);
   assert.deepStrictEqual(o.vergleich, { jahr: 2025, bis: '2026-10', flaschen: -71, umsatz: -63, rohertrag: null });
-  assert.deepStrictEqual(o.gruppen.map((g) => [g.name, g.wert, g.rohertrag]), [['Ape', 264, null], ['Karlsruhe', 290, null], ['Berlin', 48, null]].sort((x, y) => y[1] - x[1]));
+  assert.deepStrictEqual(o.gruppen.map((g) => [g.name, g.wert, g.rohertrag]), [['Ape', 264, null], ['Karlsruhe', 290, null], ['Berlin', 48, null], ['Aktion', 0, null]].sort((x, y) => y[1] - x[1]));
   // Fehlen die Kosten nur bei einer Zeile (Abfüllung ohne Kosten), bleibt der Rohertrag nur dort leer, wo sie mitzählt; leere landen hinten
   const teil = kosten.map((x, i) => (zl[i].kanal === 'Ape' && zl[i].flaschen === 240 ? null : x));
   const t = aw({ kennzahl: 'rohertrag', jahr: 2026, nach: 'kanal' }, teil);
-  assert.deepStrictEqual(t.gruppen.map((g) => [g.name, g.wert, g.anteil, g.balken]), [['Karlsruhe', 232, 86.6, 100], ['Berlin', 36, 13.4, 15.5], ['Ape', null, 0, 0]]);
+  assert.deepStrictEqual(t.gruppen.map((g) => [g.name, g.wert, g.anteil, g.balken]), [['Karlsruhe', 232, 86.6, 100], ['Berlin', 36, 13.4, 15.5], ['Aktion', 0, 0, 0], ['Ape', null, 0, 0]]);
   assert.deepStrictEqual([t.summe.rohertrag, t.summe.marge, t.summe.flaschen], [null, null, 602]);
+  // Seit v36, mit gewähltem Jahr: Kanäle und Kunden mit der Veränderung zum Jahr davor über dasselbe Fenster wie der
+  // Vergleich oben (Januar bis Oktober). Karlsruhe 290 gegen 150 Flaschen; Ape und Berlin hatten im Fenster des
+  // Vorjahrs nichts („neu“; Berlin verkaufte 2025 erst ab November); die Aktion vom März 2025 fehlt 2026 und steht mit 0 da
+  assert.deepStrictEqual(aw({ kennzahl: 'flaschen', jahr: 2026, nach: 'kanal' }).gruppen.map((g) => [g.name, g.wert, g.p, g.neu]),
+    [['Karlsruhe', 290, 93, false], ['Ape', 264, null, true], ['Berlin', 48, null, true], ['Aktion', 0, -100, false]]);
+  assert.deepStrictEqual(aw({ kennzahl: 'flaschen', jahr: 2026, nach: 'kunde' }).gruppen.map((g) => [g.name, g.wert, g.p, g.neu]),
+    [['Bar Eins', 290, 93, false], ['Fest', 264, null, true], ['Späti', 48, null, true]], 'bei Kunden kommt niemand mit 0 dazu');
+  assert.deepStrictEqual(aw({ kennzahl: 'umsatz', jahr: 2026, nach: 'kanal' }).gruppen.map((g) => [g.name, g.p]), [['Ape', null], ['Karlsruhe', 93], ['Berlin', null], ['Aktion', -100]]);
+  assert.deepStrictEqual(k.gruppen.map((g) => [g.p, g.neu]), [[null, false], [null, false], [null, false], [null, false]], 'ohne gewähltes Jahr kein Vergleich');
+  // Monatswerte für die Diagramme: der gewählte Kanal über alle Jahre, mit Herstellkosten samt Rohertrag
+  assert.deepStrictEqual([a.werte('2026-10'), a.werte('2024-01'), b.werte('2026-10'), b.werte('2025-12')],
+    [{ flaschen: 108, umsatz: 138, rohertrag: 84 }, { flaschen: 0, umsatz: 0, rohertrag: 0 }, { flaschen: 48, umsatz: 60, rohertrag: 36 }, { flaschen: 48, umsatz: 60, rohertrag: 36 }]);
+  assert.deepStrictEqual(o.werte('2026-10'), { flaschen: 108, umsatz: 138 }, 'ohne Herstellkosten wie bisher nur Flaschen und Umsatz');
+  // … passen in jahresVergleich: Die Summen tragen den Rohertrag mit (2026 bisher 976 €, Januar bis Oktober 268 € gegen 620 €)
+  const jv = H.jahresVergleich(a.werte, heute, 2026);
+  assert.deepStrictEqual([jv.bisher, jv.vergleich.dieses, jv.vergleich.vorjahr, jv.vorjahrGesamt],
+    [{ flaschen: 602, umsatz: 1277, rohertrag: 976 }, { flaschen: 338, umsatz: 437, rohertrag: 268 }, { flaschen: 1150, umsatz: 1195, rohertrag: 620 }, { flaschen: 1222, umsatz: 1285, rohertrag: 674 }]);
+  assert.deepStrictEqual(H.kumuliert(jv.monate, 'dieses', 'rohertrag').slice(0, 5), [24, 24, 24, 24, 184]);
+  // Fehlen in einem Monat die Kosten, bleibt der Rohertrag dort und in jeder Summe mit diesem Monat leer, nicht 0
+  const jt = H.jahresVergleich(t.werte, heute, 2026);
+  assert.deepStrictEqual([t.werte('2026-11'), jt.bisher, jt.vergleich.dieses], [{ flaschen: 264, umsatz: 840, rohertrag: null }, { flaschen: 602, umsatz: 1277, rohertrag: null }, { flaschen: 338, umsatz: 437, rohertrag: 268 }]);
+  // … und die Jahreslinie hört dort auf, statt mit 0 weiterzulaufen (Codex v36); Flaschen laufen durch
+  assert.deepStrictEqual(H.kumuliert(jt.monate, 'dieses', 'rohertrag').slice(8), [184, 268, null, null]);
+  assert.deepStrictEqual(H.kumuliert(jt.monate, 'dieses', 'flaschen').slice(8), [230, 338, 602, null]);
+  // ohne das Feld bleibt jahresVergleich wie bisher bei Flaschen und Umsatz
+  assert.deepStrictEqual(H.jahresVergleich(o.werte, heute, 2026).bisher, { flaschen: 602, umsatz: 1277 });
   // Minus: eine Gruppe mit Gutschrift unter dem Strich hat keinen Balken und keinen Anteil
   const minus = H.verkaufZeilen({ zeilen: [z('2026-03', '2026-03-02', 'Berlin', 'A', 24, 30), z('2026-04', '2026-04-02', 'Berlin', 'B', -48, -60)] }, heute);
   assert.deepStrictEqual(H.auswerten(minus, null, heute, { nach: 'kunde' }).gruppen.map((g) => [g.name, g.wert, g.anteil, g.balken]), [['A', 24, 100, 100], ['B', -48, 0, 0]]);

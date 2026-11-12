@@ -292,37 +292,35 @@ test('PWA: automatisches Update – Service Worker nennt seine Version, App such
   assert.doesNotMatch(lies('docs/app.js'), /serviceWorker/, 'Registrierung nur noch in update.js');
 });
 
-test('PWA: Dashboard (v30, erweitert in v31) – Kapsel auf dem Start, eigenes Blatt, nur Darstellung in ansichten.js', () => {
+test('PWA: Mehr Zahlen (früher Dashboard, v30 bis v35) – dichte Tabellen und Listen, gerechnet in hilfen.js, Darstellung in ansichten.js', () => {
   const html = lies('docs/index.html');
   const css = lies('docs/style.css');
   const ansichten = lies('docs/ansichten.js');
-  // Einstieg (seit v31): eigene Karte ganz oben auf dem Start, vor der Bestell-Karte; die Kapsel neben dem Datum ist weg
+  // Seit v36 gibt es kein eigenes Dashboard mehr: keine Karte oben auf dem Start (v31 bis v35), keine Kapsel neben dem Datum (v30)
   assert.match(html, /<p id="datum-zeile" class="datum-zeile"><\/p>\s*<div id="uebersicht-inhalt"><\/div>/);
   assert.doesNotMatch(html + css + lies('docs/app.js'), /kapsel-knopf|gruss-zeile/);
-  assert.match(ansichten, /id: 'dashboard-knopf', class: 'karte zeilen-karte dash-einstieg', onclick: \(\) => S\.dashboardZeigen\(\)/);
-  assert.match(ansichten, /S\.fuellen\(ziel,\s*dashboardEinstieg\(a\),\s*bestellKarte\(u, a\),/);
-  // kein erzwungener Fokus beim Tippen (auf dem iPhone blieb sonst der blaue Fokusring stehen)
-  assert.doesNotMatch(ansichten + lies('docs/app.js'), /dashboard-knopf'\)\.focus|currentTarget\.focus\(\{ preventScroll: true \}\); S\.dashboardZeigen/);
-  // Das Blatt nutzt das vorhandene Blatt (zieht sich nach unten zu), gerechnet wird in hilfen.js
-  assert.match(ansichten, /S\.dashboardZeigen = function/);
-  assert.match(ansichten, /H\.dashboardDaten\(a\.zeilen, a\.werte, a\.jv, a\.heute\)/);
-  assert.match(ansichten, /S\.blattZeigen\('Dashboard'/);
-  // Neuer Stand bei offenem Dashboard: Inhalt wird an Ort und Stelle neu gebaut (Codex v30)
-  assert.match(ansichten, /S\.dashboardAuffrischen = function/);
-  assert.match(lies('docs/app.js'), /S\.renderAlle = function \(\) \{[\s\S]{0,200}S\.dashboardAuffrischen\(\);/);
+  assert.doesNotMatch(ansichten + css + html + lies('docs/app.js'), /dashboard-knopf|dashboardEinstieg|dash-einstieg|dashboardZeigen|dashboardAuffrischen|S\.blattZeigen\('Dashboard'/);
+  assert.match(ansichten, /S\.fuellen\(ziel,\s*bestellKarte\(u, a\),\s*kennzahlen\(u, a\),\s*inventurHinweis\(u, a\.heute\),\s*rohertragHinweis\(\),\s*kundenHinweis\(a\),/);
+  // Gerechnet wird in hilfen.js, einmal pro Antwort (zahlenDaten)
+  assert.match(ansichten, /const d = H\.dashboardDaten\(a\.zeilen, a\.werte, a\.jv, a\.heute\);/);
+  // Neuer Stand bei offenem Zahlen-Blatt: Inhalt wird an Ort und Stelle neu gebaut (Codex v30)
+  assert.match(ansichten, /S\.zahlenAuffrischen = function/);
+  assert.match(lies('docs/app.js'), /S\.renderAlle = function \(\) \{[\s\S]{0,200}S\.zahlenAuffrischen\(\);/);
   const dash = css.slice(css.indexOf('/* Dashboard (Blatt, seit v30)'), css.indexOf('/* Trends (Verkäufe, Kunden, Start)'));
   assert.ok(dash.length > 500);
   assert.doesNotMatch(dash, /!important/);
   assert.match(dash, /\.dash-s5 \.dash-zeile \{ grid-template-columns: minmax\(0, 1fr\) 52px 50px 68px 50px; \}/);
   assert.match(dash, /@media \(max-width: 350px\) \{[\s\S]*\.dash-s5 \.dash-zeile > :last-child, \.dash-kan \.dash-zeile > :last-child \{ display: none; \}/);
   // Seit v31: viele weitere Abschnitte zum Runterscrollen, jede Tabellenart hat ihre Spalten, Gruppen als Überschriften
-  assert.match(ansichten, /H\.dashboardMehr\(a\.zeilen, a\.werte, a\.heute, k\.flaschenProKiste, u\.abfuellungen, lagerStand\)/);
+  assert.match(ansichten, /H\.dashboardMehr\(a\.zeilen, a\.werte, a\.heute, u\.kennzahlen\.flaschenProKiste, u\.abfuellungen, lagerStand\)/);
   const arten = Array.from(new Set(Array.from(ansichten.matchAll(/dashTabelle\('([a-z0-9]+)/g), (m) => m[1])));
   assert.deepStrictEqual(arten.sort(), ['abf', 'bleibt', 'gr', 'jahre', 'kan', 'lager', 'preis', 'roh', 'rohabf', 'rohkan', 's5', 'top', 'vj', 'weg']);
   arten.forEach((art) => assert.match(dash, new RegExp('\\.dash-' + art + ' \\.dash-zeile \\{ grid-template-columns: '), art));
-  // Seit v35 ist jede Gruppe eine eigene Seite (Überblick, Auswerten, fünf Gruppen, Rohertrag und Marge, Ohne Verkauf weg)
-  assert.deepStrictEqual(Array.from(ansichten.matchAll(/seite\('([a-z]+)', '/g), (m) => m[1]),
-    ['ueberblick', 'auswerten', 'vergleich', 'rohertrag', 'abgaenge', 'bestellungen', 'kunden', 'bestand', 'rekorde']);
+  // Jede Gruppe ist ein Thema für sich (Überblick, fünf Gruppen, Rohertrag und Marge, Ohne Verkauf weg), jedes hat seinen Titel
+  const themen = Array.from(ansichten.matchAll(/seite\('([a-z]+)', '/g), (m) => m[1]);
+  assert.deepStrictEqual(themen, ['ueberblick', 'vergleich', 'rohertrag', 'abgaenge', 'bestellungen', 'kunden', 'bestand', 'rekorde']);
+  const titel = /const ZAHLEN_TITEL = \{([^}]*)\};/.exec(ansichten)[1];
+  assert.deepStrictEqual(Array.from(titel.matchAll(/([a-z]+): '/g), (m) => m[1]).sort(), themen.slice().sort());
   // Seit v33: Was ohne Verkauf wegging, ist nicht „neutral“, sondern steht mit seinen Herstellkosten in einer eigenen Statistik
   assert.doesNotMatch(ansichten + lies('docs/hilfen.js'), /neutral zum Herstellpreis/);
   assert.match(ansichten, /dashTitel\('Was vom Rohertrag bleibt'/);
@@ -351,51 +349,72 @@ test('PWA: Dashboard (v30, erweitert in v31) – Kapsel auf dem Start, eigenes B
   assert.match(eintragen, /const kostenMoeglich = \(\) => !!\(Z\.daten && Z\.daten\.kennzahlen\.abfuellungKosten === true\);/, 'ohne Kosten-Spalte kein Feld');
   assert.match(eintragen, /if \(b\.art === 'Abfüllung' && b\.kosten !== null\) daten\.kostenProFlasche = b\.kosten;/);
   assert.match(dash, /\.dash-zeile \{[^}]*min-height: 27px;/);
-  // Akzentfarbe im Dashboard nur als Fokusrahmen (seit v35 gibt es dort Knöpfe), nie als Fläche oder Schrift
-  assert.doesNotMatch(dash.replace(/:focus-visible \{[^}]*\}/g, ''), /var\(--akzent\)/);
+  assert.doesNotMatch(dash, /var\(--akzent\)/, 'in den Zahlen-Blättern ist nichts antippbar, also keine Akzentfarbe');
 });
 
-test('PWA: Dashboard in Seiten und „Auswerten“ (v35) – eine Zahl finden, ohne alles durchzuscrollen', () => {
+test('PWA: App im Ganzen geordnet (v36) – Wahl oben in den Verkäufen, je Thema eine Zeile im passenden Reiter, kein eigenes Dashboard', () => {
   const css = lies('docs/style.css');
   const ansichten = lies('docs/ansichten.js');
   const kern = lies('docs/kern.js');
+  const app = lies('docs/app.js');
   const dash = css.slice(css.indexOf('/* Dashboard (Blatt, seit v30)'), css.indexOf('/* Trends (Verkäufe, Kunden, Start)'));
-  // Reihe der Seiten: Chips in einem Halter, der beim Scrollen oben stehen bleibt; jede Seite endet mit „Weiter“
-  assert.match(ansichten, /h\('div', \{ class: 'dash-oben' \}, h\('div', \{ class: 'dash-nav', role: 'group', 'aria-label': 'Seiten im Dashboard' \}/);
-  assert.match(dash, /\.dash-oben \{ position: sticky; top: -6px;/);
-  assert.match(ansichten, /class: 'dash-weiter'[\s\S]{0,120}onclick: \(\) => dashboardSeite\(weiter\.id\)/);
-  // Jedes Öffnen beginnt beim Überblick, die Auswahl in „Auswerten“ bleibt; ein neuer Stand zeichnet an Ort und Stelle neu
-  assert.match(ansichten, /S\.dashboardZeigen = function \(\) \{\s*Z\.dashSeite = 'ueberblick';/);
-  assert.match(ansichten, /S\.dashboardAuffrischen = function \(\) \{[\s\S]{0,200}!S\.el\('dash'\)\) return;\s*dashboardZeichnen\(false\);/);
-  // Kein erzwungener Fokus nach einem Tipp (blauer Rahmen auf dem iPhone): nur wer mit der Tastatur unterwegs ist, behält ihn
-  assert.match(ansichten, /f\.matches\(':focus-visible'\)/);
-  // „Alle … zeigen“ verschwindet nach dem Tipp: Mit der Tastatur geht der Fokus auf die erste neu gezeigte Zeile (Codex v35)
-  assert.match(ansichten, /const erste = tastatur \? document\.querySelectorAll\('#dash \.aw-liste > li'\)\[AW_ANFANG\] : null;\s*if \(erste\) \{ erste\.tabIndex = -1; erste\.focus\(\{ preventScroll: true \}\); \}/);
-  // Großes Blatt: volle Höhe, damit es zwischen kurzen und langen Seiten nicht springt; andere Blätter bleiben klein
-  assert.match(ansichten, /S\.blattZeigen\('Dashboard', inhalt, \(\) => S\.el\('dashboard-knopf'\), true\);/);
-  assert.match(kern, /S\.blattZeigen = function \(titel, inhalt, zurueck, gross\) \{[\s\S]{0,500}b\.classList\.toggle\('gross', gross === true\);/);
-  assert.strictEqual((ansichten.match(/S\.blattZeigen\(/g) || []).length, 3, 'Dashboard, Kunde, Lager');
-  assert.strictEqual((ansichten.match(/S\.blattZeigen\([^;]*, true\);/g) || []).length, 1, 'nur das Dashboard ist groß');
-  assert.match(css, /\.blatt\.gross \{ height: calc\(100% - 44px - env\(safe-area-inset-top\)\); \}/);
-  // Der Inhalt füllt das große Blatt: Ein Tipp in die freie Fläche unter einer kurzen Seite darf es nicht schließen
-  assert.match(css, /\.blatt\.gross \.blatt-inhalt \{ flex: 1 1 auto; \}/);
-  // Auswerten: gerechnet in hilfen.js mit den Herstellkosten je Zeile aus dashboardMehr, Wahl im Zustand, beim Abmelden zurückgesetzt
-  assert.match(ansichten, /H\.auswerten\(a\.zeilen, mehr\.marge \? mehr\.marge\.kostenJeZeile : null, a\.heute,/);
+  // Verkäufe: oben die Wahl (Kennzahl, Zeitraum, Kanal) …
+  assert.match(ansichten, /umschalter\('Kennzahl', \[\['flaschen', 'Flaschen'\], \['umsatz', 'Umsatz'\]\]\.concat\(x\.mitKosten \? \[\['rohertrag', 'Rohertrag'\]\] : \[\]\), v\.g, \(w\) => waehlen\(\{ diagramm: w \}\)\)/);
+  assert.match(ansichten, /wahlChips\('Zeitraum', 'jahr', x\.jahre\.map\(\(j\) => \[j, String\(j\)\]\)\.concat\(\[\[null, 'Alle Jahre'\]\]\), x\.jahr, \(w\) => waehlen\(\{ verkaufJahr: w \}\)\)/);
+  assert.match(ansichten, /wahlChips\('Kanal', 'kanal', \[\['', 'Alle Kanäle'\]\]\.concat\(x\.kanaele\.map\(\(n\) => \[n, n\]\)\), x\.kanal, \(w\) => waehlen\(\{ verkaufKanal: w \}\)\)/);
+  // … und sie gilt für alles darunter: Karte mit Zahl und Jahreslinie, Monate, Aufteilung; am Ende die Themen als Zeilen
+  assert.match(ansichten, /summeKarte\(v, waehlen\),\s*v\.jv \? \[h\('h2', \{ id: 'monate-anker' \}, h\('strong', \{ text: 'Pro' \}\), ' Monat'\), monateKarte\(v, waehlen\)\] : null,\s*aufteilung\(v, waehlen\),\s*zahlenAbschnitt\(\['ueberblick', 'vergleich', 'rohertrag', 'bestellungen', 'rekorde'\]\)\);/);
+  assert.match(ansichten, /H\.auswerten\(a\.zeilen, kosten, a\.heute, \{ kennzahl: Z\.diagramm, jahr: jahr, kanal: Z\.verkaufKanal,/);
+  assert.match(ansichten, /const kosten = zd && zd\.mehr && zd\.mehr\.marge \? zd\.mehr\.marge\.kostenJeZeile : null;/);
+  assert.match(ansichten, /const jv = x\.jahr === null \? null : H\.jahresVergleich\(x\.werte, a\.heute, x\.jahr\);/, 'die Diagramme rechnen mit den Monatswerten der Wahl');
+  assert.match(ansichten, /if \(jv && !davor\) jv\.monate\.forEach\(\(m\) => \{ m\.vorjahr = null; \}\);/, 'erstes Jahr: keine Linie und keine Balken für ein Jahr davor');
   assert.match(lies('docs/hilfen.js'), /verluste: verluste, mehr: fifo\.mehr, flaschen: flaschen, kostenJeZeile: fifo\.kosten,/);
-  ['dashSeite', 'dashKennzahl', 'dashJahr', 'dashKanal', 'dashNach', 'dashAlle'].forEach((feld) => {
+  // Umsatz und Rohertrag sind Euro; fehlen Herstellkosten, steht ein Strich statt einer Zahl
+  assert.match(ansichten, /const IST_EURO = \{ umsatz: true, rohertrag: true \};/);
+  assert.match(ansichten, /function mitEinheit\(z, g\) \{\s*if \(!zahlDa\(z\)\) return '–';/);
+  // Ein Tipp auf einen Kanal wählt ihn (und springt nach oben), ein Tipp auf einen Kunden öffnet sein Blatt, ein Jahr in der Liste wählt das Jahr
+  assert.match(ansichten, /\(\) => \{ waehlen\(\{ verkaufKanal: gr\.schluessel \}\); S\.nachOben\('verkaeufe'\); \}, 'Nur diesen Kanal zeigen'\)/);
+  assert.match(ansichten, /teilZeile\(gr, g, gr\.name, mitAnteil, \(\) => S\.kundeZeigen\(gr\.schluessel\), 'Details'\)/);
+  assert.match(ansichten, /\(\) => waehlen\(\{ verkaufJahr: Number\(j\.schluessel\) \}\), 'Nur dieses Jahr zeigen'\)/);
+  // Über den Jahreswechsel blättern wechselt die Wahl oben mit
+  assert.match(ansichten, /waehlen\(\{ verkaufJahr: Number\(monat\.slice\(0, 4\)\), monatWahl: monat \}\);/);
+  // Kein erzwungener Fokus nach einem Tipp (blauer Rahmen auf dem iPhone): nur wer mit der Tastatur unterwegs ist, behält ihn
+  assert.match(ansichten, /f\.dataset\.fokus !== undefined && f\.matches\(':focus-visible'\) \? f\.dataset\.fokus : null;/);
+  assert.match(ansichten, /const tastatur = ev\.currentTarget\.matches\(':focus-visible'\);/);
+  // Codex v36: unbekannter Rohertrag (Herstellkosten fehlen) bekommt im Monatsdiagramm keinen Balken und einen Strich
+  // statt „0“; gibt es den gewählten Kanal nicht mehr, wird erst die Wahl berichtigt; entfällt ein Thema, geht sein Blatt zu;
+  // die Start-Kacheln nennen den Umsatz auch für Vorleseprogramme
+  assert.match(ansichten, /text: da \? H\.achsenText\(Math\.round\(m\.dieses\[g\]\)\) : m\.dieses \? '–' : '',/);
+  assert.match(ansichten, /if \(x\.kanal !== Z\.verkaufKanal\) \{ Z\.verkaufKanal = x\.kanal; x = rechnen\(jahr0\); \}/);
+  assert.match(ansichten, /if \(!neu\) return S\.blattSchliessen\(true\);/);
+  assert.strictEqual((ansichten.match(/\+ umsatzDazu\(/g) || []).length, 3);
+  // Ohne die einzelnen Verkaufszeilen (alter gespeicherter Stand) sagt der Reiter das, statt halb zu rechnen
+  assert.match(ansichten, /leerKarte\('Verkäufe noch nicht geladen',/);
+  assert.doesNotMatch(ansichten, /function kanaeleTeil|function kanalListe|function summenZeile|function jahrKarte|Z\.zeitraum\b/);
+  // Themen als Zeilen im passenden Reiter: Kunden in Kunden, Bestand und Abgänge im Lager; je Thema ein Blatt
+  assert.match(ansichten, /nachfassenKarte\(a\),\s*zahlenListe\(\['kunden'\]\),/);
+  assert.match(ansichten, /lagerListe\(Z\.daten\), zahlenListe\(\['bestand', 'abgaenge'\]\)\);/);
+  assert.match(ansichten, /h\('button', \{ type: 'button', class: 'zeilen-knopf', 'data-zahlen': id, onclick: \(\) => S\.zahlenZeigen\(id\) \},/);
+  assert.match(ansichten, /S\.zahlenZeigen = function \(id\) \{\s*const inhalt = zahlenInhalt\(id\);\s*if \(inhalt\) S\.blattZeigen\(ZAHLEN_TITEL\[id\], inhalt, \(\) => document\.querySelector\('#app \[data-zahlen="' \+ id \+ '"\]'\), true\);/);
+  assert.doesNotMatch(ansichten + css, /dash-nav|dash-oben|dash-weiter|dashboardSeite\(|auswertenInhalt|dash-chips/, 'keine Seiten-Reihe mehr');
+  // Start: Umsatz steht in den Kacheln, der Rohertrag hat eine Zeile, die in die Verkäufe mit Rohertrag führt
+  assert.match(ansichten, /const mitUmsatz = \(x\) => 'Flaschen' \+ \(x && typeof x\.umsatz === 'number' \? ', ' \+ H\.euroFormat\(x\.umsatz\) : ''\);/);
+  assert.match(ansichten, /class: 'karte zeilen-karte', onclick: \(\) => zuVerkaeufen\(null, 'rohertrag'\) \}/);
+  assert.match(ansichten, /Object\.assign\(Z, \{ diagramm: kennzahl \|\| 'flaschen', verkaufKanal: '', verkaufJahr: monat \? Number\(monat\.slice\(0, 4\)\) : undefined, verkaufAlle: false \}\);/);
+  assert.match(kern, /ertrag: \[\['path', /);
+  // Wahl im Zustand, beim Abmelden zurückgesetzt; die Felder des früheren Dashboards sind weg
+  ['verkaufJahr', 'verkaufKanal', 'verkaufNach', 'verkaufAlle'].forEach((feld) => {
     assert.match(kern, new RegExp('\\n      ' + feld + ': '), feld + ' im Zustand');
-    assert.match(lies('docs/app.js'), new RegExp('function vergessen\\(\\)[\\s\\S]{0,1500}' + feld + ': '), feld + ' wird beim Abmelden zurückgesetzt');
+    assert.match(app, new RegExp('function vergessen\\(\\)[\\s\\S]{0,1500}' + feld + ': '), feld + ' wird beim Abmelden zurückgesetzt');
   });
-  assert.match(ansichten, /umschalter\('Kennzahl', \[\['flaschen', 'Flaschen'\], \['umsatz', 'Umsatz'\]\]\.concat\(x\.mitKosten \? \[\['rohertrag', 'Rohertrag'\]\] : \[\]\)/);
-  assert.match(ansichten, /dashChips\('Zeitraum', 'jahr',/);
-  assert.match(ansichten, /dashChips\('Kanal', 'kanal',/);
-  assert.match(ansichten, /umschalter\('Aufteilen', \(x\.jahr === null \? \[\['jahr', 'Jahr'\]\] : \[\]\)\.concat\(\[\['monat', 'Monat'\], \['kanal', 'Kanal'\], \['kunde', 'Kunde'\]\]\)/);
-  // Breiter Bildschirm (Laptop): zwei Spalten als Raster aus zwei Kästen, verteilt in hilfen.js. Keine CSS-Spalten
-  // (column-count zerriss in Safari die Tabellen) und kein :has für das Blatt (ältere iPhones)
+  assert.doesNotMatch(kern + app + ansichten, /dashSeite|dashKennzahl|dashJahr|dashKanal|dashNach|dashAlle/);
+  // Blätter mit vielen Zahlen sind auf breiten Bildschirmen breit (zwei Spalten als Raster, verteilt in hilfen.js);
+  // keine feste Höhe mehr, keine CSS-Spalten (zerrissen in Safari die Tabellen), kein :has (ältere iPhones)
+  assert.match(kern, /S\.blattZeigen = function \(titel, inhalt, zurueck, gross\) \{[\s\S]{0,500}b\.classList\.toggle\('gross', gross === true\);/);
+  assert.strictEqual((ansichten.match(/S\.blattZeigen\(/g) || []).length, 3, 'Zahlen, Kunde, Lager');
+  assert.strictEqual((ansichten.match(/S\.blattZeigen\([^;]*, true\);/g) || []).length, 1, 'nur die Zahlen-Blätter sind groß');
   assert.match(ansichten, /H\.spaltenTeilen\(bloecke\.map\(/);
   assert.match(dash, /@media \(min-width: 900px\) \{\s*\.blatt\.gross \{ max-width: 1040px; \}\s*\.dash-spalten \{ display: grid; grid-template-columns: repeat\(2, minmax\(0, 1fr\)\);/);
-  assert.doesNotMatch(dash, /column-count|column-span|:has\(/);
-  // Die Chip-Reihen lassen sich seitlich wischen, ohne dass der Rest mitgeht; senkrecht scrollt die Seite auch von dort
-  assert.match(dash, /\.dash-nav, \.dash-chips \{ display: flex; gap: 8px; overflow-x: auto; scrollbar-width: none; overscroll-behavior-x: contain;/);
-  assert.doesNotMatch(dash, /touch-action/);
+  assert.doesNotMatch(css, /\.blatt\.gross \{ height|column-count|column-span/);
+  assert.doesNotMatch(dash, /:has\(|touch-action/);
 });

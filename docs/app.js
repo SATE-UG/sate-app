@@ -109,7 +109,7 @@
 
   S.renderAlle = function () {
     Object.keys(S.ansichten).forEach((n) => S.ansichten[n]());
-    if (typeof S.dashboardAuffrischen === 'function') S.dashboardAuffrischen(); // offenes Dashboard zeigt den neuen Stand
+    if (typeof S.zahlenAuffrischen === 'function') S.zahlenAuffrischen(); // ein offenes Zahlen-Blatt zeigt den neuen Stand
     standZeigen();
     S.offlineZeigen();
   };
@@ -396,7 +396,7 @@
     verlaufNr++;
     Object.assign(Z, { code: '', name: '', daten: null, frisch: false, laedt: false, verlauf: null, verlaufLaedt: false,
       verlaufFehler: '', verlaufVeraltet: true, diagramm: 'flaschen', zeitraum: 'jahr', monatWahl: null, alleKunden: false, kundenZeitraum: 'jahr', kundenSuche: '', kundenKanal: '', kundenSortierung: 'menge', alleNachfassen: false, verlaufAlle: false, zuordnenOffen: false, offline: false, ladenNachholen: false,
-      dashSeite: 'ueberblick', dashKennzahl: 'flaschen', dashJahr: undefined, dashKanal: '', dashNach: 'monat', dashAlle: false, sitzung: Z.sitzung + 1 });
+      verkaufJahr: undefined, verkaufKanal: '', verkaufNach: 'kanal', verkaufAlle: false, sitzung: Z.sitzung + 1 });
     meldung('');
     S.frageSchliessen();
     S.blattSchliessen(true);

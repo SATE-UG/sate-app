@@ -29,7 +29,7 @@
       verlaufLaedt: false,
       verlaufFehler: '',
       verlaufVeraltet: true,
-      diagramm: 'flaschen',
+      diagramm: 'flaschen', // Verkäufe: Kennzahl 'flaschen' | 'umsatz' | 'rohertrag' (gilt für den ganzen Reiter)
       zeitraum: 'jahr',
       monatWahl: null,   // Verkäufe: gewählter Monat (`JJJJ-MM`, auch im Vorjahr), null = letzter voller Monat
       alleKunden: false, // Kunden: alle statt der ersten 20
@@ -41,12 +41,10 @@
       rechenwegOffen: false, // Start: „So rechnet die App“ aufgeklappt?
       zuordnenOffen: false, // Lager: „Verkäufe zuordnen“ aufgeklappt?
       verlaufAlle: false,   // Lager: ganzen Verlauf statt der letzten 10 zeigen
-      dashSeite: 'ueberblick', // Dashboard: gezeigte Seite (jedes Öffnen beginnt beim Überblick)
-      dashKennzahl: 'flaschen', // Dashboard, Auswerten: 'flaschen' | 'umsatz' | 'rohertrag'
-      dashJahr: undefined,  // Auswerten: Jahr (Zahl), null = alle Jahre, undefined = noch nichts gewählt (dann das laufende Jahr)
-      dashKanal: '',        // Auswerten: nur dieser Kanal ('' = alle)
-      dashNach: 'monat',    // Auswerten: aufteilen nach 'jahr' | 'monat' | 'kanal' | 'kunde'
-      dashAlle: false,      // Auswerten: alle Zeilen statt der ersten zehn zeigen
+      verkaufJahr: undefined, // Verkäufe: gewähltes Jahr (Zahl), null = alle Jahre, undefined = noch nichts gewählt (dann das laufende Jahr)
+      verkaufKanal: '',     // Verkäufe: nur dieser Kanal ('' = alle)
+      verkaufNach: 'kanal', // Verkäufe: Aufteilung nach 'kanal' | 'kunde' (mit gewähltem Kanal immer Kunden)
+      verkaufAlle: false,   // Verkäufe: alle Zeilen der Aufteilung statt der ersten zwölf
     },
     ansichten: {},
   };
@@ -100,6 +98,7 @@
     storno: [['path', { d: 'M9 14 4.5 9.5 9 5' }], ['path', { d: 'M4.5 9.5H14a5.5 5.5 0 0 1 0 11h-3' }]],
     ok: [['circle', { cx: 12, cy: 12, r: 9 }], ['path', { d: 'M8 12.3l2.7 2.7L16 9.6' }]],
     fehler: [['circle', { cx: 12, cy: 12, r: 9 }], ['path', { d: 'M12 7.5v5.5' }], ['path', { d: 'M12 16.4v.1' }]],
+    ertrag: [['path', { d: 'M4 16.5l5-5 4 3.5 7-8' }], ['path', { d: 'M15.5 7H20v4.5' }]],
     info: [['circle', { cx: 12, cy: 12, r: 9 }], ['path', { d: 'M12 11v5.5' }], ['path', { d: 'M12 7.6v.1' }]],
     flasche: [['path', { d: FLASCHE }]],
     lupe: [['circle', { cx: 10.5, cy: 10.5, r: 6.5 }], ['path', { d: 'M15.4 15.4 20 20' }]],
@@ -345,8 +344,7 @@
   S.blattZeigen = function (titel, inhalt, zurueck, gross) {
     const b = S.el('blatt');
     if (!b || typeof b.showModal !== 'function') return false;
-    // `gross === true` (Dashboard): immer volle Höhe, auf breiten Bildschirmen auch breit (style.css). So springt das
-    // Blatt nicht, wenn sein Inhalt wechselt und mal kurz, mal lang ist.
+    // `gross === true` (Blätter mit vielen Zahlen): auf breiten Bildschirmen breit, dort stehen die Blöcke in zwei Spalten (style.css)
     b.classList.toggle('gross', gross === true);
     S.el('blatt-titel').textContent = titel;
     S.fuellen(S.el('blatt-inhalt'), inhalt); // verschachtelte Listen flach, null fällt weg

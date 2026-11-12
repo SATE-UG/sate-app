@@ -925,10 +925,14 @@
 
   const MONAT_MUSTER = /^\d{4}-(0[1-9]|1[0-2])$/;
   const leerSumme = () => ({ flaschen: 0, umsatz: 0 });
-  const summeRunden = (x) => (x ? { flaschen: runde(x.flaschen), umsatz: runde(x.umsatz) } : null);
+  // Seit v36 läuft der Rohertrag mit, wenn die Quelle ihn mitbringt (Verkäufe mit Herstellkosten, siehe auswerten →
+  // werte); null heißt: Herstellkosten unbekannt. Ohne das Feld bleibt alles wie bisher bei Flaschen und Umsatz.
+  const summeRunden = (x) => (!x ? null : x.rohertrag === undefined ? { flaschen: runde(x.flaschen), umsatz: runde(x.umsatz) }
+    : { flaschen: runde(x.flaschen), umsatz: runde(x.umsatz), rohertrag: x.rohertrag === null ? null : runde(x.rohertrag) });
   function addieren(ziel, x) {
     ziel.flaschen += x.flaschen;
     ziel.umsatz += x.umsatz;
+    if (x.rohertrag !== undefined) ziel.rohertrag = x.rohertrag === null || ziel.rohertrag === null ? null : (ziel.rohertrag || 0) + x.rohertrag;
     return ziel;
   }
 
@@ -1056,7 +1060,7 @@
   }
 
   /**
-   * Laufende Summen über die 12 Monate. Ab dem ersten fehlenden Monat (noch nicht da oder unbekannt) bleibt alles null,
+   * Laufende Summen über die 12 Monate. Ab dem ersten fehlenden Monat (noch nicht da, unbekannt oder Wert null) bleibt alles null,
    * sonst wäre eine spätere Summe nicht mehr „seit Januar“. `groesse` = 'flaschen' | 'umsatz'.
    */
   function kumuliert(monate, schluessel, groesse) {
@@ -1064,7 +1068,8 @@
     let luecke = false;
     return (monate || []).map((m) => {
       const x = m && m[schluessel];
-      if (!x || luecke) { luecke = true; return null; }
+      // null in der gewählten Größe heißt unbekannt (Rohertrag ohne Herstellkosten, Codex v36): ab dort keine Summe mehr
+      if (!x || luecke || x[groesse] === null) { luecke = true; return null; }
       summe += istZahl(x[groesse]) ? x[groesse] : 0;
       return runde(summe);
     });
@@ -1949,6 +1954,8 @@
    *     null, unbekannter Kanal → '', 'jahr' bei gewähltem Jahr → 'monat'),
    *   mitKosten, jahre: Jahre mit Verkaufszeilen (neuestes zuerst), kanaele: alle Kanäle nach Flaschen über alles (feste
    *     Reihenfolge, egal was gewählt ist), erster: erster Monat mit einer Zeile,
+   *   werte (seit v36): Funktion Monat → { flaschen, umsatz } des gewählten Kanals über alle Jahre, mit Herstellkosten
+   *     dazu `rohertrag` (null, wo sie fehlen). Passt in jahresVergleich, so folgen die Diagramme der Verkäufe der Wahl,
    *   summe: Posten der Auswahl, dazu { bestellungen (wie bestellListe, Flaschen im Plus), kunden (unter dem Strich
    *     Flaschen im Plus) },
    *   vergleich: nur mit gewähltem Jahr und Verkäufen davor, sonst null: { jahr (das Jahr davor), bis (letzter
@@ -1956,9 +1963,12 @@
    *     Das laufende Jahr vergleicht seine vollen Monate mit denselben Monaten im Jahr davor, ein früheres Jahr ganz,
    *   gruppen: je { schluessel, name, laufend (Monat oder Jahr zählt erst bis heute), Posten, wert (die gewählte
    *     Kennzahl), balken (Prozent des größten Werts, 0 bei Minus), anteil (Kanal und Kunde: Prozent an allem im Plus;
-   *     sonst null), p (Jahr und Monat: Veränderung der gewählten Kennzahl zum Jahr davor wie bei `vergleich`, beim
-   *     laufenden Monat null; sonst null) }. Jahre und Monate neueste zuerst (Monate vom ersten Verkauf bzw. Januar bis
-   *     heute, auch ohne Verkäufe), Kanäle und Kunden nach der gewählten Kennzahl.
+   *     sonst null), p (Veränderung der gewählten Kennzahl zum Jahr davor: Jahr und Monat wie bei `vergleich`, beim
+   *     laufenden Monat null; Kanal und Kunde seit v36 über dasselbe Fenster wie `vergleich`, ohne gewähltes Jahr
+   *     null), neu (Kanal und Kunde: im Fenster des Jahres davor keine Flaschen, jetzt schon) }. Jahre und Monate
+   *     neueste zuerst (Monate vom ersten Verkauf bzw. Januar bis heute, auch ohne Verkäufe), Kanäle und Kunden nach
+   *     der gewählten Kennzahl. Kanäle, die im Fenster des Jahres davor verkauft haben und jetzt fehlen, stehen mit 0
+   *     dabei (sonst verschwinden Verluste).
    * Posten = { flaschen, umsatz, kosten, rohertrag, marge (Prozent vom Umsatz), proFlasche (Umsatz), rohProFlasche },
    * gerechnet wie in dashboardMehr; ohne Herstellkosten (oder wo sie einer berührten Abfüllung fehlen) sind kosten,
    * rohertrag, marge und rohProFlasche null.
@@ -2025,7 +2035,7 @@
     const vergleich = vg ? Object.assign({ jahr: jahr - 1, bis: jahr === diesesJahr ? f.bis : null }, vg) : null;
 
     // Gruppen
-    const gruppe = (schluessel, name, p, extra) => Object.assign({ schluessel: schluessel, name: name, laufend: false }, p, { wert: p[kennzahl], balken: 0, anteil: null, p: null }, extra);
+    const gruppe = (schluessel, name, p, extra) => Object.assign({ schluessel: schluessel, name: name, laufend: false }, p, { wert: p[kennzahl], balken: 0, anteil: null, p: null, neu: false }, extra);
     let gruppen;
     if (nach === 'jahr') {
       gruppen = jahre.map((j) => {
@@ -2049,14 +2059,44 @@
         const n = nach === 'kanal' ? x.z.kanal : x.z.kunde || '(ohne Name)';
         g.namen[n] = (g.namen[n] || 0) + 1;
       });
+      // Mit gewähltem Jahr: je Gruppe die Veränderung zum Jahr davor über dasselbe Fenster wie `vergleich`
+      const jetztF = Object.create(null);
+      const vorher = Object.create(null);
+      if (vg) {
+        const v0 = monatPlus(f.von, -12);
+        const v1 = monatPlus(f.bis, -12);
+        imKanal.forEach((x) => {
+          const k = x.z[feld];
+          if (x.z.monat >= f.von && x.z.monat <= f.bis) dazu(jetztF[k] = jetztF[k] || leer(), x);
+          else if (x.z.monat >= v0 && x.z.monat <= v1) dazu(vorher[k] = vorher[k] || leer(), x);
+        });
+        // Kanäle, die im Jahr davor verkauft haben und jetzt fehlen, mit 0 zeigen
+        if (nach === 'kanal') Object.keys(vorher).forEach((k) => { if (!sammeln[k] && vorher[k].flaschen > 0) sammeln[k] = { s: leer(), namen: { [k]: 1 } }; });
+      }
       const rang = (g) => (g.wert === null ? -Infinity : g.wert);
-      gruppen = Object.keys(sammeln).map((k) => gruppe(k, haeufigsterName(sammeln[k].namen), posten(sammeln[k].s)))
-        .sort((a, b) => rang(b) - rang(a) || b.flaschen - a.flaschen || b.umsatz - a.umsatz || nachName(a.name, b.name));
+      gruppen = Object.keys(sammeln).map((k) => {
+        const g = gruppe(k, haeufigsterName(sammeln[k].namen), posten(sammeln[k].s));
+        if (vg) {
+          const a = posten(jetztF[k] || leer());
+          const v = posten(vorher[k] || leer());
+          g.p = a[kennzahl] === null || v[kennzahl] === null ? null : veraenderung(a[kennzahl], v[kennzahl]);
+          g.neu = !(v.flaschen > 0) && g.flaschen > 0;
+        }
+        return g;
+      }).sort((a, b) => rang(b) - rang(a) || b.flaschen - a.flaschen || b.umsatz - a.umsatz || nachName(a.name, b.name));
       const plus = gruppen.reduce((x, g) => x + Math.max(0, g.wert || 0), 0);
       gruppen.forEach((g) => { g.anteil = plus > 0 ? zehntel((Math.max(0, g.wert || 0) / plus) * 100) : 0; });
     }
     const hoch = gruppen.reduce((x, g) => Math.max(x, g.wert || 0), 0);
     gruppen.forEach((g) => { g.balken = hoch > 0 && g.wert > 0 ? zehntel((g.wert / hoch) * 100) : 0; });
+
+    // Monatswerte des gewählten Kanals über alle Jahre, für die Diagramme (jahresVergleich)
+    const proMonat = Object.create(null);
+    imKanal.forEach((x) => dazu(proMonat[x.z.monat] = proMonat[x.z.monat] || leer(), x));
+    const werte = (m) => {
+      const p = posten(proMonat[m] || leer());
+      return mitKosten ? { flaschen: p.flaschen, umsatz: p.umsatz, rohertrag: p.rohertrag } : { flaschen: p.flaschen, umsatz: p.umsatz };
+    };
 
     // Bestellungen und Kunden der Auswahl
     const proKunde = Object.create(null);
@@ -2066,7 +2106,7 @@
       kunden: Object.keys(proKunde).filter((s) => proKunde[s] > 0).length,
     });
     return { kennzahl: kennzahl, jahr: jahr, kanal: kanal, nach: nach, mitKosten: mitKosten, jahre: jahre, kanaele: kanaele, erster: erster,
-      summe: summe, vergleich: vergleich, gruppen: gruppen };
+      werte: werte, summe: summe, vergleich: vergleich, gruppen: gruppen };
   }
 
   const hilfen = {
