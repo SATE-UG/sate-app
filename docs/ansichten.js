@@ -422,12 +422,18 @@
     S.aktivitaetZeigen();
   };
 
-  // Dashboard (Blatt, seit v30; seit v31 mit vielen weiteren Zahlen zum Runterscrollen) -----------------------------
+  // Dashboard (Blatt, seit v30; seit v31 mit vielen weiteren Zahlen; seit v35 in Seiten geteilt) --------------------
   // Wunsch aus dem Team (2026-11-10): alles Wichtige klein auf einem Bildschirm, mit Umsatz, den Monaten samt Vergleich
   // zum Vormonat und den letzten Bestellungen. Der Start bleibt sonst, wie er ist: Die Karte „Dashboard“ ganz oben
-  // (dashboardEinstieg) öffnet dieses Blatt. Oben der Überblick, darunter für Zahlenfreunde immer mehr: Vergleiche zum Vorjahr, Quartale,
-  // Jahre, Rohertrag und Marge (seit v32), Preise, Bestellgrößen, Kunden, Bestand, Rekorde. Gerechnet wird in H.dashboardDaten und H.dashboardMehr,
-  // hier steht nur die Darstellung.
+  // (dashboardEinstieg) öffnet dieses Blatt. Für Zahlenfreunde gibt es viel mehr: Vergleiche zum Vorjahr, Quartale,
+  // Jahre, Rohertrag und Marge (seit v32), Preise, Bestellgrößen, Kunden, Bestand, Rekorde.
+  // Rückmeldung aus dem Team (2026-11-12): schön zum Durchlesen, aber wer eine Zahl sucht, scrollt sich tot, und es ist
+  // klein. Seit v35 ist das Dashboard deshalb in Seiten geteilt: oben eine Reihe Chips, die beim Scrollen stehen
+  // bleibt (Überblick, Auswerten, Vergleich, Rohertrag, …), jede Seite ist kurz, unten geht es mit einem Tipp zur
+  // nächsten weiter. Neu ist die Seite „Auswerten“: Kennzahl (Flaschen, Umsatz, Rohertrag), Jahr und Kanal wählen,
+  // aufteilen nach Monat, Kanal oder Kunde, in der normalen Schriftgröße der App. Auf breiten Bildschirmen (Laptop)
+  // ist das Blatt breit und die Blöcke stehen in zwei Spalten (style.css).
+  // Gerechnet wird in H.dashboardDaten, H.dashboardMehr und H.auswerten, hier steht nur die Darstellung.
 
   /** Kachel: Beschriftung, Hauptzahl mit Einheit, darunter weitere Zeilen (zweite Zahl, Vergleich). */
   function dashKachel(label, wert, einheit, zeilen) {
@@ -478,8 +484,11 @@
       h('dt', { text: was }), h('dd', {}, zahl, kleiner ? h('span', { class: 'dash-unter', text: kleiner }) : null))));
   }
 
-  /** Inhalt des Dashboards aus dem gezeigten Stand; ohne Daten null. */
-  function dashboardInhalt() {
+  /**
+   * Seiten des Dashboards aus dem gezeigten Stand, je { id, name (Chip), titel (Überschrift), inhalt (Knoten), fuss
+   * (Sätze unter der Seite) }. Welche es gibt, hängt von den Daten ab (ohne Herstellkosten kein Rohertrag). Ohne Daten null.
+   */
+  function dashboardSeiten() {
     const u = Z.daten;
     const a = auswertung();
     const d = u && a ? H.dashboardDaten(a.zeilen, a.werte, a.jv, a.heute) : null;
@@ -543,14 +552,37 @@
         alleKanaele.map((x, i) => ({ zellen: [h('span', { class: 'dash-name' }, punkt(i), x.kanal), fl(x.flaschen), klein(anteil(x.anteilFlaschen)),
           eur(x.umsatz), klein(anteil(x.anteilUmsatz))] }))),
     ] : null;
-    const teile = [h('h3', { class: 'nur-vorlesen', text: 'Überblick' }), kacheln, dashTitel('Monate', 'Veränderung zum Vormonat'), monate, bestellungen, kanaele];
-    if (!mehr) return teile;
+    const seiten = [];
+    const seite = (id, name, titel, fuss) => {
+      const neu = { id: id, name: name, titel: titel, inhalt: [], fuss: fuss || [] };
+      seiten.push(neu);
+      return neu.inhalt;
+    };
+    let teile = seite('ueberblick', 'Überblick', 'Überblick');
+    teile.push(kacheln, dashTitel('Monate', 'Veränderung zum Vormonat'), monate, bestellungen, kanaele);
+    if (!mehr) return seiten;
+    const mg = mehr.marge;
+    const vl = mg ? mg.verluste : null; // null: Die Schnittstelle kennt Abgänge und Schwund noch nicht
+    // Fußnoten: unter jeder Seite nur die Sätze, die dort etwas erklären
+    const F = {
+      stand: 'Stand ' + H.datumText(a.heute) + '. Umsatz netto mit Pfand.',
+      voll: 'Volle Monate heißt ohne den laufenden.',
+      best: 'Eine Bestellung ist eine Rechnung, ohne Nummer ein Kunde an einem Tag. Ältere Zeilen ohne Rechnungsdatum zählen je Zeile als eine Bestellung, das ist meist ein Kunde in einem Monat.',
+      roh: 'Rohertrag ist Umsatz minus Herstellkosten, ohne Marketing, Lieferung und andere Kosten.',
+      fifo: 'Die Herstellkosten kommen nach First in, First out aus den Abfüllungen: erst die älteste, dann die nächste.',
+      weg: 'Promo, Eigenverbrauch, Bruch und Schwund laut Inventur brauchen die Abfüllungen genauso auf. Diese Flaschen sind bezahlt und weg: Ihre Herstellkosten stehen auf der Seite „Abgänge“. Rohertrag und Marge beziehen sich nur auf verkaufte Flaschen, auch je Abfüllung.',
+      wegHier: 'Promo, Eigenverbrauch, Bruch und Schwund laut Inventur brauchen die Abfüllungen genauso auf wie Verkäufe. Diese Flaschen sind bezahlt und weg, hier stehen ihre Herstellkosten. Rohertrag und Marge beziehen sich nur auf verkaufte Flaschen, auch je Abfüllung.',
+      luecke: 'Was schon fehlte, als zum ersten Mal alle Lager gezählt waren, ist die alte Lücke: Niemand weiß, wann und aus welcher Abfüllung diese Flaschen weggingen. Sie leeren die Abfüllung, die am Zähltag dran war, ihr Geld zählt aber zu keinem Jahr und keiner Abfüllung.',
+      netto: 'Herstellkosten netto, wie im Tab Abfüllungen eingetragen.',
+    };
+    // Auswerten (seit v35): braucht die einzelnen Verkaufszeilen
+    if (mehr.gesamt) seite('auswerten', 'Auswerten', 'Auswerten').push(auswertenInhalt(a, mehr));
 
     // Im Vergleich ----------------------------------------------------------------------------------------------
     const erster = mehr.gesamt ? mehr.gesamt.erster : null;
     const vjZeile = (name, x, extra) => Object.assign({ zellen: [name, fl(x.flaschen), dashProzent(x.pFlaschen), eur(x.umsatz), dashProzent(x.pUmsatz)] }, extra);
+    teile = seite('vergleich', 'Vergleich', 'Im Vergleich', [F.stand, F.voll].concat(mehr.gesamt ? [F.best] : []));
     teile.push(
-      h('h3', { class: 'dash-gruppe', text: 'Im Vergleich' }),
       dashTitel('Zum Vorjahr', 'volle Monate bis ' + H.monatFormat(mehr.letzterMonat)),
       dashTabelle('s5 dash-zebra', 'Volle Monate gegen dieselben Monate im Vorjahr', spalten5({ vorlesen: 'Zeitraum' }, 'zum Vorjahr'),
         mehr.trend.map((x) => vjZeile(x.art === 'jahr' ? jahr + ' bis ' + H.monatFormat(x.bis) : x.monate === 1 ? H.monatName(x.bis) : x.monate + ' Monate', x))),
@@ -564,7 +596,7 @@
       dashTitel('Quartale ' + jahr, 'zum Vorjahresquartal'),
       dashTabelle('s5 dash-zebra', 'Quartale ' + jahr + ' gegen das Vorjahresquartal', spalten5({ vorlesen: 'Quartal' }, 'zum Vorjahresquartal'),
         mehr.quartale.map((x) => vjZeile(nameMit('Q' + x.quartal, x.laufend ? 'bisher' : ''), x))));
-    if (!mehr.gesamt) return teile;
+    if (!mehr.gesamt) return seiten;
 
     const g = mehr.gesamt;
     teile.push(
@@ -594,8 +626,6 @@
     // Seit v34 dasselbe je Abfüllung, und die alte Lücke steht für sich: Flaschen, die schon fehlten, als zum ersten
     // Mal alle Lager gezählt waren. Niemand weiß, wann und aus welcher Abfüllung sie weggingen, deshalb zählt ihr Geld
     // zu keinem Jahr und keiner Abfüllung, nur zu „seit dem Start“.
-    const mg = mehr.marge;
-    const vl = mg ? mg.verluste : null; // null: Die Schnittstelle kennt Abgänge und Schwund noch nicht
     const lk = vl ? vl.luecke : null;
     const lueckeName = (flaschen) => (flaschen < 0 ? 'Altes Plus' : 'Alte Lücke');
     // Flaschen, die weggehen, mit Minus (zurückgekommene mit Plus)
@@ -630,8 +660,8 @@
       // „Seit dem Start“ nur weglassen, wenn es je Art dasselbe zeigt wie das Jahr (gleiche Summen allein reichen nicht:
       // Promo und ein Mehrbestand aus früheren Jahren können sich aufheben) und es keine alte Lücke gibt
       const nurDiesesJahr = vl && !lk && vl.arten.every((x) => x.gesamt.flaschen === x.jahr.flaschen && x.gesamt.kosten === x.jahr.kosten);
+      teile = seite('rohertrag', 'Rohertrag', 'Rohertrag und Marge', [F.stand, F.voll, F.roh, F.fifo].concat(vl ? [F.weg] : [], [F.netto]));
       teile.push(
-        h('h3', { class: 'dash-gruppe', text: 'Rohertrag und Marge' }),
         dashTitel('Rohertrag ' + jahr, 'Umsatz minus Herstellkosten'),
         mg.fehlt.length ? h('p', { class: 'dash-fuss dash-fehlt', text: 'Für ' + mg.fehlt.join(', ') + ' fehlen die Herstellkosten (Tab Abfüllungen, Spalte „Kosten/Fl (€)“). ' +
           'Wo daraus verkauft wurde, steht deshalb ein Strich.' }) : null,
@@ -673,14 +703,12 @@
         ] : null);
       // Ohne Verkauf weg (seit v33): Promo, Eigenverbrauch, Bruch und Schwund mit dem Geld, das in diesen Flaschen
       // steckt. Eigene Gruppe, damit Rohertrag und Marge oben rein bei den verkauften Flaschen bleiben.
+      if (vl) teile = seite('abgaenge', 'Abgänge', 'Ohne Verkauf weg', [F.stand, F.fifo, F.wegHier].concat(lk ? [F.luecke] : [], [F.netto]));
       if (vl && !vl.anzahl) {
-        teile.push(
-          h('h3', { class: 'dash-gruppe', text: 'Ohne Verkauf weg' }),
-          dashFakten([['Promo, Eigenverbrauch, Bruch, Schwund', '0 Fl.', 'bisher keine Buchung und kein Schwund aus einer Zählung']]));
+        teile.push(dashFakten([['Promo, Eigenverbrauch, Bruch, Schwund', '0 Fl.', 'bisher keine Buchung und kein Schwund aus einer Zählung']]));
       } else if (vl) {
         const f = mg.flaschen;
         teile.push(
-          h('h3', { class: 'dash-gruppe', text: 'Ohne Verkauf weg' }),
           dashTitel(nurDiesesJahr ? 'Promo, Bruch, Schwund' : 'Promo, Bruch, Schwund ' + jahr, 'zum Herstellpreis'),
           dashTabelle('weg', 'Flaschen, die ' + jahr + ' ohne Verkauf weggingen, mit ihren Herstellkosten', wegKopf('Art'), wegZeilen('jahr')),
           nurDiesesJahr ? null : [
@@ -718,8 +746,8 @@
     // Grenzen wie gerechnet: mehr als `abKisten`, höchstens `bisKisten` (25 Flaschen sind „über 1 bis 4 Kisten“)
     const groesse = (x) => (x.abKisten === 0 ? 'bis 1 Kiste' : 'über ' + x.abKisten + (x.bisKisten === null ? '' : ' bis ' + x.bisKisten) + ' Kisten');
     const wann = (x) => (x.datum ? H.datumText(x.datum) : monatLang(x.monat));
+    teile = seite('bestellungen', 'Bestellungen', 'Preise und Bestellungen', [F.stand, F.best]);
     teile.push(
-      h('h3', { class: 'dash-gruppe', text: 'Preise und Bestellungen' }),
       dashTitel('Umsatz pro Flasche', 'netto mit Pfand'),
       dashTabelle('preis dash-zebra', 'Umsatz pro Flasche im laufenden Jahr und im Vorjahr', [{ vorlesen: 'Kanal' }, jahr, String(mehr.jahr - 1), { vorlesen: 'Veränderung' }],
         mehr.preise.map((x) => ({ zellen: [x.name || 'Alle Kanäle', cent(x.proFlasche), leise(cent(x.vorjahr)), dashProzent(x.p)] }))),
@@ -740,8 +768,8 @@
     // Kunden ------------------------------------------------------------------------------------------------------
     const ku = mehr.kunden;
     const top = mehr.top;
+    teile = seite('kunden', 'Kunden', 'Kunden', [F.stand, F.best]);
     teile.push(
-      h('h3', { class: 'dash-gruppe', text: 'Kunden' }),
       dashTitel('Kunden ' + jahr),
       dashFakten([
         ['Kunden mit Bestellung', fl(ku.aktiv)],
@@ -769,8 +797,8 @@
     // verglichen wird, was zu sehen ist: ganze Flaschen
     const uebrigGleich = mg && typeof k.gesamtbestand === 'number' && Math.round(uebrig) === Math.round(k.gesamtbestand);
     const abf = Array.isArray(u.abfuellungen) ? u.abfuellungen : [];
+    teile = seite('bestand', 'Bestand', 'Bestand', [F.stand].concat(mg ? [F.fifo] : [], mg && vl && mg.flaschen.luecke !== 0 ? [F.luecke] : []));
     teile.push(
-      h('h3', { class: 'dash-gruppe', text: 'Bestand' }),
       dashTitel('Bestand und Reichweite'),
       dashFakten([
         typeof k.abgefuellt === 'number' ? ['Abgefüllt seit dem Start', fl(k.abgefuellt) + ' Fl.'] : null,
@@ -823,8 +851,8 @@
 
     // Rekorde und Gesamt ------------------------------------------------------------------------------------------
     const r = mehr.rekorde;
+    teile = seite('rekorde', 'Rekorde', 'Rekorde und Gesamt', [F.stand, F.voll, F.best]);
     teile.push(
-      h('h3', { class: 'dash-gruppe', text: 'Rekorde und Gesamt' }),
       dashTitel('Rekorde'),
       dashFakten([
         r.monatFlaschen ? ['Stärkster Monat nach Flaschen', fl(r.monatFlaschen.flaschen) + ' Fl.', monatLang(r.monatFlaschen.monat)] : null,
@@ -844,30 +872,199 @@
         ['Kunden', fl(g.kunden)],
         g.kunden ? ['Kunden mit mehr als einer Bestellung', fl(g.mehrfach), anteil((g.mehrfach / g.kunden) * 100) + ' der Kunden'] : null,
         g.proMonat ? ['Ø pro Monat', fl(g.proMonat.flaschen) + ' Fl.', eur(g.proMonat.umsatz) + ', volle Monate'] : null,
-      ]),
-      h('p', { class: 'dash-fuss', text: 'Stand ' + H.datumText(a.heute) + '. Umsatz netto mit Pfand. Volle Monate heißt ohne den laufenden. Eine Bestellung ist eine Rechnung, ohne Nummer ein Kunde an einem Tag. Ältere Zeilen ohne Rechnungsdatum zählen je Zeile als eine Bestellung, das ist meist ein Kunde in einem Monat.' +
-        (mg ? ' Rohertrag ist Umsatz minus Herstellkosten, ohne Marketing, Lieferung und andere Kosten. Die Herstellkosten kommen nach First in, First out aus den Abfüllungen: erst die älteste, dann die nächste. Promo, Eigenverbrauch, Bruch und Schwund laut Inventur brauchen die Abfüllungen genauso auf. Diese Flaschen sind bezahlt und weg: Ihre Herstellkosten stehen unter „Ohne Verkauf weg“. Rohertrag und Marge beziehen sich nur auf verkaufte Flaschen, auch je Abfüllung. Was schon fehlte, als zum ersten Mal alle Lager gezählt waren, ist die alte Lücke: Niemand weiß, wann und aus welcher Abfüllung diese Flaschen weggingen. Sie leeren die Abfüllung, die am Zähltag dran war, ihr Geld zählt aber zu keinem Jahr und keiner Abfüllung. Herstellkosten netto, wie im Tab Abfüllungen eingetragen.' : '') }));
-    return teile;
+      ]));
+    return seiten;
+  }
+
+  // Auswerten (Seite im Dashboard, seit v35) ------------------------------------------------------------------------
+  // Eine Zahl finden, ohne alles durchzugehen: oben wählen (Kennzahl, Zeitraum, Kanal), groß die Zahl dieser Auswahl
+  // mit dem, was dazugehört, darunter dieselbe Auswahl aufgeteilt nach Monat, Kanal oder Kunde. Gerechnet wird in
+  // H.auswerten; die Wahl bleibt, solange die App offen ist.
+
+  const AW_ANFANG = 12; // so viele Zeilen der Aufteilung zeigt die Seite zuerst (ein Jahr hat zwölf Monate)
+
+  /** Reihe Chips zum Wählen, darüber klein, was gewählt wird. `wahl` = [[wert, text], …]. */
+  function dashChips(name, schluessel, wahl, aktuell, beiWahl) {
+    return [
+      h('p', { class: 'dash-wahl-name', id: 'dash-wahl-' + schluessel, text: name }),
+      h('div', { class: 'dash-chips', role: 'group', 'aria-labelledby': 'dash-wahl-' + schluessel }, wahl.map(([wert, text]) => h('button', {
+        type: 'button', class: 'chip', 'aria-pressed': wert === aktuell ? 'true' : 'false', 'data-fokus': schluessel + ':' + wert, text: text,
+        onclick: () => { if (wert !== aktuell) beiWahl(wert); },
+      }))),
+    ];
+  }
+
+  /** Inhalt der Seite „Auswerten“; `mehr` aus H.dashboardMehr (bringt die Herstellkosten je Verkaufszeile mit). */
+  function auswertenInhalt(a, mehr) {
+    const rechnen = (jahr) => H.auswerten(a.zeilen, mehr.marge ? mehr.marge.kostenJeZeile : null, a.heute,
+      { kennzahl: Z.dashKennzahl, jahr: jahr, kanal: Z.dashKanal, nach: Z.dashNach });
+    let x = rechnen(Z.dashJahr === undefined ? Number(a.heute.slice(0, 4)) : Z.dashJahr);
+    if (!x) return null;
+    // Noch nichts gewählt und im laufenden Jahr noch kein Verkauf (Anfang Januar): das neueste Jahr mit Verkäufen
+    if (Z.dashJahr === undefined && x.jahr === null && x.jahre.length) x = rechnen(x.jahre[0]);
+    // Die Wahl, wie sie gilt (z. B. ein Kanal, den es nicht mehr gibt → alle)
+    Object.assign(Z, { dashKennzahl: x.kennzahl, dashJahr: x.jahr, dashKanal: x.kanal, dashNach: x.nach });
+    const waehlen = (aenderung) => { Object.assign(Z, aenderung, { dashAlle: false }); dashboardZeichnen(false); };
+    const k = x.kennzahl;
+    const sum = x.summe;
+    const fl = (z) => H.zahlFormat(z, 0);
+    const eur = (z) => (typeof z === 'number' ? H.euroFormat(z) : '–');
+    const cent = (z) => (typeof z === 'number' ? H.zahlFormat(z, 2) + ' €' : '–');
+    const margeText = (z) => (typeof z === 'number' ? H.zahlFormat(z, 1) + ' %' : '–');
+    const NAME = { flaschen: 'Flaschen', umsatz: 'Umsatz', rohertrag: 'Rohertrag' };
+    const klein = (text) => h('p', { class: 'dash-klein', text: text });
+
+    // Die Zahl der Auswahl, groß; darunter der Vergleich zum Jahr davor (beim Rohertrag davor die Marge)
+    const vg = x.vergleich && x.vergleich[k] !== null
+      ? trendChip({ prozent: x.vergleich[k] }, 'zu ' + x.vergleich.jahr + (x.vergleich.bis ? ', Januar bis ' + H.monatName(x.vergleich.bis) : '')) : null;
+    const zahl = h('div', { class: 'aw-zahl', role: 'status' },
+      h('p', { class: 'aw-was', text: NAME[k] + ' ' + (x.jahr === null ? 'seit dem Start' : x.jahr) + (x.kanal ? ', ' + x.kanal : '') }),
+      h('p', { class: 'aw-wert' + (sum[k] < 0 ? ' minus' : '') }, k === 'flaschen' ? fl(sum.flaschen) : eur(sum[k]),
+        k === 'flaschen' ? h('span', { class: 'dash-einheit', text: ' Fl.' }) : null),
+      h('p', { class: 'aw-unter' }, k === 'rohertrag' ? h('span', { class: 'aw-marge', text: 'Marge ' + margeText(sum.marge) }) : null, vg));
+    // Was dazugehört: die anderen Kennzahlen mit ihrem Wert pro Flasche, Bestellungen und Kunden
+    const kacheln = [
+      k !== 'flaschen' ? dashKachel('Flaschen', fl(sum.flaschen), '', k === 'rohertrag' ? [klein(cent(sum.rohProFlasche) + ' je Fl.')] : [klein(cent(sum.proFlasche) + ' je Fl.')]) : null,
+      k !== 'umsatz' ? dashKachel('Umsatz', eur(sum.umsatz), '', [klein(cent(sum.proFlasche) + ' je Fl.')]) : null,
+      x.mitKosten && k !== 'rohertrag' ? dashKachel('Rohertrag', eur(sum.rohertrag), '', [klein('Marge ' + margeText(sum.marge))]) : null,
+      dashKachel('Bestellungen', fl(sum.bestellungen), '', [klein(fl(sum.kunden) + (sum.kunden === 1 ? ' Kunde' : ' Kunden'))]),
+    ].filter(Boolean);
+
+    // Aufteilung als Liste mit Balken: links wer oder wann, rechts die gewählte Kennzahl und klein eine zweite
+    const name = (g) => (x.nach === 'monat' ? (x.jahr === null ? H.monatFormat(g.schluessel, true) : H.monatName(g.schluessel)) : g.name);
+    const haupt = (g) => (k === 'flaschen' ? flaschen(g.flaschen) : eur(g[k]));
+    const zweit = (g) => (k === 'flaschen' ? eur(g.umsatz) : k === 'rohertrag' && g.marge !== null ? 'Marge ' + margeText(g.marge) : flaschen(g.flaschen));
+    const zeile = (g) => h('li', { class: 'rang-zeile' },
+      h('div', { class: 'rang-name' },
+        h('span', { class: 'rang-titel' }, name(g), g.laufend ? h('span', { class: 'aw-neben', text: 'bisher' }) : null,
+          g.p !== null ? trendChip({ prozent: g.p }, '') : g.anteil !== null ? h('span', { class: 'aw-neben', text: H.zahlFormat(g.anteil, g.anteil < 10 ? 1 : 0) + ' %' }) : null),
+        anteil(g.balken)),
+      h('div', { class: 'rang-zahlen' }, h('span', { class: 'rang-flaschen' + (g.wert < 0 ? ' minus' : ''), text: haupt(g) }), h('span', { class: 'rang-umsatz', text: zweit(g) })));
+    const zeigen = Z.dashAlle ? x.gruppen : x.gruppen.slice(0, AW_ANFANG);
+    const WAS = { jahr: 'Jahre', monat: 'Monate', kanal: 'Kanäle', kunde: 'Kunden' };
+    const fuss = ['Umsatz netto mit Pfand.']
+      .concat(x.mitKosten ? ['Rohertrag ist Umsatz minus Herstellkosten (First in, First out), ohne Marketing, Lieferung und andere Kosten.'] : [])
+      .concat(x.nach === 'monat' ? ['Prozent bei den Monaten: zum selben Monat im Jahr davor.']
+        : x.nach === 'jahr' ? ['Prozent bei den Jahren: zum Jahr davor, im laufenden Jahr über die vollen Monate.'] : ['Prozent: Anteil an der Auswahl.']);
+
+    return h('div', { class: 'aw' },
+      h('div', { class: 'aw-wahl' },
+        umschalter('Kennzahl', [['flaschen', 'Flaschen'], ['umsatz', 'Umsatz']].concat(x.mitKosten ? [['rohertrag', 'Rohertrag']] : []), k, (w) => waehlen({ dashKennzahl: w })),
+        dashChips('Zeitraum', 'jahr', [[null, 'Alle Jahre']].concat(x.jahre.map((j) => [j, String(j)])), x.jahr, (w) => waehlen({ dashJahr: w })),
+        dashChips('Kanal', 'kanal', [['', 'Alle']].concat(x.kanaele.map((n) => [n, n])), x.kanal, (w) => waehlen({ dashKanal: w })),
+        zahl,
+        h('div', { class: 'dash-kacheln aw-kacheln' + (kacheln.length === 2 ? ' zwei' : '') }, kacheln)),
+      h('div', { class: 'aw-teile' },
+        h('p', { class: 'dash-wahl-name', text: 'Aufteilen nach' }),
+        umschalter('Aufteilen', (x.jahr === null ? [['jahr', 'Jahr']] : []).concat([['monat', 'Monat'], ['kanal', 'Kanal'], ['kunde', 'Kunde']]), x.nach, (w) => waehlen({ dashNach: w })),
+        x.gruppen.length
+          ? h('ul', { class: 'liste rangliste aw-liste', role: 'list', 'aria-label': NAME[k] + ' je ' + { jahr: 'Jahr', monat: 'Monat', kanal: 'Kanal', kunde: 'Kunde' }[x.nach] }, zeigen.map(zeile))
+          : h('p', { class: 'leer aw-leer', text: 'Keine Verkäufe für diese Auswahl.' }),
+        zeigen.length < x.gruppen.length
+          ? h('button', { type: 'button', class: 'knopf mehr-knopf', text: 'Alle ' + x.gruppen.length + ' ' + WAS[x.nach] + ' zeigen',
+            onclick: (ev) => {
+              const tastatur = ev.currentTarget.matches(':focus-visible');
+              Z.dashAlle = true;
+              dashboardZeichnen(false);
+              // Der Knopf ist jetzt weg: Wer mit der Tastatur unterwegs ist, steht auf der ersten neu gezeigten Zeile (Codex v35)
+              const erste = tastatur ? document.querySelectorAll('#dash .aw-liste > li')[AW_ANFANG] : null;
+              if (erste) { erste.tabIndex = -1; erste.focus({ preventScroll: true }); }
+            } })
+          : null,
+        h('p', { class: 'dash-fuss', text: fuss.join(' ') })));
+  }
+
+  // Dashboard zusammensetzen ----------------------------------------------------------------------------------------
+
+  /** Das Dashboard mit der gewählten Seite: Reihe der Seiten, Inhalt in Blöcken, Fußnote, „Weiter“. Ohne Daten null. */
+  function dashboardBauen() {
+    const seiten = dashboardSeiten();
+    if (!seiten) return null;
+    const nr = Math.max(0, seiten.findIndex((x) => x.id === Z.dashSeite));
+    const akt = seiten[nr];
+    const weiter = seiten[nr + 1];
+    Z.dashSeite = akt.id;
+    // Blöcke: jede kleine Überschrift mit dem, was zu ihr gehört. Die Blöcke stehen in zwei Spalten-Kästen, vorn die
+    // erste Hälfte, hinten die zweite, nach geschätzter Höhe etwa gleich lang. Am Handy liegen die Kästen untereinander
+    // (Reihenfolge wie immer), auf einem breiten Bildschirm nebeneinander (style.css).
+    const flach = (x) => (Array.isArray(x) ? x.reduce((aus, y) => aus.concat(flach(y)), []) : x ? [x] : []);
+    const bloecke = [];
+    flach(akt.inhalt).forEach((e) => {
+      if (!bloecke.length || (e.classList && e.classList.contains('dash-kopf'))) bloecke.push(h('div', { class: 'dash-block' }));
+      bloecke[bloecke.length - 1].append(e);
+    });
+    const spalten = H.spaltenTeilen(bloecke.map((b) => 1.5 + b.querySelectorAll('.dash-zeile, .dash-bestellung, .dash-kanalbalken').length
+      + 1.6 * b.querySelectorAll('.dash-fakt').length + 4 * b.querySelectorAll('.dash-kacheln').length + 2 * b.querySelectorAll('.dash-fuss').length));
+    const ohneTitel = akt.id === 'ueberblick' || akt.id === 'auswerten'; // sagt schon der Chip
+    return h('div', { id: 'dash', class: 'dash' },
+      seiten.length > 1 ? h('div', { class: 'dash-oben' }, h('div', { class: 'dash-nav', role: 'group', 'aria-label': 'Seiten im Dashboard' }, seiten.map((x) => h('button', {
+        type: 'button', class: 'chip', 'aria-pressed': x === akt ? 'true' : 'false', 'data-fokus': 'seite:' + x.id, text: x.name,
+        onclick: () => { if (x !== akt) dashboardSeite(x.id); },
+      })))) : null,
+      h('div', { class: 'dash-inhalt' + (akt.id === 'auswerten' ? '' : ' dash-spalten') },
+        h('h3', { class: ohneTitel ? 'nur-vorlesen' : 'dash-gruppe', text: akt.titel }),
+        akt.id === 'auswerten' ? bloecke : [h('div', { class: 'dash-spalte' }, bloecke.slice(0, spalten)), h('div', { class: 'dash-spalte' }, bloecke.slice(spalten))],
+        akt.fuss.length ? h('p', { class: 'dash-fuss', text: akt.fuss.join(' ') }) : null,
+        weiter ? h('button', { type: 'button', class: 'dash-weiter', 'data-fokus': 'seite:' + weiter.id, onclick: () => dashboardSeite(weiter.id) },
+          h('span', { class: 'dash-weiter-text' }, h('span', { text: 'Weiter' }), h('strong', { text: weiter.name })),
+          h('span', { class: 'chevron', 'aria-hidden': 'true' })) : null));
+  }
+
+  /**
+   * Das offene Dashboard an Ort und Stelle neu bauen (andere Seite, andere Auswahl, neuer Stand). Die Chip-Reihen
+   * bleiben, wo sie seitlich standen; `nachOben` (neue Seite) beginnt oben, sonst bleibt die Scrollstelle. Wer mit der
+   * Tastatur unterwegs ist, behält den Fokus auf demselben Knopf (nach einem Tipp bleibt kein Fokusring stehen).
+   */
+  function dashboardZeichnen(nachOben) {
+    const ziel = S.el('blatt-inhalt');
+    const alt = S.el('dash');
+    const neu = alt ? dashboardBauen() : null;
+    if (!neu) return;
+    const reihen = (w) => Array.from(w.querySelectorAll('.dash-nav, .dash-chips'));
+    const links = reihen(alt).map((e) => e.scrollLeft);
+    const oben = ziel.scrollTop;
+    const f = document.activeElement;
+    const merk = f && alt.contains(f) && f.matches(':focus-visible') ? (f.dataset.fokus !== undefined ? ['fokus', f.dataset.fokus] : f.dataset.gruppe ? ['gruppe', f.dataset.gruppe + '\n' + f.dataset.wert] : null) : null;
+    alt.replaceWith(neu);
+    reihen(neu).forEach((e, i) => { if (i < links.length && (i === 0 || !nachOben)) e.scrollLeft = links[i]; });
+    ziel.scrollTop = nachOben ? 0 : oben;
+    // Der Chip der gezeigten Seite steht in der Reihe ganz im Blick (mit etwas Luft, damit man sieht, dass es weitergeht)
+    const aktiv = neu.querySelector('.dash-nav [aria-pressed="true"]');
+    if (aktiv) {
+      const reihe = aktiv.parentNode;
+      const l = aktiv.offsetLeft - reihe.offsetLeft; // Stelle des Chips in der Reihe (beide messen ab dem Halter .dash-oben)
+      if (l - 48 < reihe.scrollLeft) reihe.scrollLeft = l - 48;
+      else if (l + aktiv.offsetWidth + 48 > reihe.scrollLeft + reihe.clientWidth) reihe.scrollLeft = l + aktiv.offsetWidth + 48 - reihe.clientWidth;
+    }
+    if (merk) {
+      const e = Array.from(neu.querySelectorAll(merk[0] === 'fokus' ? '.dash-nav [data-fokus], .dash-chips [data-fokus]' : '[data-gruppe]'))
+        .find((y) => (merk[0] === 'fokus' ? y.dataset.fokus : y.dataset.gruppe + '\n' + y.dataset.wert) === merk[1]);
+      if (e) e.focus({ preventScroll: true });
+    }
+  }
+
+  /** Andere Seite zeigen (Chip oben oder „Weiter“ unten). */
+  function dashboardSeite(id) {
+    Z.dashSeite = id;
+    Z.dashAlle = false;
+    dashboardZeichnen(true);
   }
 
   S.dashboardZeigen = function () {
-    const inhalt = dashboardInhalt();
-    if (inhalt) S.blattZeigen('Dashboard', inhalt, () => S.el('dashboard-knopf'));
+    Z.dashSeite = 'ueberblick'; // jedes Öffnen beginnt beim Überblick; die Auswahl in „Auswerten“ bleibt
+    Z.dashAlle = false;
+    const inhalt = dashboardBauen();
+    if (inhalt) S.blattZeigen('Dashboard', inhalt, () => S.el('dashboard-knopf'), true);
   };
 
   /**
    * Kommt ein neuer Stand, während das Dashboard offen ist (z. B. gleich nach dem Start aus dem gespeicherten Stand
-   * geöffnet): Inhalt an Ort und Stelle neu, ohne Bewegung, die Scrollstelle bleibt. Andere Blätter bleiben unberührt.
+   * geöffnet): Inhalt an Ort und Stelle neu, ohne Bewegung, Seite und Scrollstelle bleiben. Andere Blätter bleiben unberührt.
    */
   S.dashboardAuffrischen = function () {
     const b = S.el('blatt');
-    const ziel = S.el('blatt-inhalt');
-    if (!b || !b.open || b.classList.contains('geht') || !ziel.querySelector('.dash-kacheln')) return;
-    const inhalt = dashboardInhalt();
-    if (!inhalt) return;
-    const oben = ziel.scrollTop;
-    S.fuellen(ziel, inhalt);
-    ziel.scrollTop = oben;
+    if (!b || !b.open || b.classList.contains('geht') || !S.el('dash')) return;
+    dashboardZeichnen(false);
   };
 
   // Verkäufe ----------------------------------------------------------------------------------------------------

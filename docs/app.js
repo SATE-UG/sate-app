@@ -395,7 +395,8 @@
     abgemeldet = true;
     verlaufNr++;
     Object.assign(Z, { code: '', name: '', daten: null, frisch: false, laedt: false, verlauf: null, verlaufLaedt: false,
-      verlaufFehler: '', verlaufVeraltet: true, diagramm: 'flaschen', zeitraum: 'jahr', monatWahl: null, alleKunden: false, kundenZeitraum: 'jahr', kundenSuche: '', kundenKanal: '', kundenSortierung: 'menge', alleNachfassen: false, verlaufAlle: false, zuordnenOffen: false, offline: false, ladenNachholen: false, sitzung: Z.sitzung + 1 });
+      verlaufFehler: '', verlaufVeraltet: true, diagramm: 'flaschen', zeitraum: 'jahr', monatWahl: null, alleKunden: false, kundenZeitraum: 'jahr', kundenSuche: '', kundenKanal: '', kundenSortierung: 'menge', alleNachfassen: false, verlaufAlle: false, zuordnenOffen: false, offline: false, ladenNachholen: false,
+      dashSeite: 'ueberblick', dashKennzahl: 'flaschen', dashJahr: undefined, dashKanal: '', dashNach: 'monat', dashAlle: false, sitzung: Z.sitzung + 1 });
     meldung('');
     S.frageSchliessen();
     S.blattSchliessen(true);

@@ -320,7 +320,9 @@ test('PWA: Dashboard (v30, erweitert in v31) – Kapsel auf dem Start, eigenes B
   const arten = Array.from(new Set(Array.from(ansichten.matchAll(/dashTabelle\('([a-z0-9]+)/g), (m) => m[1])));
   assert.deepStrictEqual(arten.sort(), ['abf', 'bleibt', 'gr', 'jahre', 'kan', 'lager', 'preis', 'roh', 'rohabf', 'rohkan', 's5', 'top', 'vj', 'weg']);
   arten.forEach((art) => assert.match(dash, new RegExp('\\.dash-' + art + ' \\.dash-zeile \\{ grid-template-columns: '), art));
-  assert.strictEqual((ansichten.match(/class: 'dash-gruppe'/g) || []).length, 8, 'fünf Gruppen, dazu Rohertrag und Marge und (seit v33) Ohne Verkauf weg mit und ohne Abgänge');
+  // Seit v35 ist jede Gruppe eine eigene Seite (Überblick, Auswerten, fünf Gruppen, Rohertrag und Marge, Ohne Verkauf weg)
+  assert.deepStrictEqual(Array.from(ansichten.matchAll(/seite\('([a-z]+)', '/g), (m) => m[1]),
+    ['ueberblick', 'auswerten', 'vergleich', 'rohertrag', 'abgaenge', 'bestellungen', 'kunden', 'bestand', 'rekorde']);
   // Seit v33: Was ohne Verkauf wegging, ist nicht „neutral“, sondern steht mit seinen Herstellkosten in einer eigenen Statistik
   assert.doesNotMatch(ansichten + lies('docs/hilfen.js'), /neutral zum Herstellpreis/);
   assert.match(ansichten, /dashTitel\('Was vom Rohertrag bleibt'/);
@@ -349,5 +351,51 @@ test('PWA: Dashboard (v30, erweitert in v31) – Kapsel auf dem Start, eigenes B
   assert.match(eintragen, /const kostenMoeglich = \(\) => !!\(Z\.daten && Z\.daten\.kennzahlen\.abfuellungKosten === true\);/, 'ohne Kosten-Spalte kein Feld');
   assert.match(eintragen, /if \(b\.art === 'Abfüllung' && b\.kosten !== null\) daten\.kostenProFlasche = b\.kosten;/);
   assert.match(dash, /\.dash-zeile \{[^}]*min-height: 27px;/);
-  assert.doesNotMatch(dash, /var\(--akzent\)/, 'im Dashboard ist nichts antippbar, also keine Akzentfarbe');
+  // Akzentfarbe im Dashboard nur als Fokusrahmen (seit v35 gibt es dort Knöpfe), nie als Fläche oder Schrift
+  assert.doesNotMatch(dash.replace(/:focus-visible \{[^}]*\}/g, ''), /var\(--akzent\)/);
+});
+
+test('PWA: Dashboard in Seiten und „Auswerten“ (v35) – eine Zahl finden, ohne alles durchzuscrollen', () => {
+  const css = lies('docs/style.css');
+  const ansichten = lies('docs/ansichten.js');
+  const kern = lies('docs/kern.js');
+  const dash = css.slice(css.indexOf('/* Dashboard (Blatt, seit v30)'), css.indexOf('/* Trends (Verkäufe, Kunden, Start)'));
+  // Reihe der Seiten: Chips in einem Halter, der beim Scrollen oben stehen bleibt; jede Seite endet mit „Weiter“
+  assert.match(ansichten, /h\('div', \{ class: 'dash-oben' \}, h\('div', \{ class: 'dash-nav', role: 'group', 'aria-label': 'Seiten im Dashboard' \}/);
+  assert.match(dash, /\.dash-oben \{ position: sticky; top: -6px;/);
+  assert.match(ansichten, /class: 'dash-weiter'[\s\S]{0,120}onclick: \(\) => dashboardSeite\(weiter\.id\)/);
+  // Jedes Öffnen beginnt beim Überblick, die Auswahl in „Auswerten“ bleibt; ein neuer Stand zeichnet an Ort und Stelle neu
+  assert.match(ansichten, /S\.dashboardZeigen = function \(\) \{\s*Z\.dashSeite = 'ueberblick';/);
+  assert.match(ansichten, /S\.dashboardAuffrischen = function \(\) \{[\s\S]{0,200}!S\.el\('dash'\)\) return;\s*dashboardZeichnen\(false\);/);
+  // Kein erzwungener Fokus nach einem Tipp (blauer Rahmen auf dem iPhone): nur wer mit der Tastatur unterwegs ist, behält ihn
+  assert.match(ansichten, /f\.matches\(':focus-visible'\)/);
+  // „Alle … zeigen“ verschwindet nach dem Tipp: Mit der Tastatur geht der Fokus auf die erste neu gezeigte Zeile (Codex v35)
+  assert.match(ansichten, /const erste = tastatur \? document\.querySelectorAll\('#dash \.aw-liste > li'\)\[AW_ANFANG\] : null;\s*if \(erste\) \{ erste\.tabIndex = -1; erste\.focus\(\{ preventScroll: true \}\); \}/);
+  // Großes Blatt: volle Höhe, damit es zwischen kurzen und langen Seiten nicht springt; andere Blätter bleiben klein
+  assert.match(ansichten, /S\.blattZeigen\('Dashboard', inhalt, \(\) => S\.el\('dashboard-knopf'\), true\);/);
+  assert.match(kern, /S\.blattZeigen = function \(titel, inhalt, zurueck, gross\) \{[\s\S]{0,500}b\.classList\.toggle\('gross', gross === true\);/);
+  assert.strictEqual((ansichten.match(/S\.blattZeigen\(/g) || []).length, 3, 'Dashboard, Kunde, Lager');
+  assert.strictEqual((ansichten.match(/S\.blattZeigen\([^;]*, true\);/g) || []).length, 1, 'nur das Dashboard ist groß');
+  assert.match(css, /\.blatt\.gross \{ height: calc\(100% - 44px - env\(safe-area-inset-top\)\); \}/);
+  // Der Inhalt füllt das große Blatt: Ein Tipp in die freie Fläche unter einer kurzen Seite darf es nicht schließen
+  assert.match(css, /\.blatt\.gross \.blatt-inhalt \{ flex: 1 1 auto; \}/);
+  // Auswerten: gerechnet in hilfen.js mit den Herstellkosten je Zeile aus dashboardMehr, Wahl im Zustand, beim Abmelden zurückgesetzt
+  assert.match(ansichten, /H\.auswerten\(a\.zeilen, mehr\.marge \? mehr\.marge\.kostenJeZeile : null, a\.heute,/);
+  assert.match(lies('docs/hilfen.js'), /verluste: verluste, mehr: fifo\.mehr, flaschen: flaschen, kostenJeZeile: fifo\.kosten,/);
+  ['dashSeite', 'dashKennzahl', 'dashJahr', 'dashKanal', 'dashNach', 'dashAlle'].forEach((feld) => {
+    assert.match(kern, new RegExp('\\n      ' + feld + ': '), feld + ' im Zustand');
+    assert.match(lies('docs/app.js'), new RegExp('function vergessen\\(\\)[\\s\\S]{0,1500}' + feld + ': '), feld + ' wird beim Abmelden zurückgesetzt');
+  });
+  assert.match(ansichten, /umschalter\('Kennzahl', \[\['flaschen', 'Flaschen'\], \['umsatz', 'Umsatz'\]\]\.concat\(x\.mitKosten \? \[\['rohertrag', 'Rohertrag'\]\] : \[\]\)/);
+  assert.match(ansichten, /dashChips\('Zeitraum', 'jahr',/);
+  assert.match(ansichten, /dashChips\('Kanal', 'kanal',/);
+  assert.match(ansichten, /umschalter\('Aufteilen', \(x\.jahr === null \? \[\['jahr', 'Jahr'\]\] : \[\]\)\.concat\(\[\['monat', 'Monat'\], \['kanal', 'Kanal'\], \['kunde', 'Kunde'\]\]\)/);
+  // Breiter Bildschirm (Laptop): zwei Spalten als Raster aus zwei Kästen, verteilt in hilfen.js. Keine CSS-Spalten
+  // (column-count zerriss in Safari die Tabellen) und kein :has für das Blatt (ältere iPhones)
+  assert.match(ansichten, /H\.spaltenTeilen\(bloecke\.map\(/);
+  assert.match(dash, /@media \(min-width: 900px\) \{\s*\.blatt\.gross \{ max-width: 1040px; \}\s*\.dash-spalten \{ display: grid; grid-template-columns: repeat\(2, minmax\(0, 1fr\)\);/);
+  assert.doesNotMatch(dash, /column-count|column-span|:has\(/);
+  // Die Chip-Reihen lassen sich seitlich wischen, ohne dass der Rest mitgeht; senkrecht scrollt die Seite auch von dort
+  assert.match(dash, /\.dash-nav, \.dash-chips \{ display: flex; gap: 8px; overflow-x: auto; scrollbar-width: none; overscroll-behavior-x: contain;/);
+  assert.doesNotMatch(dash, /touch-action/);
 });

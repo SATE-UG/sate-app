@@ -41,6 +41,12 @@
       rechenwegOffen: false, // Start: „So rechnet die App“ aufgeklappt?
       zuordnenOffen: false, // Lager: „Verkäufe zuordnen“ aufgeklappt?
       verlaufAlle: false,   // Lager: ganzen Verlauf statt der letzten 10 zeigen
+      dashSeite: 'ueberblick', // Dashboard: gezeigte Seite (jedes Öffnen beginnt beim Überblick)
+      dashKennzahl: 'flaschen', // Dashboard, Auswerten: 'flaschen' | 'umsatz' | 'rohertrag'
+      dashJahr: undefined,  // Auswerten: Jahr (Zahl), null = alle Jahre, undefined = noch nichts gewählt (dann das laufende Jahr)
+      dashKanal: '',        // Auswerten: nur dieser Kanal ('' = alle)
+      dashNach: 'monat',    // Auswerten: aufteilen nach 'jahr' | 'monat' | 'kanal' | 'kunde'
+      dashAlle: false,      // Auswerten: alle Zeilen statt der ersten zehn zeigen
     },
     ansichten: {},
   };
@@ -336,9 +342,12 @@
     b.style.transform = '';
     b.style.removeProperty('--dunkel');
   }
-  S.blattZeigen = function (titel, inhalt, zurueck) {
+  S.blattZeigen = function (titel, inhalt, zurueck, gross) {
     const b = S.el('blatt');
     if (!b || typeof b.showModal !== 'function') return false;
+    // `gross === true` (Dashboard): immer volle Höhe, auf breiten Bildschirmen auch breit (style.css). So springt das
+    // Blatt nicht, wenn sein Inhalt wechselt und mal kurz, mal lang ist.
+    b.classList.toggle('gross', gross === true);
     S.el('blatt-titel').textContent = titel;
     S.fuellen(S.el('blatt-inhalt'), inhalt); // verschachtelte Listen flach, null fällt weg
     blattZurueck = typeof zurueck === 'function' ? zurueck : null;
