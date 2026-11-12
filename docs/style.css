@@ -297,9 +297,45 @@ h2 {
 .kachel-knopf > .kachel-label { display: flex; }
 .kachel-pfeil { margin-left: auto; }
 .kachel-fuss { margin-top: auto; padding-top: 10px; font-size: 13px; line-height: 1.35; color: var(--leise); font-variant-numeric: tabular-nums; }
-.kachel-fuss .mini-fortschritt, .kachel-fuss .verteilung-balken.mini { margin: 0 0 7px; height: 5px; }
+.kachel-fuss .verteilung-balken.mini { margin: 0 0 7px; height: 5px; }
 .kachel-knopf.gedrueckt { transform: scale(0.97); background: var(--karte-druck); }
 .kachel-knopf:focus-visible { outline: 2px solid var(--akzent); outline-offset: 2px; }
+
+/* Start (v37): das Jahr in Euro. Kopf (Knopf: Umsatz groß, Veränderung, Monate als kleine Balken), darunter drei
+   Kacheln als Knöpfe (Rohertrag, Marge, Flaschen). Balken: vergangene Monate hell, der laufende in der Akzentfarbe,
+   kommende und leere als Strich. */
+.jahr-start { padding: 0; overflow: hidden; }
+.jahr-start-kopf { display: block; width: 100%; padding: 16px 16px 10px; border: 0; background: transparent; color: var(--text); font: inherit; text-align: left;
+  cursor: pointer; -webkit-appearance: none; appearance: none; -webkit-tap-highlight-color: transparent; }
+.jahr-start-kopf > span { display: block; }
+.jahr-start-kopf > .kachel-label { display: flex; }
+.jahr-start-kopf.gedrueckt { background: var(--karte-druck); }
+.jahr-start-kopf:focus-visible { outline: 2px solid var(--akzent); outline-offset: -3px; border-radius: var(--radius); }
+.jahr-start-kopf .kachel-wert { font-size: 40px; }
+.jahr-start-kopf .einheit { font-size: 20px; font-weight: 600; }
+.jahr-start-kopf > .jahr-start-trend { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 2px 12px; min-height: 18px; }
+.jahr-start-monat { font-size: 13px; color: var(--leise); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.diagramm.jahr-balken { margin: 12px 0 0; }
+.jahr-balken .jb-monat { fill: #D1D1D6; }
+.jahr-balken .jb-laufend { fill: var(--akzent); }
+.jahr-balken .jb-leer { fill: var(--feld-aktiv); }
+.jahr-balken .jb-minus { fill: var(--rot); }
+.jahr-balken .jb-jetzt { fill: var(--akzent); font-weight: 700; }
+.jahr-start-kacheln.dash-kacheln { margin: 0; padding: 0 12px 12px; }
+.jahr-start-kacheln.zwei { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.kachel-tipp { display: block; width: 100%; border: 0; color: var(--text); font: inherit; text-align: left; cursor: pointer; -webkit-appearance: none; appearance: none;
+  -webkit-tap-highlight-color: transparent; }
+.kachel-tipp > span { display: block; white-space: nowrap; font-variant-numeric: tabular-nums; }
+/* Schriftgrößen der Kacheln kommen von .dash-kachel (weiter unten); hier nur, was ein Knopf mit span statt p braucht */
+.kachel-tipp.gedrueckt { background: var(--feld-aktiv); transform: scale(0.97); }
+.kachel-tipp:focus-visible { outline: 2px solid var(--akzent); outline-offset: 2px; }
+.kachel-icon { flex: none; width: 16px; height: 16px; color: var(--akzent); }
+@media (max-width: 350px) {
+  .jahr-start-kacheln .dash-kachel { padding-left: 8px; padding-right: 8px; }
+  .jahr-start-kacheln .dash-label, .jahr-start-kacheln .dash-klein, .jahr-start-kacheln .dash-klein .trend { font-size: 11px; }
+  .jahr-start-kopf .kachel-wert { font-size: 34px; }
+}
+.kacheln > :only-child { grid-column: 1 / -1; }
 
 /* Start (v23): Prognose in der Bestell-Karte, Kennzahlen mit Fortschritt, Zeilen-Karten, „Zuletzt passiert“ */
 .diagramm.prognose { margin: 6px 0 0; }
@@ -309,18 +345,9 @@ h2 {
 .diagramm .band-abfuellung { fill: var(--akzent); opacity: 0.13; }
 .diagramm .band-text { fill: var(--akzent); font-size: 11px; font-weight: 600; }
 .diagramm .leer-text { fill: var(--leise); font-size: 11px; font-weight: 600; }
-.mini-fortschritt { display: block; height: 5px; margin: 8px 0 5px; border-radius: 3px; background: var(--feld); overflow: hidden; }
-.mini-fuell { display: block; height: 100%; min-width: 3px; border-radius: 3px; background: var(--text); }
-.mini-fuell.voll { background: var(--gruen); }
 .verteilung-balken.mini { display: flex; height: 6px; margin: 9px 0 3px; }
-.zeilen-karte { width: 100%; display: flex; align-items: center; gap: 12px; border: 0; color: var(--text); font: inherit; text-align: left;
-  cursor: pointer; -webkit-appearance: none; appearance: none; }
-.zeilen-karte.gedrueckt { transform: scale(0.98); background: var(--karte-druck); }
-.zeilen-karte:focus-visible { outline: 2px solid var(--akzent); outline-offset: 2px; }
 .karte-symbol { flex: none; width: 32px; height: 32px; display: grid; place-items: center; border-radius: 10px; background: var(--feld); }
 .karte-symbol .icon { width: 20px; height: 20px; }
-.zeilen-karte-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; font-size: 13px; color: var(--leise); }
-.zeilen-karte-text strong { color: var(--text); font-size: 16px; font-weight: 600; }
 .liste > li.aktiv-zeile { display: grid; grid-template-columns: 32px 1fr auto; align-items: center; gap: 12px; padding: 12px 0; }
 .aktiv-text { min-width: 0; display: flex; flex-direction: column; }
 .aktiv-titel { font-size: 16px; font-weight: 600; overflow-wrap: anywhere; }

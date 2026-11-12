@@ -99,10 +99,10 @@
       wozu ? h('span', { class: 'trend-wozu', text: ' ' + wozu }) : null);
   }
 
-  // Start (seit v23 neu gedacht) ------------------------------------------------------------------------------------
-  // Nur das Wichtigste auf einen Blick: Bestellstatus mit Prognose, vier Kennzahlen (jede springt in ihre Details),
-  // Kunden-Hinweis, „Zuletzt passiert“ (Rechnungen und Buchungen gemischt). Lager-Liste und Verkaufs-Details stehen in
-  // ihren Reitern, damit hier nichts doppelt steht.
+  // Start (seit v23 neu gedacht, seit v37 mit dem Jahr in Euro) -----------------------------------------------------
+  // Nur das Wichtigste auf einen Blick: Bestellstatus mit Prognose, das Jahr (Umsatz groß, Monate als kleine Balken,
+  // Rohertrag, Marge, Flaschen), Bestand und Kunden als Kacheln, „Zuletzt passiert“ (Rechnungen und Buchungen
+  // gemischt). Alles springt in seine Details. Lager-Liste und Verkaufs-Details stehen in ihren Reitern.
 
   /** `JJJJ-MM-TT` → fortlaufende Tageszahl (für Abstände auf der Zeitachse). */
   const tagNr = (t) => Date.UTC(Number(t.slice(0, 4)), Number(t.slice(5, 7)) - 1, Number(t.slice(8, 10))) / 86400000;
@@ -243,19 +243,19 @@
       p && (termin || p.leerAm || p.reichtUeber) ? bestellRechenweg(p, u, a.heute) : null);
   }
 
-  /** Kennzahl als Knopf (springt in die Details): Label mit Pfeil, große Zahl, Zusatz, optional Chip oder Balken. */
-  function kennzahl(label, wert, zusatz, extra, beiKlick, vorlesen) {
+  /** Kennzahl als Knopf (springt in die Details): Label (optional mit Symbol) und Pfeil, große Zahl, Zusatz, optional Chip oder Balken. */
+  function kennzahl(label, wert, zusatz, extra, beiKlick, vorlesen, symbol) {
     return h('button', { type: 'button', class: 'kachel kachel-knopf', onclick: beiKlick, 'aria-label': vorlesen },
-      h('span', { class: 'kachel-label' }, label, h('span', { class: 'kachel-pfeil', 'aria-hidden': 'true' })),
+      h('span', { class: 'kachel-label' }, symbol ? S.icon(symbol, 'kachel-icon') : null, label, h('span', { class: 'kachel-pfeil', 'aria-hidden': 'true' })),
       h('span', { class: 'kachel-wert', text: wert }),
       zusatz ? h('span', { class: 'kachel-zusatz', text: zusatz }) : null,
       extra);
   }
 
   /** Verkäufe öffnen, optional mit einem Monat (dann zur Karte „Pro Monat“ scrollen). */
-  function zuVerkaeufen(monat, kennzahl) {
-    // Vom Start aus: ohne Kanal, im Jahr des Monats bzw. im laufenden Jahr
-    Object.assign(Z, { diagramm: kennzahl || 'flaschen', verkaufKanal: '', verkaufJahr: monat ? Number(monat.slice(0, 4)) : undefined, verkaufAlle: false });
+  function zuVerkaeufen(monat, kennzahl, jahr) {
+    // Vom Start aus: ohne Kanal, im Jahr des Monats bzw. im genannten Jahr (ohne Angabe im laufenden)
+    Object.assign(Z, { diagramm: kennzahl || 'flaschen', verkaufKanal: '', verkaufJahr: monat ? Number(monat.slice(0, 4)) : jahr, verkaufAlle: false });
     if (monat) Z.monatWahl = monat;
     S.ansichten.verkaeufe();
     S.ansichtZeigen('verkaeufe');
@@ -267,41 +267,118 @@
     }
   }
 
+  /**
+   * Das Jahr auf dem Start (seit v37; Mark, 2026-11-12: die Euro-Zahlen sollen im Vordergrund stehen, Rohertrag und
+   * Marge präsenter, keine einzelnen Monats-Kacheln mehr). Anfang Januar, solange im neuen Jahr noch nichts verkauft
+   * ist, zeigt die Karte das Jahr davor. Der Umsatz des Jahres groß mit der Veränderung zum Vorjahr
+   * (volle Monate), die zwölf Monate als kleine Balken (der laufende in der Akzentfarbe, darunter sein Stand bisher),
+   * darunter drei Kacheln: Rohertrag, Marge und Flaschen (ohne Herstellkosten Flaschen und Umsatz pro Flasche). Der
+   * Kopf öffnet die Verkäufe mit Umsatz, jede Kachel mit ihrer Kennzahl. Ohne Monate null.
+   */
+  function jahrStart(a) {
+    if (!a.jv || !a.jv.bisher) return null;
+    // Gezeigt wird das laufende Jahr; steht dort noch nichts (Anfang Januar), das Jahr davor, wenn es Verkäufe hat.
+    // So zeigt der Start dasselbe Jahr wie die Verkäufe, in die ein Tipp führt, statt lauter Nullen.
+    const hat = (v) => !!v && !!v.bisher && (v.bisher.flaschen !== 0 || v.bisher.umsatz !== 0);
+    const jv = !hat(a.jv) && hat(a.jvVorjahr) ? a.jvVorjahr : a.jv;
+    const laeuft = jv === a.jv;
+    const wann = laeuft ? 'dieses Jahr' : String(jv.jahr);
+    const zumJahrDavor = laeuft ? 'zum Vorjahr' : 'zu ' + (jv.jahr - 1);
+    const zd = zahlenDaten();
+    const mg = zd && zd.mehr && zd.mehr.marge ? zd.mehr.marge : null;
+    const vg = jv.vergleich;
+    const pUmsatz = vg ? H.veraenderung(vg.dieses.umsatz, vg.vorjahr.umsatz) : null;
+    const pFlaschen = vg ? H.veraenderung(vg.dieses.flaschen, vg.vorjahr.flaschen) : null;
+    // Rohertrag und Marge des gezeigten Jahrs und der Vergleich über dieselben vollen Monate: dieselbe Rechnung wie in den Verkäufen
+    const x = mg && a.zeilen ? H.auswerten(a.zeilen, mg.kostenJeZeile, a.heute, { kennzahl: 'rohertrag', jahr: jv.jahr, nach: 'kanal' }) : null;
+    const j = x && x.jahr === jv.jahr ? x.summe : laeuft && mg ? mg.jahr : null;
+    const pRoh = x && x.jahr === jv.jahr && x.vergleich ? x.vergleich.rohertrag : null;
+    const umsatz = jv.bisher.umsatz;
+    const laufend = laeuft ? jv.monate.find((m) => m.laufend) : null;
+    const oeffnen = (kennzahlWahl) => zuVerkaeufen(null, kennzahlWahl, jv.jahr);
+    // Ohne Vergleich (Januar): stattdessen, was das Vorjahr insgesamt brachte; steht sichtbar da und im Namen des Knopfs (Codex v37)
+    const vjHinweis = pUmsatz === null && laeuft && jv.vorjahrGesamt && jv.vorjahrGesamt.umsatz > 0 ? 'Vorjahr gesamt ' + H.euroFormat(jv.vorjahrGesamt.umsatz) : '';
+    // Monate als kleine Balken: Umsatz je Monat im Verhältnis zum stärksten, kommende Monate als Striche
+    const M = { breite: 340, hoehe: 64, unten: 16 };
+    // Ein Monat im Minus (mehr gutgeschrieben als verkauft) bekommt einen kurzen roten Balken, damit er nicht wie „nichts“ aussieht
+    const roh = jv.monate.map((m) => (m.dieses && zahlDa(m.dieses.umsatz) ? m.dieses.umsatz : 0));
+    const werte = roh.map((w) => (w > 0 ? w : 0));
+    const hoch = Math.max.apply(null, werte.concat([0]));
+    const platz = M.breite / 12;
+    const bb = 16;
+    const basis = M.hoehe - M.unten;
+    const rund = (z) => Math.round(z * 100) / 100;
+    const svg = s('svg', { viewBox: '0 0 ' + M.breite + ' ' + M.hoehe, class: 'diagramm jahr-balken', 'aria-hidden': 'true', focusable: 'false' });
+    jv.monate.forEach((m, i) => {
+      const hh = hoch > 0 && werte[i] > 0 ? Math.max(3, (werte[i] / hoch) * (basis - 2)) : roh[i] < 0 ? 4 : 2;
+      svg.append(s('rect', { x: rund(i * platz + (platz - bb) / 2), y: rund(basis - hh), width: bb, height: rund(hh), rx: Math.min(4, hh / 2),
+        class: roh[i] < 0 ? 'jb-minus' : m.zukunft || !(werte[i] > 0) ? 'jb-leer' : m.laufend ? 'jb-laufend' : 'jb-monat' }));
+      svg.append(s('text', { x: rund(i * platz + platz / 2), y: M.hoehe - 2, 'text-anchor': 'middle', class: 'monat' + (m.laufend ? ' jb-jetzt' : ''), text: H.monatFormat(m.monat).slice(0, 1) }));
+    });
+    const cent = (z) => (zahlDa(z) ? H.zahlFormat(z, 2) + ' €' : '–');
+    const kachel = (label, wert, unter, kennzahlWahl, vorlesen) => h('button', { type: 'button', class: 'dash-kachel kachel-tipp', onclick: () => oeffnen(kennzahlWahl),
+      'aria-label': vorlesen + '. Verkäufe öffnen' },
+    h('span', { class: 'dash-label', text: label }), h('span', { class: 'dash-wert', text: wert }), unter ? h('span', { class: 'dash-klein' }, unter) : null);
+    const mitTrend = (p) => (p === null ? '' : ', ' + H.prozentText(p) + ' ' + zumJahrDavor);
+    // Mit Herstellkosten immer Rohertrag und Marge; fehlen sie nur für eine Abfüllung, steht ein Strich mit Hinweis da,
+    // statt dass die Kacheln stillschweigend verschwinden (Codex v37)
+    const kacheln = mg && j ? [
+      zahlDa(j.rohertrag)
+        ? kachel('Rohertrag', H.euroFormat(j.rohertrag), pRoh !== null ? trendChip({ prozent: pRoh }, '') : wann, 'rohertrag', 'Rohertrag ' + wann + ' ' + H.euroFormat(j.rohertrag) + mitTrend(pRoh))
+        : kachel('Rohertrag', '–', 'Kosten fehlen', 'rohertrag', 'Rohertrag ' + wann + ' unbekannt, Herstellkosten fehlen zum Teil'),
+      kachel('Marge', zahlDa(j.marge) ? H.zahlFormat(j.marge, 1) + ' %' : '–', 'vom Umsatz', 'rohertrag', 'Marge ' + (zahlDa(j.marge) ? H.zahlFormat(j.marge, 1) + ' Prozent vom Umsatz' : 'unbekannt')),
+      kachel('Flaschen', H.zahlFormat(jv.bisher.flaschen, 0), pFlaschen !== null ? trendChip({ prozent: pFlaschen }, '') : wann, 'flaschen', flaschen(jv.bisher.flaschen) + ' ' + wann + mitTrend(pFlaschen)),
+    ] : [
+      kachel('Flaschen', H.zahlFormat(jv.bisher.flaschen, 0), pFlaschen !== null ? trendChip({ prozent: pFlaschen }, '') : wann, 'flaschen', flaschen(jv.bisher.flaschen) + ' ' + wann + mitTrend(pFlaschen)),
+      kachel('Pro Flasche', cent(jv.bisher.flaschen > 0 ? umsatz / jv.bisher.flaschen : null), 'Umsatz', 'umsatz', 'Umsatz pro Flasche ' + cent(jv.bisher.flaschen > 0 ? umsatz / jv.bisher.flaschen : null)),
+    ];
+    return h('section', { class: 'karte jahr-start', 'aria-label': laeuft ? 'Dieses Jahr' : 'Das Jahr ' + jv.jahr },
+      h('button', { type: 'button', class: 'jahr-start-kopf', onclick: () => oeffnen('umsatz'),
+        'aria-label': 'Umsatz ' + wann + ' ' + H.euroFormat(umsatz) + mitTrend(pUmsatz) + (vjHinweis ? ', ' + vjHinweis : '') + (laufend && laufend.dieses ? ', ' + H.monatName(laufend.monat) + ' bisher ' + H.euroFormat(laufend.dieses.umsatz) : '') + '. Verkäufe öffnen' },
+      h('span', { class: 'kachel-label' }, S.icon('ertrag', 'kachel-icon'), 'Umsatz ' + wann, h('span', { class: 'kachel-pfeil', 'aria-hidden': 'true' })),
+      h('span', { class: 'kachel-wert' }, H.zahlFormat(umsatz, 0), h('span', { class: 'einheit', text: ' €' })),
+      h('span', { class: 'jahr-start-trend' }, pUmsatz !== null ? trendChip({ prozent: pUmsatz }, zumJahrDavor)
+        : vjHinweis ? h('span', { class: 'trend-hinweis', text: vjHinweis }) : null,
+      laufend && laufend.dieses ? h('span', { class: 'jahr-start-monat', text: H.monatName(laufend.monat) + ' bisher ' + H.euroFormat(laufend.dieses.umsatz) }) : null),
+      svg),
+      h('div', { class: 'dash-kacheln jahr-start-kacheln' + (kacheln.length === 2 ? ' zwei' : '') }, kacheln));
+  }
+
+  /**
+   * Zwei Kacheln unter dem Jahr (seit v37): Bestand (öffnet das Lager) und Kunden dieses Jahr (öffnet die Kunden), die
+   * Kunden mit einem geteilten Balken neue gegen bekannte. Vorher standen hier vier Kacheln (Bestand, Jahr, zwei Monate)
+   * und die Kunden als eigene Zeile darunter.
+   */
   function kennzahlen(u, a) {
     const k = u.kennzahlen;
-    const jv = a.jv;
     const proKiste = typeof k.flaschenProKiste === 'number' && k.flaschenProKiste > 0 ? k.flaschenProKiste : null;
     const geschaetzt = k.gesamtQuelle !== 'inventur';
     const gezaehlt = u.lager.filter((l) => l.bestand !== null).length;
-    const vg = jv && jv.vergleich;
-    const pJahr = vg ? H.veraenderung(vg.dieses.flaschen, vg.vorjahr.flaschen) : null;
-    const laufend = jv ? jv.monate.find((m) => m.laufend) : null;
-    // Letzter voller Monat: in diesem Jahr, im Januar der Dezember aus dem Vorjahr
-    const lfm = H.monatPlus(a.heute.slice(0, 7), -1);
-    const lm = (jv ? jv.monate.find((m) => m.monat === lfm) : null) || (a.jvVorjahr ? a.jvVorjahr.monate.find((m) => m.monat === lfm) : null);
-    const pMonat = lm && lm.dieses && lm.vorjahr ? H.veraenderung(lm.dieses.flaschen, lm.vorjahr.flaschen) : null;
-    const bisher = laufend && laufend.dieses ? laufend.dieses.flaschen : 0;
-    const vjMonat = laufend && laufend.vorjahr ? laufend.vorjahr.flaschen : null;
-    const fortschritt = vjMonat > 0 ? h('span', { class: 'mini-fortschritt', 'aria-hidden': 'true' }, prozent(h('span', { class: 'mini-fuell' + (bisher >= vjMonat ? ' voll' : '') }), (bisher / vjMonat) * 100)) : null;
     const zuLager = () => { S.ansichtZeigen('lager'); S.nachOben('lager'); };
-    // Unter der Flaschenzahl steht der Umsatz mit (seit v36; vorher nur in der Dashboard-Karte)
-    const mitUmsatz = (x) => 'Flaschen' + (x && typeof x.umsatz === 'number' ? ', ' + H.euroFormat(x.umsatz) : '');
-    const umsatzDazu = (x) => (x && typeof x.umsatz === 'number' ? ', ' + H.euroFormat(x.umsatz) + ' Umsatz' : ''); // für Vorleseprogramme (Codex v36)
+    // Kunden dieses Jahr, neue, „lange nichts bestellt“ (nur mit Verkaufszeilen)
+    let kunden = null;
+    if (a.zeilen && a.jv) {
+      const jahr = a.heute.slice(0, 4);
+      const z = H.zeitraumAuswerten(a.zeilen, jahr + '-01', a.heute.slice(0, 7));
+      const n = z.kunden.length;
+      const neu = z.kunden.filter((x) => x.erster >= jahr + '-01').length;
+      const lange = H.nachfassen(a.zeilen, a.heute).length;
+      if (n || lange) {
+        const teile = [n ? '' : 'noch keine Bestellung', neu && neu < n ? neu + (neu === 1 ? ' neuer' : ' neue') : '', lange ? lange + ' zum Nachfassen' : ''].filter(Boolean);
+        kunden = kennzahl('Kunden', H.zahlFormat(n, 0), 'dieses Jahr',
+          h('span', { class: 'kachel-fuss' },
+            neu && neu < n ? h('span', { class: 'verteilung-balken mini', 'aria-hidden': 'true' }, prozent(h('span', { class: 'vt-teil vt-3' }), (neu / n) * 100), prozent(h('span', { class: 'vt-teil vt-2' }), ((n - neu) / n) * 100)) : null,
+            teile.join(', ')),
+          () => { S.ansichtZeigen('kunden'); S.nachOben('kunden'); },
+          n + (n === 1 ? ' Kunde' : ' Kunden') + ' dieses Jahr' + (teile.length ? ', ' + teile.join(', ') : '') + '. Kunden öffnen', 'kunden');
+      }
+    }
     return h('div', { class: 'kacheln' },
       kennzahl('Bestand', H.zahlFormat(k.gesamtbestand, 0), 'Flaschen',
         h('span', { class: 'kachel-fuss' }, verteilungMini(u.lager),
           u.lager.length && gezaehlt < u.lager.length ? gezaehlt + ' von ' + u.lager.length + ' Lagern gezählt' : (H.kistenKurz(k.gesamtbestand, proKiste, geschaetzt) || (geschaetzt ? 'geschätzt' : 'gezählt'))),
-        zuLager, 'Bestand ' + flaschen(k.gesamtbestand) + (geschaetzt ? ', geschätzt' : ', gezählt') + '. Lager öffnen'),
-      jv ? kennzahl('Dieses Jahr', H.zahlFormat(jv.bisher.flaschen, 0), mitUmsatz(jv.bisher),
-        pJahr !== null ? h('span', { class: 'kachel-fuss' }, trendChip({ prozent: pJahr }, 'zum Vorjahr'))
-          : jv.vorjahrGesamt ? h('span', { class: 'kachel-fuss', text: 'Vorjahr gesamt ' + H.zahlFormat(jv.vorjahrGesamt.flaschen, 0) }) : null,
-        () => zuVerkaeufen(null), 'Dieses Jahr ' + flaschen(jv.bisher.flaschen) + umsatzDazu(jv.bisher) + (pJahr === null ? '' : ', ' + H.prozentText(pJahr) + ' zum Vorjahr') + '. Verkäufe öffnen') : null,
-      lm && lm.dieses ? kennzahl(H.monatName(lm.monat), H.zahlFormat(lm.dieses.flaschen, 0), mitUmsatz(lm.dieses),
-        pMonat !== null ? h('span', { class: 'kachel-fuss' }, trendChip({ prozent: pMonat }, 'zum Vorjahr')) : null,
-        () => zuVerkaeufen(lm.monat), H.monatName(lm.monat) + ': ' + flaschen(lm.dieses.flaschen) + umsatzDazu(lm.dieses) + (pMonat === null ? '' : ', ' + H.prozentText(pMonat) + ' zum Vorjahresmonat') + '. Monat öffnen') : null,
-      laufend ? kennzahl(H.monatName(laufend.monat) + ' bisher', H.zahlFormat(bisher, 0), mitUmsatz(laufend.dieses),
-        vjMonat !== null ? h('span', { class: 'kachel-fuss' }, fortschritt, 'Vorjahr ' + H.zahlFormat(vjMonat, 0)) : null,
-        () => zuVerkaeufen(laufend.monat), H.monatName(laufend.monat) + ' bisher ' + flaschen(bisher) + umsatzDazu(laufend.dieses) + (vjMonat !== null ? ', Vorjahr ganzer Monat ' + flaschen(vjMonat) : '') + '. Monat öffnen') : null);
+        zuLager, 'Bestand ' + flaschen(k.gesamtbestand) + (geschaetzt ? ', geschätzt' : ', gezählt') + '. Lager öffnen', 'flasche'),
+      kunden);
   }
 
   /** Bestand nach Lager als kleiner geteilter Balken (ab zwei gezählten Lagern), sonst null. */
@@ -310,24 +387,6 @@
     const mit = lager.filter((l) => typeof l.bestand === 'number' && l.bestand > 0);
     const summe = mit.reduce((x, l) => x + l.bestand, 0);
     return h('span', { class: 'verteilung-balken mini', 'aria-hidden': 'true' }, mit.map((l, i) => prozent(h('span', { class: 'vt-teil vt-' + (i % 4) }), (l.bestand / summe) * 100)));
-  }
-
-  /** Hinweis auf den Kunden-Reiter: Kunden dieses Jahr, neue, „lange nichts bestellt“ (nur mit Verkaufszeilen). */
-  function kundenHinweis(a) {
-    if (!a.zeilen || !a.jv) return null;
-    const jahr = a.heute.slice(0, 4);
-    const z = H.zeitraumAuswerten(a.zeilen, jahr + '-01', a.heute.slice(0, 7));
-    const neu = z.kunden.filter((x) => x.erster >= jahr + '-01').length;
-    const lange = H.nachfassen(a.zeilen, a.heute).length;
-    if (!z.kunden.length && !lange) return null;
-    const teile = [z.kunden.length ? '' : 'Noch keine Bestellung dieses Jahr', neu && neu < z.kunden.length ? neu + (neu === 1 ? ' neuer' : ' neue') : '',
-      lange ? lange + ' zum Nachfassen' : ''].filter(Boolean);
-    return h('button', { type: 'button', class: 'karte zeilen-karte', onclick: () => { S.ansichtZeigen('kunden'); S.nachOben('kunden'); } },
-      h('span', { class: 'karte-symbol', 'aria-hidden': 'true' }, S.icon('kunden')),
-      h('span', { class: 'zeilen-karte-text' },
-        h('strong', { text: z.kunden.length ? z.kunden.length + (z.kunden.length === 1 ? ' Kunde' : ' Kunden') + ' dieses Jahr' : 'Kunden' }),
-        teile.length ? h('span', { text: teile.join(', ') }) : null),
-      h('span', { class: 'chevron', 'aria-hidden': 'true' }));
   }
 
   /**
@@ -386,22 +445,6 @@
       Z.verlaufFehler ? h('p', { class: 'hinweis', text: 'Buchungen gerade nicht geladen, gezeigt werden nur Rechnungen.' }) : null);
   };
 
-  /**
-   * Hinweis auf den Rohertrag des Jahres (seit v36, nur mit Herstellkosten): „8.112 € Rohertrag dieses Jahr“, darunter
-   * die Marge. Antippen öffnet die Verkäufe mit der Kennzahl Rohertrag.
-   */
-  function rohertragHinweis() {
-    const zd = zahlenDaten();
-    const j = zd && zd.mehr && zd.mehr.marge ? zd.mehr.marge.jahr : null;
-    if (!j || !zahlDa(j.rohertrag) || (!j.flaschen && !j.umsatz)) return null;
-    return h('button', { type: 'button', class: 'karte zeilen-karte', onclick: () => zuVerkaeufen(null, 'rohertrag') },
-      h('span', { class: 'karte-symbol', 'aria-hidden': 'true' }, S.icon('ertrag')),
-      h('span', { class: 'zeilen-karte-text' },
-        h('strong', { text: H.euroFormat(j.rohertrag) + ' Rohertrag dieses Jahr' }),
-        h('span', { text: zahlDa(j.marge) ? 'Marge ' + H.zahlFormat(j.marge, 1) + ' % von ' + H.euroFormat(j.umsatz) + ' Umsatz' : 'Umsatz minus Herstellkosten' })),
-      h('span', { class: 'chevron', 'aria-hidden': 'true' }));
-  }
-
   S.ansichten.uebersicht = function () {
     S.el('name').textContent = Z.name || '';
     const ziel = leeren('uebersicht-inhalt');
@@ -410,12 +453,12 @@
     if (!u) return platzhalter(ziel, ['gross', 'reihe', 'reihe', 'zeile']);
     const a = auswertung();
     const hw = H.hinweiseOrdnen(u.hinweise);
+    // Seit v37: Bestell-Karte, (Jahresinventur), das Jahr mit den Euro-Zahlen, Bestand und Kunden, dann „Zuletzt passiert“
     S.fuellen(ziel,
       bestellKarte(u, a),
-      kennzahlen(u, a),
       inventurHinweis(u, a.heute),
-      rohertragHinweis(),
-      kundenHinweis(a),
+      jahrStart(a),
+      kennzahlen(u, a),
       h('div', { id: 'aktivitaet-inhalt' }),
       // Übrige Hinweise aus dem Sheet (z. B. unlesbare Zeilen) klein und dezent am Ende
       hw.andere.length
