@@ -218,11 +218,96 @@ function forderungenLesen(zeilen, verkaeufe, formatieren, hinweise, heute) {
 }
 
 /**
+ * Einnahmen netto aus dem Tab Lexware-Rechnungen (seit v42, für den Gewinn laut Lexware): `zeilen` ganzer Tab (oder null)
+ * → { zeilen: [[Monat `JJJJ-MM`, netto]] (je Belegmonat, auf den Cent, Summe 0 fällt weg), belege, fehler } oder null,
+ * wenn der Tab, seine Kopfzeile (die Übersicht meldet sie schon bei den offenen Rechnungen) oder Spalte M „netto (€)“
+ * fehlt. Es zählen Rechnungen, Gutschriften und Einnahme-Belege mit Status außer `voided`, nur in Euro, bis `heute`;
+ * Gutschriften immer negativ. Zeilen ohne lesbares Datum oder ohne lesbaren Betrag zählen nicht (`fehler`, Hinweis).
+ */
+function einnahmenLesen(zeilen, formatieren, hinweise, heute) {
+  if (!Array.isArray(zeilen)) return null;
+  const kopf = zeilen[0] || [];
+  if (Object.keys(LR_KOPF).some((i) => String(kopf[i] || '').trim() !== LR_KOPF[i])) return null;
+  if (String(kopf[LR.NETTO] || '').trim() !== LR_NETTO_KOPF) return null;
+  const text = (w) => String(w === undefined || w === null ? '' : w).trim();
+  const summen = Object.create(null);
+  let belege = 0;
+  let fehler = 0;
+  let fremd = 0;
+  for (let i = 1; i < zeilen.length; i++) {
+    const z = zeilen[i] || [];
+    if (!text(z[LR.NR]) && !text(z[LR.STATUS]) && !text(z[LR.NETTO]) && !text(z[LR.DATUM])) continue; // leere Zeile über alten Resten
+    if (RECHNUNG_STATUS_STORNIERT.test(text(z[LR.STATUS]))) continue;
+    const waehrung = text(z[LR.WAEHRUNG]).toUpperCase();
+    if (waehrung && waehrung !== 'EUR') { fremd++; continue; }
+    const datum = zelleDatum(z[LR.DATUM], formatieren);
+    const netto = betragLesen(z[LR.NETTO]);
+    if (!datum || netto === null) { fehler++; continue; }
+    if (heute && datum > heute) continue;
+    const monat = datum.slice(0, 7);
+    summen[monat] = (summen[monat] || 0) + (RECHNUNG_TYP_GUTSCHRIFT.test(text(z[LR.TYP])) ? -Math.abs(netto) : netto);
+    belege++;
+  }
+  if (fehler) hinweise.push('Tab ' + LEXWARE_RECHNUNGEN_TAB + ': ' + fehler + (fehler === 1 ? ' Beleg' : ' Belege') + ' ohne lesbares Datum oder Netto, fehlt im Gewinn.');
+  if (fremd) hinweise.push('Tab ' + LEXWARE_RECHNUNGEN_TAB + ': ' + fremd + (fremd === 1 ? ' Beleg' : ' Belege') + ' nicht in Euro, fehlt im Gewinn.');
+  return {
+    zeilen: Object.keys(summen).sort().map((m) => [m, runde_(summen[m], 2)]).filter((x) => x[1] !== 0),
+    belege: belege,
+    fehler: fehler,
+  };
+}
+
+/**
+ * Tab Lexware-GuV (seit v42, ganzer Tab oder null) → [{ jahr, stand (`JJJJ-MM-TT` oder null), umsatz, ertraege,
+ * material, aufwand, zinsen, ergebnis }] nach Jahr, Beträge auf den Cent (fehlende Positionen null). `ergebnis` muss
+ * lesbar sein, sonst zählt die Zeile nicht (Hinweis); gibt es ein Jahr doppelt, gilt die untere Zeile (Hinweis).
+ * Fehlt der Tab: null; passt die Kopfzeile nicht: null mit Hinweis.
+ */
+function lexwareGuvLesen(zeilen, formatieren, hinweise) {
+  if (!Array.isArray(zeilen)) return null;
+  const kopf = zeilen[0] || [];
+  if (GUV_KOPF.some((t, i) => String(kopf[i] || '').trim() !== t)) {
+    hinweise.push('Tab ' + LEXWARE_GUV_TAB + ': Kopfzeile passt nicht, der Gewinn kommt nur aus den Belegen.');
+    return null;
+  }
+  const leer = (w) => w === '' || w === null || w === undefined || (typeof w === 'string' && !w.trim());
+  const je = Object.create(null);
+  for (let i = 1; i < zeilen.length; i++) {
+    const z = zeilen[i] || [];
+    if (z.slice(0, 8).every(leer)) continue;
+    const jahr = zahlLesen(z[0]);
+    const ergebnis = betragLesen(z[7]);
+    if (jahr === null || Math.floor(jahr) !== jahr || jahr < 2000 || jahr > 2100 || ergebnis === null) {
+      hinweise.push('Tab ' + LEXWARE_GUV_TAB + ' Zeile ' + (i + 1) + ': Jahr oder Ergebnis unlesbar, zählt nicht.');
+      continue;
+    }
+    if (je[jahr]) hinweise.push('Tab ' + LEXWARE_GUV_TAB + ': ' + jahr + ' steht doppelt, es gilt Zeile ' + (i + 1) + '.');
+    const zahl = (w) => { const x = leer(w) ? null : betragLesen(w); return x === null ? null : runde_(x, 2); };
+    je[jahr] = { jahr: jahr, stand: zelleDatum(z[1], formatieren) || null, umsatz: zahl(z[2]), ertraege: zahl(z[3]), material: zahl(z[4]),
+      aufwand: zahl(z[5]), zinsen: zahl(z[6]), ergebnis: runde_(ergebnis, 2) };
+  }
+  return Object.keys(je).map(Number).sort((a, b) => a - b).map((j) => je[j]);
+}
+
+/**
+ * Bestand zum Jahresende je Jahr (seit v42): `euro` aus den Einstellungen ([{ jahr, euro }], Jahresabschluss),
+ * `inventuren` aus lagerBerechnen ([{ jahr, flaschen, inventur, zaehltage }]) → [{ jahr, euro, flaschen, inventur, zaehltage }] nach Jahr,
+ * fehlende Teile null.
+ */
+function jahresendeBauen(euro, inventuren) {
+  const je = Object.create(null);
+  const eintrag = (j) => je[j] || (je[j] = { jahr: j, euro: null, flaschen: null, inventur: null, zaehltage: null });
+  (euro || []).forEach((x) => { eintrag(x.jahr).euro = x.euro; });
+  (inventuren || []).forEach((x) => { const z = eintrag(x.jahr); z.flaschen = x.flaschen; z.inventur = x.inventur; z.zaehltage = x.zaehltage || null; });
+  return Object.keys(je).map(Number).sort((a, b) => a - b).map((j) => je[j]);
+}
+
+/**
  * `roh`: { verkaeufe, lagerLog, einstellungen, abfuellungen } (2D-Arrays ganzer Tabs), `uebersicht`
- * (Übersicht!B8:B13 als 6×1), `lexwareKosten` und `lexwareRechnungen` (ganzer Tab oder null, wenn es ihn nicht gibt).
+ * (Übersicht!B8:B13 als 6×1), `lexwareKosten`, `lexwareRechnungen` und `lexwareGuv` (ganzer Tab oder null, wenn es ihn nicht gibt).
  * `formatieren(date)` → `JJJJ-MM-TT` in Europe/Berlin, `jetzt` = Date.
  * Antwort ohne ok/name: { stand, heute, kennzahlen, bestellung, lager, verkaeufe, abfuellungen, abgaenge, schwund, kosten,
- * forderungen, verkaufListe, hinweise }.
+ * forderungen, jahresende, einnahmen, guv, verkaufListe, hinweise }.
  */
 function uebersichtBauen(roh, formatieren, jetzt) {
   const heute = formatieren(jetzt);
@@ -239,6 +324,8 @@ function uebersichtBauen(roh, formatieren, jetzt) {
   const hinweise = [].concat(e.hinweise, vk.hinweise, log.hinweise, lager.hinweise);
   const kosten = lexwareKostenLesen(roh.lexwareKosten, formatieren, hinweise, heute);
   const forderungen = forderungenLesen(roh.lexwareRechnungen, vk.verkaeufe, formatieren, hinweise, heute);
+  const einnahmen = einnahmenLesen(roh.lexwareRechnungen, formatieren, hinweise, heute);
+  const guv = lexwareGuvLesen(roh.lexwareGuv, formatieren, hinweise);
   if (gesamt.quelle === 'rechnerisch') {
     hinweise.unshift(gesamt.fehlen.length === lager.standorte.length
       ? 'Noch keine Inventur: Gesamtbestand ist der rechnerische aus der Übersicht (ohne Promo, Eigenverbrauch, Bruch).'
@@ -294,6 +381,13 @@ function uebersichtBauen(roh, formatieren, jetzt) {
     kosten: kosten,
     // Offene Rechnungen aus Lexware (seit v41); null, solange es den Tab nicht gibt
     forderungen: forderungen,
+    // Bestand zum Jahresende (seit v42, Lagerabgleich im Gewinn): je Jahr der Wert laut Jahresabschluss (Einstellung
+    // „Bestand 31.12.JJJJ (€)“) und/oder die Flaschen laut Inventur zwischen 31.12. und 15.01.
+    jahresende: jahresendeBauen(e.bestandJahresende, lager.jahresende),
+    // Einnahmen netto laut Lexware je Belegmonat (seit v42, Gewinn laut Lexware); null ohne Spalte M „netto (€)“
+    einnahmen: einnahmen,
+    // GuV laut Lexware je Jahr (seit v42, Tab Lexware-GuV); null ohne den Tab
+    guv: guv,
     verkaufListe: verkaufListeBauen(vk.verkaeufe, e, heute),
     hinweise: hinweise.length > MAX_HINWEISE
       ? hinweise.slice(0, MAX_HINWEISE - 1).concat(['… und ' + (hinweise.length - MAX_HINWEISE + 1) + ' weitere Hinweise.'])

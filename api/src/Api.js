@@ -258,6 +258,8 @@ function tabellenLesen_(ss) {
   const kosten = ss.getSheetByName(LEXWARE_KOSTEN_TAB);
   // Lexware-Rechnungen (seit v41) ebenso: Fehlt der Tab, ist es null und die App zeigt keine offenen Rechnungen
   const rechnungen = ss.getSheetByName(LEXWARE_RECHNUNGEN_TAB);
+  // Lexware-GuV (seit v42) ebenso freiwillig: Fehlt der Tab, rechnet die App den Jahresgewinn nur aus den Belegen
+  const guv = ss.getSheetByName(LEXWARE_GUV_TAB);
   return {
     verkaeufe: tab(VERKAEUFE_TAB).getDataRange().getValues(),
     lagerLog: tab(LAGER_LOG_TAB).getDataRange().getValues(),
@@ -266,6 +268,7 @@ function tabellenLesen_(ss) {
     uebersicht: tab(UEBERSICHT_TAB).getRange(BEREICH_UEBERSICHT).getValues(),
     lexwareKosten: kosten ? kosten.getDataRange().getValues() : null,
     lexwareRechnungen: rechnungen ? rechnungen.getDataRange().getValues() : null,
+    lexwareGuv: guv ? guv.getDataRange().getValues() : null,
   };
 }
 

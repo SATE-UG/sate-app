@@ -362,3 +362,84 @@ test('inventuren: die letzten sechs plus jede Jahresende-Inventur (31.12.), neue
   assert.deepStrictEqual(tage.slice(0, 6), ['2027-01-09', '2027-01-08', '2027-01-07', '2027-01-06', '2027-01-05', '2027-01-04']);
   assert.deepStrictEqual(roh(s['Lager Süd'].inventuren[6]), { datum: '2026-12-31', flaschen: 500 });
 });
+
+// v42: Bestand zum Jahresende (Lagerabgleich im Gewinn) -------------------------------------------------------------
+
+test('v42 Einstellungen: „Bestand 31.12.JJJJ (€)“ als Bestand zum Jahresende, freiwillig, Unlesbares mit Hinweis', () => {
+  const e = k.einstellungenLesen(einstellungen().concat([['Bestand 31.12.2025 (€)', 1300], ['Bestand 31.12.2024 (€)', '1.234,50 €'],
+    ['Bestand 31.12.2023 (€)', 'viel'], ['Bestand 31.12.2022 (€)', ''], ['Bestand 31.12.21 (€)', 5]]));
+  assert.deepStrictEqual(roh(e.bestandJahresende), [{ jahr: 2024, euro: 1234.5 }, { jahr: 2025, euro: 1300 }]);
+  assert.ok(e.hinweise.some((h) => /„Bestand 31\.12\.2023 \(€\)“ ist unlesbar/.test(h)));
+  assert.strictEqual(e.hinweise.filter((h) => /Bestand 31/.test(h)).length, 1, 'leer oder fehlend: kein Hinweis');
+  assert.deepStrictEqual(roh(k.einstellungenLesen(einstellungen()).bestandJahresende), []);
+});
+
+test('v42 lagerBerechnen: Bestand zum 31.12. aus den Inventuren bis 15.01., zurückgerechnet auf den Stichtag', () => {
+  const e = k.einstellungenLesen(einstellungen());
+  const log = k.lagerLogLesen([lagerKopf(),
+    z('2026-11-01', 'Lager Süd', 'Inventur', 500), z('2026-11-01', 'Lager Nord', 'Inventur', 100), z('2026-11-01', 'Lager Ost', 'Inventur', 50),
+    z('2026-12-31', 'Lager Süd', 'Inventur', 400), // am Stichtag
+    z('2027-01-03', 'Lager Nord', 'Bruch', 5),
+    z('2027-01-04', 'Lager Nord', 'Inventur', 80), // danach: 5 Bruch und 10 verkauft wieder dazu
+    z('2027-01-20', 'Lager Nord', 'Inventur', 70), // nach dem Fenster, zählt nicht
+    z('2027-01-10', 'Lager Ost', 'Inventur', 40), z('2027-01-12', 'Lager Ost', 'Inventur', 1), // die erste im Fenster zählt
+  ], berlin, e);
+  const verkaeufe = [{ monat: '2027-01', datum: '2027-01-02', kanal: 'Berlin', kunde: 'Späti', flaschen: 10, standort: 'Lager Nord' }];
+  const l = k.lagerBerechnen(log.buchungen, verkaeufe, e, '2027-02-01');
+  const tage = { 'Lager Süd': '2026-12-31', 'Lager Nord': '2027-01-04', 'Lager Ost': '2027-01-10' };
+  assert.deepStrictEqual(roh(l.jahresende), [{ jahr: 2026, flaschen: 400 + 95 + 40, inventur: '2027-01-10', zaehltage: tage }]);
+  // Fehlt ein Lager im Fenster: kein Bestand zum Jahresende
+  const ohne = k.lagerLogLesen([lagerKopf(), z('2026-12-31', 'Lager Süd', 'Inventur', 400), z('2027-01-02', 'Lager Nord', 'Inventur', 80)], berlin, e);
+  assert.deepStrictEqual(roh(k.lagerBerechnen(ohne.buchungen, [], e, '2027-02-01').jahresende), []);
+  // Schnittstelle: beides je Jahr zusammen, nach Jahr
+  assert.deepStrictEqual(roh(k.jahresendeBauen([{ jahr: 2025, euro: 1300 }, { jahr: 2026, euro: 900 }], l.jahresende)),
+    [{ jahr: 2025, euro: 1300, flaschen: null, inventur: null, zaehltage: null }, { jahr: 2026, euro: 900, flaschen: 535, inventur: '2027-01-10', zaehltage: tage }]);
+});
+
+test('v42 Einnahmen netto aus dem Tab Lexware-Rechnungen: je Belegmonat, Gutschriften negativ, voided nicht, ohne Spalte M keine', () => {
+  const kopf = ['Belegnr.', 'Typ', 'Datum', 'Fällig am', 'Kunde', 'brutto (€)', 'offen (€)', 'Status', 'Währung', 'Lexware-ID', 'geändert', 'Kunden-ID', 'netto (€)'];
+  const z = (nr, typ, datum, netto, status, waehrung) => [nr, typ, datum, '', 'Kunde', '', '', status || 'paid', waehrung || 'EUR', '', '', '', netto];
+  const hinweise = [];
+  const e = k.einnahmenLesen([kopf,
+    z('RE1', 'Rechnung', '05.01.2026', '100,00 €'),
+    z('RE2', 'Rechnung', '20.01.2026', 50.5, 'open'),
+    z('GS1', 'Gutschrift', '25.01.2026', 20), // Gutschrift positiv geliefert: zählt negativ
+    z('GS2', 'Einnahme-Gutschrift', '02.02.2026', -10),
+    z('SU1', 'Einnahme', '03.02.2026', 30),
+    z('RE3', 'Rechnung', '04.02.2026', 999, 'voided'),
+    z('RE4', 'Rechnung', '05.02.2026', 77, 'paid', 'USD'),
+    z('RE5', 'Rechnung', 'kaputt', 5),
+    z('RE6', 'Rechnung', '06.02.2026', ''),
+    z('RE7', 'Rechnung', '20.11.2026', 40), // nach heute
+    ['', '', '', '', '', '', '', '', '', '', '', '', ''],
+  ], berlin, hinweise, '2026-11-15');
+  assert.deepStrictEqual(roh(e), { zeilen: [['2026-01', 130.5], ['2026-02', 20]], belege: 5, fehler: 2 });
+  assert.deepStrictEqual(roh(hinweise), ['Tab Lexware-Rechnungen: 2 Belege ohne lesbares Datum oder Netto, fehlt im Gewinn.', 'Tab Lexware-Rechnungen: 1 Beleg nicht in Euro, fehlt im Gewinn.']);
+  // Alter Stand ohne Spalte M, falsche Kopfzeile oder kein Tab: keine Einnahmen
+  assert.strictEqual(k.einnahmenLesen([kopf.slice(0, 12), ['RE1', 'Rechnung', '05.01.2026']], berlin, [], '2026-11-15'), null);
+  assert.strictEqual(k.einnahmenLesen([['falsch'].concat(kopf.slice(1))], berlin, [], '2026-11-15'), null);
+  assert.strictEqual(k.einnahmenLesen(null, berlin, [], '2026-11-15'), null);
+});
+
+test('v42 Tab Lexware-GuV: je Jahr die GuV-Positionen, Ergebnis Pflicht, doppeltes Jahr und falscher Kopf mit Hinweis', () => {
+  const kopf = ['Jahr', 'Stand', 'Umsatzerlöse (€)', 'Sonstige betriebliche Erträge (€)', 'Materialaufwand (€)', 'Sonstige betriebliche Aufwendungen (€)',
+    'Zinsen und ähnliche Aufwendungen (€)', 'Ergebnis laut Lexware (€)', 'Quelle', 'Kommentar'];
+  const hinweise = [];
+  const g = k.lexwareGuvLesen([kopf,
+    [2026, '2026-11-10', 1000.005, '50,00 €', 300, 200, 10, 540, 'Lexware', ''],
+    ['2025', '31.12.2025', 900, '', 100, 100, 0, 700, '', ''],
+    [2026, '2026-11-12', 1000, 50, 300, 200, 10, 541, '', 'neuer'],
+    ['kaputt', '', 1, 1, 1, 1, 1, 1, '', ''],
+    [2024, '', 1, 1, 1, 1, 1, '', '', ''],
+    ['', '', '', '', '', '', '', '', '', ''],
+  ], berlin, hinweise);
+  assert.deepStrictEqual(roh(g), [
+    { jahr: 2025, stand: '2025-12-31', umsatz: 900, ertraege: null, material: 100, aufwand: 100, zinsen: 0, ergebnis: 700 },
+    { jahr: 2026, stand: '2026-11-12', umsatz: 1000, ertraege: 50, material: 300, aufwand: 200, zinsen: 10, ergebnis: 541 }]);
+  assert.deepStrictEqual(roh(hinweise), ['Tab Lexware-GuV: 2026 steht doppelt, es gilt Zeile 4.', 'Tab Lexware-GuV Zeile 5: Jahr oder Ergebnis unlesbar, zählt nicht.',
+    'Tab Lexware-GuV Zeile 6: Jahr oder Ergebnis unlesbar, zählt nicht.']);
+  const falsch = [];
+  assert.strictEqual(k.lexwareGuvLesen([['Jahr', 'Datum']], berlin, falsch), null);
+  assert.deepStrictEqual(roh(falsch), ['Tab Lexware-GuV: Kopfzeile passt nicht, der Gewinn kommt nur aus den Belegen.']);
+  assert.strictEqual(k.lexwareGuvLesen(null, berlin, []), null);
+});

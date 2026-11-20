@@ -1703,3 +1703,159 @@ test('v41 offene Rechnungen im Teilen-Text: nur die Summen, keine Namen, ohne Of
   assert.strictEqual(H.summeFormat(0.49), '0,49 €');
   assert.strictEqual(H.summeFormat(1234.5), '1.235 €');
 });
+
+// v42: Gewinn mit Lagerabgleich gegen den Bestand zum Jahresende (Lexware-API Task 19) --------------------------------
+
+/**
+ * Erfundene Daten: A (2025-02, 1 €), B (2025-08, 1,20 €), C (2026-07, 0,80 €) zu je 1.000 Flaschen. 2025 verkauft 900
+ * (aus A), 2026 zweimal 600 (Februar: 100 A + 500 B, September: 490 B + 110 C), 10 Promo im März (aus B), die alte Lücke
+ * am 13.11.2026 mit 150 Flaschen (aus C). Übrig 740 Flaschen von C.
+ */
+function abgleichDaten(heute, mehr) {
+  const zeilen = H.verkaufZeilen({ zeilen: [
+    ['2025-06', '2025-06-05', 'Berlin', 'A', 900, 1800, 'R0'],
+    ['2026-02', '2026-02-05', 'Berlin', 'A', 600, 1500, 'R1'],
+    ['2026-09', '2026-09-05', 'Berlin', 'B', 600, 1500, 'R2']].concat(mehr || []) }, heute);
+  const abf = [{ abfuellung: 'A', monat: '2025-02', flaschen: 1000, kostenProFlasche: 1 }, { abfuellung: 'B', monat: '2025-08', flaschen: 1000, kostenProFlasche: 1.2 },
+    { abfuellung: 'C', monat: '2026-07', flaschen: 1000, kostenProFlasche: 0.8 }];
+  const lager = { abgaenge: [['2026-03-10', 10, 'Promo']], schwund: [['2026-11-13', 150, '']] };
+  const marge = H.dashboardMehr(zeilen, H.monatsWerte({ zeilen: [] }, zeilen), heute, 24, abf, lager).marge;
+  const kosten = { zeilen: [['2026-01', 'Sonstiges', 'Miete', 500]], belege: 1, offen: 0, neuestes: heute.slice(0, 4) === '2027' ? '2027-02-01' : '2026-11-14', aeltestes: '2026-01-10' };
+  return { zeilen, abf, marge, kosten };
+}
+
+test('v42 bestandBewerten: übrig sind die jüngsten Abfüllungen (First in, First out)', () => {
+  const d = abgleichDaten('2026-11-15');
+  assert.strictEqual(H.bestandBewerten(740, d.abf, '2026-11').euro, 592);
+  assert.strictEqual(H.bestandBewerten(1500, d.abf, '2026-12').euro, 800 + 600, 'C ganz, dann 500 aus B');
+  assert.strictEqual(H.bestandBewerten(5000, d.abf, '2026-12').euro, 800 + 1200 + 3000, 'mehr als abgefüllt: Rest zur ältesten');
+  assert.deepStrictEqual(H.bestandBewerten(100, d.abf, '2025-12'), { euro: 120, kostenProFlasche: 1.2, name: 'B' }, 'C gab es da noch nicht');
+  assert.strictEqual(H.bestandBewerten(-10, d.abf, '2026-12').euro, -8);
+  assert.strictEqual(H.bestandBewerten(100, d.abf.concat([{ abfuellung: 'Storno C', monat: '2026-07', flaschen: -1000 }]), '2026-12').euro, 120, 'Storno hebt C auf');
+  assert.strictEqual(H.bestandBewerten(1500, [d.abf[0], Object.assign({}, d.abf[1], { kostenProFlasche: null }), d.abf[2]], '2026-12').euro, null);
+  assert.strictEqual(H.bestandBewerten(null, d.abf, '2026-12'), null);
+  assert.strictEqual(H.bestandBewerten(10, d.abf, '2024-12'), null);
+});
+
+test('v42 Gewinn laut Lexware: Einnahmen − Ware − sonstige Kosten − Lagerabnahme, Aufteilung des Wareneinsatzes', () => {
+  const heute = '2026-11-15';
+  const d = abgleichDaten(heute);
+  d.kosten.zeilen.push(['2026-06', 'Ware', 'Flaschen', 900]);
+  // Ohne `extra` (alte Aufrufe) die bisherige Rechnung aus den Verkäufen der App
+  const app = H.gewinnRechnen(d.zeilen, d.marge, d.kosten, d.abf, heute, 2026);
+  assert.deepStrictEqual([app.art, app.summe], ['app', { umsatz: 3000, wareneinsatz: 1376, weg: 12, sonstige: 500, kosten: 1888, gewinn: 1112, anteil: 37.1 }]);
+  assert.strictEqual(app.lager, undefined);
+  // Einnahmen netto laut Lexware je Belegmonat (eine Gutschrift im Oktober), Anfangsbestand laut Jahresabschluss
+  const einnahmen = { zeilen: [['2026-02', 1400], ['2026-09', 1450], ['2026-10', -50], ['2025-12', 999]], belege: 4, fehler: 0 };
+  const extra = { einnahmen: einnahmen, jahresende: [{ jahr: 2025, euro: 1300, flaschen: null, inventur: null }], flaschen: 740, geschaetzt: false, inventurAm: '2026-11-13' };
+  const g = H.gewinnRechnen(d.zeilen, d.marge, d.kosten, d.abf, heute, 2026, extra);
+  // 2.800 € Einnahmen − 900 € Ware − 500 € sonstige − 708 € Lagerabnahme (1.300 € − 740 Fl. zu 0,80 €) = 692 €
+  assert.deepStrictEqual([g.art, g.lagerFehlt, g.fehlerEinnahmen], ['lexware', null, 0]);
+  assert.deepStrictEqual(g.summe, { umsatz: 2800, einnahmen: 2800, ware: 900, sonstige: 500, lager: 708, kosten: 2108, gewinn: 692, anteil: 24.7, appUmsatz: 3000, wareneinsatz: 1376 });
+  assert.deepStrictEqual(g.lager, {
+    anfang: { stichtag: '2025-12-31', quelle: 'jahresabschluss', datum: null, euro: 1300, flaschen: 1083, ungefaehr: true, geschaetzt: false, kostenProFlasche: 1.2 },
+    ende: { stichtag: heute, quelle: 'heute', datum: heute, euro: 592, flaschen: 740, ungefaehr: false, geschaetzt: false, kostenProFlasche: 0.8 },
+    monat: '2026-11', abnahme: { euro: 708, flaschen: 343, ungefaehr: true },
+    // Wareneinsatz 708 + 800 € Abfüllung C = 1.508 €: 1.376 € verkauft, 12 € Promo, 120 € weggekommen (die Lücke, 150 Fl. zu 0,80 €; ≈ 133 Fl.)
+    abgefuellt: { flaschen: 1000, euro: 800 }, gesamt: 1508, verkauft: { flaschen: 1200, euro: 1376 }, weg: { flaschen: 10, euro: 12 },
+    weggekommen: { euro: 120, flaschen: 133, ungefaehr: true } });
+  // Monate: Einnahmen und Kosten nach Belegmonat, die Lagerabnahme im Monat der jüngsten Inventur; zusammen genau das Jahr
+  assert.deepStrictEqual(g.monate.filter((m) => m.lager !== 0).map((m) => [m.monat, m.lager]), [['2026-11', 708]]);
+  assert.deepStrictEqual(g.monate.slice(0, 2).map((m) => [m.einnahmen, m.ware, m.sonstige, m.gewinn]), [[0, 0, 500, -500], [1400, 0, 0, 1400]]);
+  ['einnahmen', 'ware', 'sonstige', 'lager', 'gewinn'].forEach((f) => assert.strictEqual(Math.round(g.monate.reduce((x, m) => x + m[f], 0) * 100) / 100, g.summe[f], f));
+  // Break-even und Fixkosten rechnen weiter mit den Verkäufen der App: wie bei der bisherigen Rechnung
+  assert.deepStrictEqual(H.kostenRechnen(g, d.zeilen, d.kosten, heute).breakEven, H.kostenRechnen(app, d.zeilen, d.kosten, heute).breakEven);
+  assert.ok(H.kostenRechnen(g, d.zeilen, d.kosten, heute).breakEven);
+  // Teils geschätzter Bestand wird durchgereicht; ohne Inventur im Jahr steht die Lagerabnahme im letzten Monat
+  const gs = H.gewinnRechnen(d.zeilen, d.marge, d.kosten, d.abf, heute, 2026, Object.assign({}, extra, { geschaetzt: true, inventurAm: '2025-10-01' }));
+  assert.deepStrictEqual([gs.lager.ende.geschaetzt, gs.lager.monat], [true, '2026-11']);
+  // Ohne Einnahmen netto aus Lexware (ältere Schnittstelle): Einnahmen und Gewinn unbekannt, Kosten, Lager und Break-even bleiben (Codex v42)
+  const ohneE = H.gewinnRechnen(d.zeilen, d.marge, d.kosten, d.abf, heute, 2026, Object.assign({}, extra, { einnahmen: undefined }));
+  assert.deepStrictEqual([ohneE.ohneEinnahmen, ohneE.summe.einnahmen, ohneE.summe.gewinn, ohneE.summe.ware, ohneE.summe.lager, ohneE.monate[1].gewinn], [true, null, null, 900, 708, null]);
+  assert.ok(H.kostenRechnen(ohneE, d.zeilen, d.kosten, heute).breakEven);
+  assert.strictEqual(g.ohneEinnahmen, false);
+  // Ohne Anfangsbestand: wie die GuV in Lexware, ohne Lagerveränderung, mit Grund
+  const ohneA = H.gewinnRechnen(d.zeilen, d.marge, d.kosten, d.abf, heute, 2026, Object.assign({}, extra, { jahresende: [] }));
+  assert.deepStrictEqual([ohneA.lager, ohneA.lagerFehlt, ohneA.summe.gewinn, 'lager' in ohneA.summe], [null, { grund: 'anfang', stichtag: '2025-12-31' }, 1400, false]);
+  const ohneS = H.gewinnRechnen(d.zeilen, d.marge, d.kosten, d.abf, heute, 2026, Object.assign({}, extra, { jahresende: undefined }));
+  assert.deepStrictEqual(ohneS.lagerFehlt, { grund: 'schnittstelle', stichtag: '2025-12-31' });
+  // Fehlen Herstellkosten für den Bestand, ist die Lagerabnahme und damit der Gewinn unbekannt
+  const abf = d.abf.map((a) => Object.assign({}, a));
+  abf[2].kostenProFlasche = null;
+  const gk = H.gewinnRechnen(d.zeilen, d.marge, d.kosten, abf, heute, 2026, extra);
+  assert.deepStrictEqual([gk.summe.lager, gk.summe.gewinn, gk.lager.abnahme.euro], [null, null, null]);
+});
+
+test('v42 Gewinn laut Lexware: Bestand laut Inventur zum Jahreswechsel, abgeschlossenes Jahr, Jahresabschluss geht vor', () => {
+  const heute = '2027-03-10';
+  // 2027: 100 Flaschen aus C verkauft; zur Inventur am 01.01.2027 waren 700 da (40 weniger als gerechnet)
+  const d = abgleichDaten(heute, [['2027-02', '2027-02-05', 'Berlin', 'C', 100, 250, 'R3']]);
+  const extra = { einnahmen: { zeilen: [['2026-02', 1400], ['2026-09', 1400], ['2027-02', 250]], belege: 3, fehler: 0 },
+    jahresende: [{ jahr: 2025, euro: 1300, flaschen: null, inventur: null }, { jahr: 2026, euro: null, flaschen: 700, inventur: '2027-01-01' }],
+    flaschen: 600, geschaetzt: false, inventurAm: '2027-01-01' };
+  const neu = H.gewinnRechnen(d.zeilen, d.marge, d.kosten, d.abf, heute, 2027, extra);
+  assert.deepStrictEqual(neu.lager.anfang, { stichtag: '2026-12-31', quelle: 'inventur', datum: '2027-01-01', euro: 560, flaschen: 700, ungefaehr: false, geschaetzt: false, kostenProFlasche: 0.8 });
+  // 560 € − 480 € = 80 € Lagerabnahme im Januar (Inventur), genau die verkauften 100 Flaschen: nichts weggekommen
+  assert.deepStrictEqual([neu.summe.gewinn, neu.lager.monat, neu.lager.abnahme, neu.lager.weggekommen], [170, '2027-01', { euro: 80, flaschen: 100, ungefaehr: false }, { euro: 0, flaschen: 0, ungefaehr: false }]);
+  // 2026 ist abgeschlossen: Ende = Inventur zum Jahreswechsel (700 zu 0,80 €), Lagerabnahme 740 € im Dezember
+  const alt = H.gewinnRechnen(d.zeilen, d.marge, d.kosten, d.abf, heute, 2026, extra);
+  assert.deepStrictEqual([alt.lager.ende.quelle, alt.lager.ende.euro, alt.summe.lager, alt.lager.monat, alt.lager.weggekommen.euro, alt.summe.gewinn],
+    ['inventur', 560, 740, '2026-12', 152, 1560]);
+  // Der Jahresabschluss geht vor: 600 € zum 31.12.2026 (≈ 750 Fl. zu 0,80 €)
+  const ja = H.gewinnRechnen(d.zeilen, d.marge, d.kosten, d.abf, heute, 2027, Object.assign({}, extra, { jahresende: [{ jahr: 2026, euro: 600, flaschen: 700, inventur: '2027-01-01' }] }));
+  assert.deepStrictEqual([ja.lager.anfang.quelle, ja.lager.anfang.flaschen, ja.lager.abnahme, ja.lager.weggekommen.euro, ja.lager.weggekommen.flaschen],
+    ['jahresabschluss', 750, { euro: 120, flaschen: 150, ungefaehr: true }, 40, 50]);
+  // Abgeschlossenes Jahr ohne Bestand zum 31.12.: ohne Lagerveränderung
+  assert.deepStrictEqual(H.gewinnRechnen(d.zeilen, d.marge, d.kosten, d.abf, heute, 2026, Object.assign({}, extra, { jahresende: [{ jahr: 2025, euro: 1300 }] })).lagerFehlt,
+    { grund: 'ende', stichtag: '2026-12-31' });
+});
+
+test('v42 Gewinn laut Lexware-GuV: Ergebnis − Lagerabnahme, Monate aus Belegen mit Abgleich zur GuV im Monat des Stands', () => {
+  const heute = '2026-11-15';
+  const d = abgleichDaten(heute);
+  d.kosten.zeilen.push(['2026-06', 'Ware', 'Flaschen', 900]);
+  const guv = [{ jahr: 2026, stand: '2026-11-10', umsatz: 2900, ertraege: 50, material: 950, aufwand: 520, zinsen: 30, ergebnis: 1450 }];
+  const extra = { einnahmen: { zeilen: [['2026-02', 1400], ['2026-09', 1450], ['2026-10', -50]], belege: 3, fehler: 0 }, guv: guv,
+    jahresende: [{ jahr: 2025, euro: 1300, flaschen: null, inventur: null }], flaschen: 740, geschaetzt: false, inventurAm: '2026-11-13' };
+  const g = H.gewinnRechnen(d.zeilen, d.marge, d.kosten, d.abf, heute, 2026, extra);
+  // Jahr: 1.450 € Ergebnis laut Lexware − 708 € Lagerabnahme = 742 €; aus Belegen wären es 1.400 €, der Abgleich ist +50 €
+  assert.deepStrictEqual([g.summe.gewinn, g.summe.lager, g.summe.abgleich, g.abgleichGuv, g.summe.anteil], [742, 708, 50, { euro: 50, monat: '2026-11' }, 25.6]);
+  assert.deepStrictEqual(g.guv, { stand: '2026-11-10', umsatz: 2900, ertraege: 50, material: 950, aufwand: 520, zinsen: 30, ergebnis: 1450 });
+  // Die Monate zusammen ergeben genau den Jahresgewinn; der Abgleich steht nur im November
+  assert.strictEqual(Math.round(g.monate.reduce((x, m) => x + m.gewinn, 0) * 100) / 100, 742);
+  assert.deepStrictEqual(g.monate.filter((m) => m.abgleich !== 0).map((m) => [m.monat, m.abgleich, m.kosten]), [['2026-11', 50, 658]]);
+  // Ohne Einnahmen aus Belegen gilt die GuV trotzdem fürs Jahr; Monate und Abgleich sind dann unbekannt
+  const ohneE = H.gewinnRechnen(d.zeilen, d.marge, d.kosten, d.abf, heute, 2026, Object.assign({}, extra, { einnahmen: null }));
+  assert.deepStrictEqual([ohneE.summe.gewinn, ohneE.abgleichGuv.euro, ohneE.monate[10].gewinn, ohneE.monate[5].kosten], [742, null, null, 900]);
+  // GuV ohne Lagerabgleich (Anfangsbestand fehlt): Ergebnis laut Lexware
+  assert.strictEqual(H.gewinnRechnen(d.zeilen, d.marge, d.kosten, d.abf, heute, 2026, Object.assign({}, extra, { jahresende: [] })).summe.gewinn, 1450);
+  // Für ein anderes Jahr zählt die Zeile nicht
+  assert.strictEqual(H.gewinnRechnen(d.zeilen, d.marge, d.kosten, d.abf, heute, 2026, Object.assign({}, extra, { guv: [Object.assign({}, guv[0], { jahr: 2025 })] })).guv, null);
+});
+
+test('v42 Codex: ein Stichtag für Einnahmen, Kosten und Lager; Schwund der Januar-Inventur nicht doppelt; leerer Bestand ist 0 €', () => {
+  const heute = '2026-11-15';
+  const d = abgleichDaten(heute);
+  // Letzter Kostenbeleg im April: Einnahmen und Lager zählen trotzdem bis heute, nichts fehlt
+  const kosten = { zeilen: [['2026-01', 'Sonstiges', 'Miete', 500]], belege: 1, offen: 0, neuestes: '2026-04-02', aeltestes: '2026-01-10' };
+  const extra = { einnahmen: { zeilen: [['2026-05', 100]], belege: 1, fehler: 0 }, jahresende: [{ jahr: 2025, euro: 592 }], flaschen: 740, inventurAm: '2026-11-13' };
+  const g = H.gewinnRechnen(d.zeilen, d.marge, kosten, d.abf, heute, 2026, extra);
+  assert.deepStrictEqual([g.bis, g.offenAb, g.summe.einnahmen, g.summe.lager, g.summe.gewinn], ['2026-11', null, 100, 0, -400]);
+  // Kostenbelege nur aus dem Vorjahr der Lexware-Abdeckung: das laufende Jahr ist trotzdem wählbar
+  const k27 = H.gewinnRechnen(d.zeilen, d.marge, d.kosten, d.abf, '2027-02-10', 2027, { einnahmen: { zeilen: [], belege: 0, fehler: 0 }, jahresende: [], flaschen: 740 });
+  assert.deepStrictEqual([k27.jahre, k27.jahr, k27.bis], [[2027, 2026], 2027, '2027-02']);
+  // Januar-Inventur: Ihr Schwund steckt schon im Anfangsbestand und zählt in der Aufteilung nicht noch einmal
+  const z = H.verkaufZeilen({ zeilen: [] }, '2027-03-01');
+  const abf = [{ abfuellung: 'C', monat: '2026-07', flaschen: 1000, kostenProFlasche: 0.8 }];
+  const marge = H.dashboardMehr(z, H.monatsWerte({ zeilen: [] }, z), '2027-03-01', 24, abf, { abgaenge: [], schwund: [['2027-01-05', 10, 'Lager Süd'], ['2027-02-10', 5, 'Lager Süd']] }).marge;
+  const la = H.lagerAbgleich(2027, z, marge, abf, '2027-03-01', { jahresende: [{ jahr: 2026, flaschen: 990, inventur: '2027-01-05' }], flaschen: 985 });
+  assert.deepStrictEqual([la.abgleich.weg.flaschen, la.abgleich.differenz.flaschen], [5, 0]);
+  // Versetzte Zählungen: Je Lager zählt sein eigener Zähltag. Süd war am 31.12. gezählt, sein Schwund am 05.01. gehört in die Aufteilung
+  const versetzt = H.lagerAbgleich(2027, z, marge, abf, '2027-03-01',
+    { jahresende: [{ jahr: 2026, flaschen: 1000, inventur: '2027-01-10', zaehltage: { 'Lager Süd': '2026-12-31', 'Lager Nord': '2027-01-10' } }], flaschen: 985 });
+  assert.deepStrictEqual([versetzt.abgleich.weg.flaschen, versetzt.abgleich.differenz.flaschen], [15, 0]);
+  // Leerer Bestand vor der ersten Abfüllung: 0 €
+  assert.strictEqual(H.bestandBewerten(0, abf, '2025-12').euro, 0);
+  // Leerer Bestand ist 0 €, auch ohne Herstellkosten
+  assert.strictEqual(H.bestandBewerten(0, [{ abfuellung: 'X', monat: '2026-01', flaschen: 10, kostenProFlasche: null }], '2026-12').euro, 0);
+});

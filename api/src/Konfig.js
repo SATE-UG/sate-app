@@ -101,6 +101,13 @@ const EINSTELLUNGEN = [
   { text: 'Zeitraum für Ø-Abverkauf (Monate)', schluessel: 'abverkaufMonate', standard: 6, zahl: true, ganz: true, min: 1 },
   { text: 'Flaschen pro Kiste', schluessel: 'flaschenProKiste', standard: 24, zahl: true, min: 1 },
 ];
+/**
+ * Bestand zum Jahresende (seit v42, Lagerabgleich im Gewinn): Zeilen im Tab App-Einstellungen mit diesem Muster in A,
+ * z. B. „Bestand 31.12.2025 (€)“ mit dem Wert der Vorräte laut Jahresabschluss. Freiwillig, kein Hinweis, wenn sie fehlen.
+ */
+const BESTAND_JAHRESENDE_MUSTER = /^Bestand 31\.12\.(\d{4}) \(€\)$/;
+/** Jahresinventur: Zählungen vom 31.12. bis zu diesem Tag im Januar (MM-TT) gelten als Bestand zum 31.12. */
+const JAHRESINVENTUR_BIS = '01-15';
 /** Bestellstatus: „bald“, wenn der späteste Bestelltermin höchstens so viele Tage entfernt ist. */
 const BALD_TAGE = 30;
 /** Durchschnittliche Monatslänge in Tagen (für „leer am“ aus der Reichweite in Monaten). */
@@ -185,11 +192,28 @@ const KOSTEN_STATUS_OFFEN = /^(blank|unchecked)$/i;
  * werden A, C, D, E, G, H, I, L.
  */
 const LEXWARE_RECHNUNGEN_TAB = 'Lexware-Rechnungen';
-const LR = { NR: 0, DATUM: 2, FAELLIG: 3, KUNDE: 4, OFFEN: 6, STATUS: 7, WAEHRUNG: 8, KUNDE_ID: 11 };
+const LR = { NR: 0, TYP: 1, DATUM: 2, FAELLIG: 3, KUNDE: 4, OFFEN: 6, STATUS: 7, WAEHRUNG: 8, KUNDE_ID: 11, NETTO: 12 };
 const LR_KOPF = { 0: 'Belegnr.', 2: 'Datum', 3: 'Fällig am', 4: 'Kunde', 6: 'offen (€)', 7: 'Status', 8: 'Währung', 11: 'Kunden-ID' };
 /** Nur diese Status zählen als offene Forderung (`paid`, `paidoff`, `voided` und Entwürfe nicht). */
 const RECHNUNG_STATUS_OFFEN = /^(open|overdue)$/i;
 const RECHNUNG_STATUS_UEBERFAELLIG = /^overdue$/i;
+/**
+ * Einnahmen für den Gewinn (seit v42, Lexware-API Task 19): Spalte M „netto (€)“ im Tab Lexware-Rechnungen (schreibt das
+ * Belege-Skript seit 2026-11-20), dazu Zeilen mit Typ „Einnahme“ bzw. „Einnahme-Gutschrift“ (Buchhaltungsbelege, z. B.
+ * SumUp). Gutschriften zählen negativ, `voided` gar nicht, Monat = Belegdatum (C). Ohne die Spalte: keine Einnahmen.
+ */
+const LR_NETTO_KOPF = 'netto (€)';
+/**
+ * Tab „Lexware-GuV“ (seit v42, nur lesen, freiwillig): je Jahr eine Zeile mit den Zahlen der GuV aus Lexware, von Hand
+ * bzw. von Claude eingetragen. A Jahr, B Stand, C Umsatzerlöse, D sonstige betriebliche Erträge, E Materialaufwand,
+ * F sonstige betriebliche Aufwendungen, G Zinsen und ähnliche Aufwendungen, H Ergebnis laut Lexware, I Quelle,
+ * J Kommentar. Aufwände positiv. Gibt es für ein Jahr eine Zeile, ist ihr Ergebnis die Grundlage des Jahresgewinns.
+ */
+const LEXWARE_GUV_TAB = 'Lexware-GuV';
+const GUV_KOPF = ['Jahr', 'Stand', 'Umsatzerlöse (€)', 'Sonstige betriebliche Erträge (€)', 'Materialaufwand (€)',
+  'Sonstige betriebliche Aufwendungen (€)', 'Zinsen und ähnliche Aufwendungen (€)', 'Ergebnis laut Lexware (€)'];
+const RECHNUNG_STATUS_STORNIERT = /^voided$/i;
+const RECHNUNG_TYP_GUTSCHRIFT = /gutschrift/i;
 /**
  * Rechtsformen, die beim Abgleich Lexware-Kunde → Kunde in der App am Namensende nicht zählen („Kultursphäre GmbH“
  * passt zu „Kultursphäre“). Nur ganze Wörter nach dem Entfernen von Satzzeichen, nur am Ende.

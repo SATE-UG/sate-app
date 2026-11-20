@@ -461,23 +461,29 @@ test('PWA: Gewinn vorläufig (v38) – Kachel auf dem Start, Thema „Gewinn und
   const ansichten = lies('docs/ansichten.js');
   const hilfen = lies('docs/hilfen.js');
   // Gerechnet in hilfen.js aus dem, was die App schon hat (Rohertrag-Kosten je Zeile, Abgänge je Monat) und uebersicht.kosten
-  assert.match(ansichten, /return H\.gewinnRechnen\(a\.zeilen, zd\.mehr\.marge, u\.kosten, u\.abfuellungen, a\.heute, jahr\);/);
+  assert.match(ansichten, /return H\.gewinnRechnen\(a\.zeilen, zd\.mehr\.marge, u\.kosten, u\.abfuellungen, a\.heute, jahr, extra\);/);
   assert.match(hilfen, /wegJeMonat: !bekannt \? null : /);
   // Start: Kachel „Gewinn“ mit „vorläufig“ nur mit Kosten für das gezeigte Jahr, sie öffnet das Blatt für dieses Jahr
-  assert.match(ansichten, /const gs = gw && !gw\.hinweis && gw\.jahr === jv\.jahr \? gw\.summe : null;/);
+  assert.match(ansichten, /const gs = gw && !gw\.hinweis && gw\.jahr === jv\.jahr && !\(gw\.ohneEinnahmen && !gw\.guv\) \? gw\.summe : null;/);
   assert.match(ansichten, /onclick: \(\) => S\.zahlenZeigen\('gewinn', jv\.jahr, \(\) => document\.querySelector\('#app \[data-start="gewinn"\]'\)\),/);
-  // seit v39: „unvollständig“ bei unlesbaren Zeilen im Tab, „bis …“, wenn Lexware das Jahr nur zum Teil abdeckt
-  assert.match(ansichten, /const gKlein = !gs \? '' : !zahlDa\(gs\.gewinn\) \? 'Kosten fehlen' : gw\.fehler \? 'unvollständig' : gBis \|\| 'vorläufig';/);
-  assert.match(ansichten, /gewinnKachel,\s*kachel\('Flaschen',/);
+  // seit v39: „unvollständig“ bei unlesbaren Zeilen im Tab, „bis …“, wenn Lexware das Jahr nur zum Teil abdeckt;
+  // seit v42 laut Lexware mit bzw. ohne Lager, die Kachel steht vor dem Umsatz
+  assert.match(ansichten, /const gKlein = !gs \? '' : !zahlDa\(gs\.gewinn\) \? 'Herstellkosten fehlen' : gw\.fehler \|\| gw\.fehlerEinnahmen \? 'unvollständig' : gBis \|\| \(gw\.lager \? 'steuerlich, vorläufig' : 'laut Lexware, ohne Lager'\);/);
+  assert.match(ansichten, /gewinnKachel \? h\('div', \{ class: 'dash-kacheln jahr-start-kacheln jahr-start-gewinn' \}, gewinnKachel\) : null,\s*h\('button', \{ type: 'button', class: 'jahr-start-kopf',/);
+  assert.doesNotMatch(ansichten, /gewinnKachel,\s*kachel\('Flaschen',/);
   assert.match(css, /\.jahr-start-kacheln\.zwei, \.jahr-start-kacheln\.vier \{ grid-template-columns: repeat\(2, minmax\(0, 1fr\)\); \}/);
   // Blatt: Treppe, Kategorien, Vergleich, Monate; die Hinweise zu Grenzen und Stand stehen sichtbar da
   assert.match(ansichten, /gewinn: 'Gewinn und Kosten'/);
-  assert.match(ansichten, /'Buchungen ohne Beleg \(z\. B\. Zinsen, Bankgebühren\) fehlen\. Kein Ersatz für GuV oder Jahresabschluss\.'/);
-  assert.match(ansichten, /text: 'Stand: Lexware, täglich' \+ \(gw\.neuestes \? ', neuester Beleg vom ' \+ H\.datumText\(gw\.neuestes\) : ''\)/);
-  // seit v40: Wareneinkauf je Kategorie mit Summe, „steckt schon im Wareneinsatz“ in der Fußnote
+  assert.match(ansichten, /'Wie GuV in Lexware plus Lagerveränderung\. Buchungen ohne Beleg fehlen\.'/);
+  assert.match(ansichten, /'\. Wie GuV in Lexware plus Lagerveränderung\. Buchungen ohne Beleg fehlen' \+ \(gw\.guv \? ' nur in den Monaten\.' : '\.'\)/);
+  assert.match(ansichten, /'Stand: Lexware-GuV vom ' \+ H\.datumFormat\(gw\.guv\.stand\)/);
+  assert.match(ansichten, /'Stand: Lexware, täglich, aus Belegen, ohne Buchungen ohne Beleg'/);
+  // seit v40: Wareneinkauf je Kategorie mit Summe; seit v42 zählt Ware laut Lexware im Gewinn, die Abfüllungen nur zum Vergleich
   assert.match(ansichten, /zellen: \['Wareneinkauf', eur\(gw\.wareLexware\), klein\(''\)\]/);
-  assert.match(ansichten, /'Wareneinkauf laut Lexware steckt über die Herstellkosten je Abfüllung schon im Wareneinsatz\./);
-  ['Umsatz', 'Wareneinsatz', 'Ohne Verkauf weg', 'Sonstige Kosten'].forEach((x) => assert.match(ansichten, new RegExp("\\{ zellen: \\['" + x + "', ")));
+  assert.match(ansichten, /dashTitel\('Wareneinkauf und Abfüllungen', 'zum Vergleich'\)/);
+  // seit v42 die Treppe laut Lexware: Einnahmen, Ware/Material, sonstige Kosten, Lagerabnahme, Gewinn
+  ["nameMit('Einnahmen', 'Lexware')", "nameMit('Ware/Material', 'Lexware')", "nameMit('Sonstige Kosten', 'Lexware')", "nameMit(lagerName(sg.lager))"]
+    .forEach((x) => assert.ok(ansichten.indexOf('zellen: [' + x) >= 0, x));
   // Ohne Kosten aus Lexware kein Gewinn, nur der Hinweis
   assert.match(hilfen, /hinweis: 'Noch keine Kosten aus Lexware\./);
   // Keine Trennpunkte zwischen Wörtern (Mark)
@@ -541,4 +547,38 @@ test('PWA: Gewinn und Kosten als Dashboard (v40) – Monatsbild, Fixkosten und B
   // Schnittstelle: Lieferant nur mit passendem Kopf, sonst fehlt das Feld
   assert.match(lies('api/src/Konfig.js'), /const LK_LIEFERANT_KOPF = 'Lieferant';/);
   assert.match(lies('api/src/UebersichtLogik.js'), /if \(mitLieferant\) \{\s*aus\.lieferanten = /);
+});
+
+test('PWA: Gewinn laut Lexware (v42) – Einnahmen und Bestand aus der Schnittstelle, Lager-Block, Wareneinsatz zur Erklärung', () => {
+  const css = lies('docs/style.css');
+  const ansichten = lies('docs/ansichten.js');
+  // Einnahmen netto, Bestand zum Jahresende, Bestand heute und jüngste Inventur gehen in die Rechnung; Start und Blatt nutzen dieselbe Funktion
+  assert.match(ansichten, /const extra = \{ einnahmen: u\.einnahmen \|\| null, guv: u\.guv \|\| null, jahresende: u\.jahresende, flaschen: typeof k\.gesamtbestand === 'number' \? k\.gesamtbestand : null,\s*geschaetzt: k\.gesamtQuelle !== 'inventur', inventurAm: inventurAm \};/);
+  assert.match(css, /\.dash-zeile\.dash-lagerdiff \{ background: var\(--akzent-weich\); border-radius: 6px; \}/);
+  assert.match(css, /\.jahr-start-kacheln\.jahr-start-gewinn \{ grid-template-columns: minmax\(0, 1fr\); padding-top: 12px; \}/);
+  // Lager-Block mit Quelle des Anfangsbestands, Hinweis bei geschätztem Bestand, Aufteilung des Wareneinsatzes
+  const block = ansichten.slice(ansichten.indexOf('const lagerBlock = () => {'), ansichten.indexOf("dashTitel('Gewinn ' + gj, gw.fehler"));
+  assert.ok(block.length > 1000);
+  assert.match(ansichten, /'laut Jahresabschluss ' \+ x\.stichtag\.slice\(0, 4\)/);
+  assert.match(ansichten, /'laut Inventur ' \+ H\.datumFormat\(x\.datum\)/);
+  assert.match(block, /Bestand teils geschätzt/);
+  assert.match(block, /minus Verkauftes und Gebuchtes/);
+  assert.match(block, /\{ klasse: 'dash-lagerdiff', zellen: \['Weggekommen', ca\(wg\), eur\(wg\.euro\)\] \}/);
+  assert.match(block, /Der Gewinn ist hier nur die GuV in Lexware, ohne Lagerveränderung\./);
+  assert.doesNotMatch(block, /[·•]/, 'keine Trennpunkte (Mark)');
+  // Schnittstelle: Einnahmen aus Spalte M des Tabs Lexware-Rechnungen
+  assert.match(lies('api/src/UebersichtLogik.js'), /const einnahmen = einnahmenLesen\(roh\.lexwareRechnungen, formatieren, hinweise, heute\);/);
+  assert.match(lies('api/src/Konfig.js'), /const LR_NETTO_KOPF = 'netto \(€\)';/);
+});
+
+test('PWA: Gewinn mit Lexware-GuV (v42) – Treppe aus der GuV, Abgleich in den Monaten, Hinweis ohne Einnahmen', () => {
+  const ansichten = lies('docs/ansichten.js');
+  const treppe = ansichten.slice(ansichten.indexOf('const gewinnTreppe = () => {'), ansichten.indexOf('teile.push(', ansichten.indexOf('const gewinnTreppe = () => {')));
+  ["'Umsatzerlöse'", "'Sonstige Erträge'", "'Materialaufwand'", "'Sonstige Aufwendungen'", "'Zinsen'", "nameMit('Ergebnis', 'laut Lexware')", 'lagerZeile()', 'gewinnName']
+    .forEach((x) => assert.ok(treppe.indexOf(x) >= 0, x));
+  assert.match(ansichten, /const gewinnName = nameMit\('Gewinn', gw\.fehler \|\| gw\.fehlerEinnahmen \? 'unvollständig' : 'steuerlich'\);/);
+  assert.match(ansichten, /\['Abgleich zur GuV', /);
+  assert.match(ansichten, /'Einnahmen netto aus Lexware fehlen noch \(Tab „Lexware-Rechnungen“, Spalte „netto \(€\)“\)\. '/);
+  assert.match(lies('api/src/Api.js'), /lexwareGuv: guv \? guv\.getDataRange\(\)\.getValues\(\) : null,/);
+  assert.doesNotMatch(treppe, /[·•]/);
 });

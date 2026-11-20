@@ -1965,7 +1965,7 @@
           // Ohne Standort: die alte Lücke. Diese Flaschen fehlten schon, als zum ersten Mal alle Lager gezählt waren.
           // Wann und aus welcher Abfüllung sie weggingen, weiß niemand: Sie brauchen die Abfüllungen am Zähltag auf
           // (damit die Mengen stimmen), ihr Geld steht aber für sich und zählt zu keinem Jahr und keiner Abfüllung.
-          .map((x) => ({ datum: x[0], flaschen: x[1], art: x[2] === '' ? 'Lücke' : 'Schwund' })));
+          .map((x) => ({ datum: x[0], flaschen: x[1], art: x[2] === '' ? 'Lücke' : 'Schwund', standort: typeof x[2] === 'string' ? x[2] : '' })));
       // „Sonstiges“ nur, wenn die Schnittstelle eine Art schickt, die die App nicht kennt
       const VERLUST_ARTEN = GEBUCHT.concat(ereignisse.some((e) => e.art === 'Sonstiges') ? ['Sonstiges'] : [], ['Schwund']);
       // Zeilen nach dem laufenden Monat zählen nirgends mit (die App lässt sie schon in verkaufZeilen weg): auch
@@ -2144,6 +2144,8 @@
         // Kosten ungerundet, damit die Jahressumme im Gewinn auf den Cent die aus „Ohne Verkauf weg“ ist (Codex v38)
         wegJeMonat: !bekannt ? null : Object.keys(vMonat).sort().map((m) => ({ monat: m, flaschen: runde(vMonat[m].flaschen),
           kosten: vMonat[m].offen ? null : vMonat[m].kosten })),
+        // Seit v42 für den Lagerabgleich: dieselben Abgänge einzeln [Datum, Flaschen, Kosten (ungerundet oder null), Art], ohne die alte Lücke
+        wegListe: !bekannt ? null : ereignisse.map((e, i) => [e.datum, e.flaschen, fifo.abgang[i], e.art, e.standort || '']).filter((x) => x[3] !== 'Lücke'),
         jahr: roh(jahrS), vorjahr: vorDa ? roh(vorS) : null, gesamt: roh(gesS), monate: mMonate,
         kanaele: mitAnteil(zj.kanaele.map((x) => Object.assign({ kanal: x.kanal }, roh(kanS[x.kanal] || leer()))).filter(zeigt)),
         top: mitAnteil(zj.kunden.map((x) => Object.assign({ kunde: x.kunde }, roh(kunS[x.schluessel] || leer()))).filter(zeigt)).sort(nachErtrag)
@@ -2163,6 +2165,137 @@
       aus.marge.nach = !verluste ? null : { jahr: nach(aus.marge.jahr, v3.jahr), vorjahr: nach(aus.marge.vorjahr, v3.vorjahr), gesamt: nach(aus.marge.gesamt, v3.gesamt) };
     }
     return aus;
+  }
+
+  /**
+   * Wert eines Bestands zu Herstellkosten nach First in, First out (seit v42, Lagerabgleich): Übrig sind immer die
+   * jüngsten Abfüllungen. Gezählt wird ab der jüngsten Abfüllung bis zum Monat `bis` (`JJJJ-MM`; Abfüllungen ohne
+   * lesbaren Monat zählen mit), reicht sie nicht, kommt die davor dazu. Mehr Flaschen als alle Abfüllungen zusammen
+   * rechnen mit der ältesten, ein Bestand unter 0 mit der jüngsten. `abfuellungen` wie von der Schnittstelle (Stornos
+   * heben ihre Abfüllung auf, fifoSchichten). Ergebnis { euro (ungerundet; null, wenn einer berührten Abfüllung die
+   * Kosten fehlen), kostenProFlasche (der jüngsten Abfüllung oder null), name (der jüngsten) } oder null ohne gültige
+   * Flaschen bzw. ohne Abfüllung bis dahin.
+   */
+  function bestandBewerten(flaschen, abfuellungen, bis) {
+    if (!istZahl(flaschen) || typeof bis !== 'string') return null;
+    const liste = (fifoSchichten(abfuellungen) || []).filter((x) => !x.monat || x.monat <= bis).reverse();
+    // Ein leerer Bestand ist 0 € wert, auch wenn Herstellkosten oder Abfüllungen fehlen (Codex v42)
+    if (flaschen === 0) return { euro: 0, kostenProFlasche: liste.length ? liste[0].kosten : null, name: liste.length ? liste[0].name : '' };
+    if (!liste.length) return null;
+    const aus = { euro: null, kostenProFlasche: liste[0].kosten, name: liste[0].name };
+    if (flaschen < 0) {
+      if (liste[0].kosten !== null) aus.euro = flaschen * liste[0].kosten;
+      return aus;
+    }
+    let rest = flaschen;
+    let euro = 0;
+    for (let i = 0; i < liste.length && rest > 0; i++) {
+      const n = i === liste.length - 1 ? rest : Math.min(rest, liste[i].flaschen); // die älteste nimmt den Rest
+      if (liste[i].kosten === null) return aus;
+      euro += n * liste[i].kosten;
+      rest -= n;
+    }
+    aus.euro = euro;
+    return aus;
+  }
+
+  /**
+   * Lagerabgleich eines Jahres für den Gewinn (seit v42, Lexware-API Task 19; Mark 2026-11-20: „immer den Lagerstand vom
+   * Ende des letzten Jahres nehmen und dann mit dem aktuellen vergleichen“). Wareneinsatz gesamt = Anfangsbestand +
+   * Herstellkosten der Abfüllungen im Jahr − Endbestand, alles zu Herstellkosten. Davon sind die verkauften Flaschen
+   * (First in, First out, `kostenJeZeile`) und die gebuchten Abgänge (`wegJeMonat`: Promo, Eigenverbrauch, Bruch, Schwund
+   * aus Nachzählungen) bekannt; der Rest ist die Lagerdifferenz: weggekommen, aber nirgends gebucht (darin steckt auch
+   * die alte Lücke, die deshalb nicht noch einmal zählt).
+   * Bestände aus `bestand.jahresende` ([{ jahr, euro, flaschen, inventur }] der Schnittstelle):
+   * - Anfang (31.12. des Vorjahres): der Wert laut Jahresabschluss (`euro`, Einstellung „Bestand 31.12.JJJJ (€)“) geht
+   *   vor; Flaschen dann ≈ Wert ÷ Herstellkosten der damals jüngsten Abfüllung. Sonst die Flaschen laut Inventur
+   *   (zwischen 31.12. und 15.01.), bewertet mit bestandBewerten.
+   * - Ende: im laufenden Jahr der Bestand heute (`bestand.flaschen`, `bestand.geschaetzt` = nicht alle Lager gezählt);
+   *   in einem abgeschlossenen Jahr der 31.12. wie beim Anfang.
+   * Ergebnis { abgleich } oder { fehlt: 'schnittstelle' | 'anfang' | 'ende', stichtag } (dann gilt die Rechnung ohne
+   * Abgleich). `abgleich` = { anfang, ende (je { stichtag, quelle ('jahresabschluss', 'inventur', 'heute'), datum
+   * (Zähltag bzw. heute oder null), euro, flaschen, ungefaehr, geschaetzt, kostenProFlasche }), abgefuellt ({ flaschen,
+   * euro }), verkauft, weg (je { flaschen, euro }), gesamt (Wareneinsatz gesamt), differenz ({ euro, flaschen,
+   * ungefaehr }) }. Euro ungerundet, null, wenn Herstellkosten fehlen.
+   */
+  function lagerAbgleich(jahr, zeilen, marge, abfuellungen, heute, bestand) {
+    if (!bestand || !Array.isArray(bestand.jahresende)) return { fehlt: 'schnittstelle', stichtag: (jahr - 1) + '-12-31' };
+    const laufend = jahr === Number(heute.slice(0, 4));
+    const endeMonat = laufend ? heute.slice(0, 7) : jahr + '-12';
+    const je = Object.create(null);
+    bestand.jahresende.forEach((x) => { if (x && istZahl(x.jahr)) je[x.jahr] = x; });
+    // Bestand zum 31.12. eines Jahres: Jahresabschluss vor Inventur
+    const zumJahresende = (j) => {
+      const x = je[j];
+      const stichtag = j + '-12-31';
+      const bis = j + '-12';
+      if (x && istZahl(x.euro) && x.euro >= 0) {
+        const b = bestandBewerten(1, abfuellungen, bis);
+        const k = b ? b.kostenProFlasche : null;
+        return { stichtag: stichtag, quelle: 'jahresabschluss', datum: null, euro: x.euro, flaschen: k ? x.euro / k : null, ungefaehr: true, geschaetzt: false, kostenProFlasche: k };
+      }
+      if (x && istZahl(x.flaschen)) {
+        const b = bestandBewerten(x.flaschen, abfuellungen, bis);
+        return { stichtag: stichtag, quelle: 'inventur', datum: datumGueltig(x.inventur) ? x.inventur : null, euro: b ? b.euro : null, flaschen: x.flaschen,
+          ungefaehr: false, geschaetzt: false, kostenProFlasche: b ? b.kostenProFlasche : null,
+          zaehltage: x.zaehltage && typeof x.zaehltage === 'object' ? x.zaehltage : null };
+      }
+      return null;
+    };
+    const anfang = zumJahresende(jahr - 1);
+    if (!anfang) return { fehlt: 'anfang', stichtag: (jahr - 1) + '-12-31' };
+    let ende = null;
+    if (!laufend) ende = zumJahresende(jahr);
+    else if (istZahl(bestand.flaschen)) {
+      const b = bestandBewerten(bestand.flaschen, abfuellungen, endeMonat);
+      ende = { stichtag: heute, quelle: 'heute', datum: heute, euro: b ? b.euro : null, flaschen: bestand.flaschen, ungefaehr: false,
+        geschaetzt: !!bestand.geschaetzt, kostenProFlasche: b ? b.kostenProFlasche : null };
+    }
+    if (!ende) return { fehlt: 'ende', stichtag: laufend ? heute : jahr + '-12-31' };
+    // Abfüllungen im Jahr (bis zum Endmonat), Stornos abgezogen
+    const abf = (fifoSchichten(abfuellungen) || []).filter((x) => x.monat >= jahr + '-01' && x.monat <= endeMonat);
+    const abgefuellt = { flaschen: abf.reduce((x, a) => x + a.flaschen, 0),
+      euro: abf.some((a) => a.kosten === null) ? null : abf.reduce((x, a) => x + a.flaschen * a.kosten, 0) };
+    // Verkauft im Jahr: dieselben Zeilen und Kosten wie beim Rohertrag (Rechnungen nach heute zählen noch nicht)
+    const verkauft = { flaschen: 0, euro: 0 };
+    const k = Array.isArray(marge.kostenJeZeile) ? marge.kostenJeZeile : [];
+    zeilen.forEach((z, i) => {
+      if (!z || typeof z.monat !== 'string' || z.monat < jahr + '-01' || z.monat > endeMonat) return;
+      if (datumGueltig(z.datum) && z.datum > heute) return;
+      verkauft.flaschen += istZahl(z.flaschen) ? z.flaschen : 0;
+      if (istZahl(k[i])) { if (verkauft.euro !== null) verkauft.euro += k[i]; } else verkauft.euro = null;
+    });
+    // Ohne Verkauf weg, gebucht (ohne die alte Lücke). Kommt der Anfangsbestand aus einer Inventur im Januar, steckt der
+    // Schwund dieser Zählung schon in ihm: Schwund bis zum Zähltag zählt dann hier nicht noch einmal (Codex v42).
+    const weg = { flaschen: 0, euro: Array.isArray(marge.wegListe) || Array.isArray(marge.wegJeMonat) ? 0 : null };
+    const dazu = (fl, kosten) => {
+      weg.flaschen += istZahl(fl) ? fl : 0;
+      if (istZahl(kosten)) { if (weg.euro !== null) weg.euro += kosten; } else weg.euro = null;
+    };
+    // Je Lager bis zu seinem eigenen Zähltag im Januar (ältere Schnittstelle ohne `zaehltage`: der späteste Zähltag)
+    const schonDrin = (standort) => {
+      if (anfang.quelle !== 'inventur') return '';
+      if (anfang.zaehltage) return datumGueltig(anfang.zaehltage[standort]) ? anfang.zaehltage[standort] : '';
+      return anfang.datum || '';
+    };
+    if (Array.isArray(marge.wegListe)) {
+      marge.wegListe.forEach((w) => {
+        if (!Array.isArray(w) || !datumGueltig(w[0]) || w[0] < jahr + '-01-01' || w[0].slice(0, 7) > endeMonat) return;
+        if (w[3] === 'Schwund' && schonDrin(w[4]) && w[0] <= schonDrin(w[4])) return;
+        dazu(w[1], w[2]);
+      });
+    } else {
+      (Array.isArray(marge.wegJeMonat) ? marge.wegJeMonat : []).forEach((w) => {
+        if (!w || typeof w.monat !== 'string' || w.monat < jahr + '-01' || w.monat > endeMonat) return;
+        dazu(w.flaschen, w.kosten);
+      });
+    }
+    const summe = (werte) => (werte.some((x) => x === null) ? null : werte.reduce((x, y) => x + y, 0));
+    const gesamt = summe([anfang.euro, abgefuellt.euro, ende.euro === null ? null : -ende.euro]);
+    const fl = summe([anfang.flaschen, abgefuellt.flaschen, -verkauft.flaschen, -weg.flaschen, ende.flaschen === null ? null : -ende.flaschen]);
+    return { abgleich: { anfang: anfang, ende: ende, abgefuellt: abgefuellt, verkauft: verkauft, weg: weg, gesamt: gesamt,
+      differenz: { euro: summe([gesamt, verkauft.euro === null ? null : -verkauft.euro, weg.euro === null ? null : -weg.euro]),
+        flaschen: fl, ungefaehr: anfang.ungefaehr || ende.ungefaehr } } };
   }
 
   /** Erstes Jahr mit Kosten aus Lexware: Das Belege-Skript liest Eingangsbelege ab 2026-01-01 (sate-belege, LEXWARE_KOSTEN_START_DATUM). */
@@ -2223,8 +2356,22 @@
    * aufbaut, null. `kategorien`: sonstige Kosten des Jahres je Kategorie, größte zuerst, { kategorie ('' = ohne Namen),
    * netto, anteil (an allen im Plus) }. `belege`, `offen` (in Lexware noch zu prüfen), `neuestes` (neuestes Belegdatum)
    * und `fehler` (unlesbare Zeilen im Tab, seit v39; dann ist der Gewinn unvollständig) gelten für alle Jahre.
+   * Seit v42 (Lexware-API Task 19; Mark 2026-11-20: der Gewinn, „auf den wir Steuern zahlen müssten, laut Lexware“)
+   * rechnet die App mit `extra` ({ einnahmen (uebersicht.einnahmen: { zeilen: [[Monat, netto]], belege, fehler }),
+   * jahresende, flaschen (Bestand heute), geschaetzt, inventurAm (jüngste Inventur) }) wie die GuV in Lexware plus
+   * Lagerveränderung (`art` 'lexware'): Gewinn = Einnahmen netto laut Lexware − Ware − sonstige Kosten (beide laut Lexware)
+   * − Lagerabnahme (Bestand zum Ende des Vorjahres minus Bestand am Ende, zu Herstellkosten, lagerAbgleich). Der Umsatz der
+   * App, ihr Wareneinsatz und die Abfüllungen zählen dann nicht. Ohne `extra.einnahmen` nur { hinweis, grund:
+   * 'einnahmen' }. `summe` und jeder Monat sind dann { umsatz (= einnahmen), einnahmen, ware, sonstige, lager (nur mit
+   * Lagerabgleich; im Monat der jüngsten Inventur, sonst im letzten Monat), kosten, gewinn, anteil (vom Einnahmen),
+   * appUmsatz, wareneinsatz (Verkäufe der App, nur für den Break-even) }. `lager`: { anfang, ende (je { stichtag, quelle,
+   * datum, euro, flaschen, ungefaehr, geschaetzt, kostenProFlasche }), monat, abnahme ({ euro, flaschen, ungefaehr }),
+   * abgefuellt, gesamt (Wareneinsatz = Lagerabnahme + Abfüllungen), verkauft, weg, weggekommen (der Rest, nirgends
+   * gebucht) }; ohne Bestand zum Ende des Vorjahres null und `lagerFehlt` = { grund, stichtag }: dann ohne
+   * Lagerveränderung. `fehlerEinnahmen`: unlesbare Belege im Tab Lexware-Rechnungen. Ohne `extra` (`art` 'app') die
+   * bisherige Rechnung aus den Verkäufen der App wie oben.
    */
-  function gewinnRechnen(zeilen, marge, kosten, abfuellungen, heute, jahrWahl) {
+  function gewinnRechnen(zeilen, marge, kosten, abfuellungen, heute, jahrWahl, extra) {
     if (!datumGueltig(heute)) return null;
     const jetzt = heute.slice(0, 7);
     const diesesJahr = Number(jetzt.slice(0, 4));
@@ -2234,6 +2381,11 @@
     if (!marge || !Array.isArray(marge.kostenJeZeile) || !Array.isArray(zeilen)) {
       return { hinweis: 'Ohne Herstellkosten je Abfüllung (Tab Abfüllungen, Spalte „Kosten/Fl (€)“) gibt es keinen Wareneinsatz und damit keinen Gewinn.', grund: 'herstellkosten' };
     }
+    // Seit v42 gibt die App `extra` immer mit: Gewinn laut Lexware. Ohne Einnahmen netto aus Lexware (ältere
+    // Schnittstelle oder Spalte M fehlt) sind Einnahmen und Gewinn der Monate unbekannt; den Jahresgewinn gibt es dann
+    // nur mit einer Zeile im Tab Lexware-GuV. Kosten, Fixkosten und Break-even bleiben sichtbar (Codex v42).
+    const lexware = !!extra && typeof extra === 'object';
+    const einnahmenDa = lexware && !!extra.einnahmen && Array.isArray(extra.einnahmen.zeilen);
     const kz = kosten.zeilen.filter((x) => Array.isArray(x) && typeof x[0] === 'string' && MONAT_MUSTER.test(x[0]) && x[0] <= jetzt && istZahl(x[3]));
     const keineBelege = { hinweis: 'Noch keine Belege aus Lexware.', grund: 'belege' };
     // Ohne Zeilen, aber mit Belegen (Rechnung und Gutschrift heben sich auf): Kosten 0, kein Hinweis (Codex v38)
@@ -2254,13 +2406,15 @@
     if (!aeltester || !stand) return keineBelege;
     const startJahr = Math.max(KOSTEN_START_JAHR, Number(aeltester.slice(0, 4)));
     if (stand < startJahr + '-01') return { hinweis: 'Noch keine Belege aus Lexware ab ' + startJahr + '.', grund: 'belege' };
-    const standJahr = Number(stand.slice(0, 4));
+    // Laut Lexware (seit v42) gelten Einnahmen, Kosten und Bestand bis zum selben Stichtag: das Jahr bis heute bzw. bis
+    // Dezember, auch wenn der letzte Kostenbeleg älter ist (Codex v42; das Belege-Skript schreibt den Tab täglich neu)
+    const standJahr = lexware ? Math.max(Number(stand.slice(0, 4)), diesesJahr) : Number(stand.slice(0, 4));
     const jahre = [];
     for (let j = standJahr; j >= startJahr; j--) jahre.push(j);
     const jahr = jahre.indexOf(jahrWahl) >= 0 ? jahrWahl : jahre[0];
-    const bis = jahr === standJahr ? stand : jahr + '-12';
     const ende = jahr === diesesJahr ? jetzt : jahr + '-12';
-    const leer = () => ({ umsatz: 0, wareneinsatz: 0, weg: 0, sonstige: 0, offenWare: false, offenWeg: false });
+    const bis = lexware ? ende : jahr === standJahr ? stand : jahr + '-12';
+    const leer = () => ({ umsatz: 0, wareneinsatz: 0, weg: 0, sonstige: 0, einnahmen: 0, ware: 0, lager: 0, offenWare: false, offenWeg: false, offenLager: false });
     const proMonat = Object.create(null);
     const monate = [];
     for (let m = jahr + '-01'; m <= bis; m = monatPlus(m, 1)) { proMonat[m] = leer(); monate.push(m); }
@@ -2279,6 +2433,25 @@
       if (!x) return;
       if (istZahl(w.kosten)) x.weg += w.kosten; else x.offenWeg = true;
     });
+    // Gewinn laut Lexware (seit v42): Einnahmen netto je Belegmonat, und die Lagerabnahme (Bestand zum Ende des Vorjahres
+    // minus Bestand am Ende, zu Herstellkosten) als ein Betrag im Monat der jüngsten Inventur (dort wurde der Bestand
+    // gezählt), sonst im letzten gerechneten Monat.
+    if (einnahmenDa) {
+      extra.einnahmen.zeilen.forEach((x) => {
+        const p = Array.isArray(x) && typeof x[0] === 'string' ? proMonat[x[0]] : null;
+        if (p && istZahl(x[1])) p.einnahmen += x[1];
+      });
+    }
+    const la = lexware ? lagerAbgleich(jahr, zeilen, marge, abfuellungen, heute, extra) : {};
+    const ab = la.abgleich || null;
+    let lagerMonat = null;
+    if (ab) {
+      const inv = datumGueltig(extra.inventurAm) ? extra.inventurAm.slice(0, 7) : '';
+      lagerMonat = inv && inv.slice(0, 4) === String(jahr) && inv <= bis ? inv : bis;
+      // aus den auf den Cent gerundeten Beständen, damit Anfang minus Ende im Blatt genau die Lagerabnahme ist (Codex v42)
+      if (istZahl(ab.anfang.euro) && istZahl(ab.ende.euro)) proMonat[lagerMonat].lager = runde(ab.anfang.euro) - runde(ab.ende.euro);
+      else proMonat[lagerMonat].offenLager = true;
+    }
     let ware = 0;
     let ohneArt = 0;
     const kat = Object.create(null);
@@ -2292,6 +2465,7 @@
         kat[name] = (kat[name] || 0) + netto;
       } else if (x[1] === 'Ware') {
         ware += netto;
+        p.ware += netto;
       } else {
         ohneArt += netto;
       }
@@ -2300,10 +2474,13 @@
     // Durchgängig in Cent (seit v39, Codex-Befund v38): Je Posten wird die Jahressumme einmal gerundet und auf die Monate
     // verteilt, dann ergeben die Monate zusammen genau das Jahr, auch beim Gewinn. Fehlen in einem Monat Kosten, ist der
     // Posten dort und im Jahr null.
-    const offenFeld = { wareneinsatz: 'offenWare', weg: 'offenWeg' };
+    const offenFeld = { wareneinsatz: 'offenWare', weg: 'offenWeg', lager: 'offenLager' };
+    if (lexware && !einnahmenDa) monate.forEach((m) => { proMonat[m].offenEinnahmen = true; });
+    offenFeld.einnahmen = 'offenEinnahmen';
     const inCent = Object.create(null);
     const jahrCent = Object.create(null);
-    ['umsatz', 'wareneinsatz', 'weg', 'sonstige'].forEach((f) => {
+    const felder = ['umsatz', 'wareneinsatz', 'weg', 'sonstige'].concat(lexware ? ['einnahmen', 'ware'] : [], ab ? ['lager'] : []);
+    felder.forEach((f) => {
       const offen = (m) => (f === 'weg' && !wegBekannt) || (offenFeld[f] ? proMonat[m][offenFeld[f]] : false);
       const da = monate.filter((m) => !offen(m));
       const v = centVerteilen(da.map((m) => proMonat[m][f]));
@@ -2311,18 +2488,75 @@
       da.forEach((m, i) => { inCent[f][m] = v.cent[i]; });
       jahrCent[f] = da.length === monate.length ? v.summe : null;
     });
-    const posten = (c) => {
-      const euro = (z) => (z === null ? null : z / 100 || 0);
+    // GuV laut Lexware (seit v42, Tab Lexware-GuV): Gibt es eine Zeile für das Jahr, ist ihr Ergebnis die Grundlage des
+    // Jahresgewinns. Die Monate bleiben aus den Belegen; der Unterschied zur GuV (Buchungen ohne Beleg) steht als ein
+    // Betrag im Monat des GuV-Stands (sonst im letzten Monat), damit die Monate zusammen genau das Jahr ergeben.
+    const g = lexware && Array.isArray(extra.guv) ? extra.guv.find((x) => x && x.jahr === jahr && istZahl(x.ergebnis)) || null : null;
+    const guvCent = g ? Math.round(Number((g.ergebnis * 100).toPrecision(15))) : null;
+    let abgleichMonat = null;
+    if (g) {
+      const st = datumGueltig(g.stand) ? g.stand.slice(0, 7) : '';
+      abgleichMonat = st && proMonat[st] ? st : bis;
+      inCent.abgleich = Object.create(null);
+      const belegCent = [jahrCent.einnahmen, jahrCent.ware, jahrCent.sonstige].some((x) => x === null) ? null : jahrCent.einnahmen - jahrCent.ware - jahrCent.sonstige;
+      monate.forEach((m) => { if (belegCent !== null) inCent.abgleich[m] = m === abgleichMonat ? guvCent - belegCent : 0; });
+      jahrCent.abgleich = belegCent === null ? null : guvCent - belegCent;
+    }
+    const euro = (z) => (z === null ? null : z / 100 || 0);
+    // Bisherige Rechnung aus den Verkäufen der App (ohne `extra`)
+    const postenApp = (c) => {
       const summe = c.wareneinsatz === null || c.weg === null ? null : c.wareneinsatz + c.weg + c.sonstige;
       const gewinn = summe === null ? null : c.umsatz - summe;
       return { umsatz: euro(c.umsatz), wareneinsatz: euro(c.wareneinsatz), weg: euro(c.weg), sonstige: euro(c.sonstige), kosten: euro(summe),
         gewinn: euro(gewinn), anteil: gewinn !== null && c.umsatz > 0 ? zehntel((gewinn / c.umsatz) * 100) : null };
     };
+    // Laut Lexware: `umsatz` sind hier die Einnahmen laut Lexware (für Bild und Tabellen), `appUmsatz` und
+    // `wareneinsatz` die Verkäufe der App (nur für den Break-even, Rohertrag je verkaufter Flasche)
+    // Mit GuV-Zeile zählt der Abgleich zur GuV wie eine Kostenzeile mit umgekehrtem Vorzeichen (`abgleich`).
+    const postenLexware = (c) => {
+      const lagerC = ab ? c.lager : 0;
+      const abgleichC = g ? c.abgleich : 0;
+      // Kosten bleiben sichtbar, auch wenn der Abgleich (ohne Einnahmen aus Belegen) unbekannt ist (Codex v42)
+      const summe = lagerC === null ? null : c.ware + c.sonstige + lagerC - (abgleichC || 0);
+      const gewinn = summe === null || c.einnahmen === null || abgleichC === null ? null : c.einnahmen - summe;
+      return Object.assign({ umsatz: euro(c.einnahmen), einnahmen: euro(c.einnahmen), ware: euro(c.ware), sonstige: euro(c.sonstige) },
+        ab ? { lager: euro(lagerC) } : {}, g ? { abgleich: euro(abgleichC) } : {},
+        { kosten: euro(summe), gewinn: euro(gewinn), anteil: gewinn !== null && c.einnahmen > 0 ? zehntel((gewinn / c.einnahmen) * 100) : null,
+          appUmsatz: euro(c.umsatz), wareneinsatz: euro(c.wareneinsatz) });
+    };
+    const posten = lexware ? postenLexware : postenApp;
     const imMonat = (m) => {
       const c = {};
-      ['umsatz', 'wareneinsatz', 'weg', 'sonstige'].forEach((f) => { c[f] = m in inCent[f] ? inCent[f][m] : null; });
+      felder.concat(g ? ['abgleich'] : []).forEach((f) => { c[f] = m in inCent[f] ? inCent[f][m] : null; });
       return c;
     };
+    // Jahr: mit GuV-Zeile Gewinn = Ergebnis laut Lexware − Lagerabnahme, auch wenn Einnahmen aus Belegen fehlen
+    const summe = (() => {
+      const x = posten(Object.assign({}, jahrCent));
+      if (!g) return x;
+      const lagerC = ab ? jahrCent.lager : 0;
+      const gewinn = lagerC === null ? null : guvCent - lagerC;
+      return Object.assign(x, { gewinn: euro(gewinn), anteil: gewinn !== null && g.umsatz > 0 ? zehntel((gewinn / 100 / g.umsatz) * 100) : null });
+    })();
+    // Der Lagerabgleich für die Anzeige, auf den Cent: die Lagerabnahme genau wie in der Summe, daraus der Wareneinsatz
+    // (Lagerabnahme + Abfüllungen) und seine Aufteilung, so dass die Zeilen im Blatt genau aufgehen
+    const lager = !ab ? null : (() => {
+      const c = (z) => (z === null ? null : runde(z) || 0);
+      const f = (z) => (z === null ? null : Math.round(z) || 0);
+      const bst = (x) => ({ stichtag: x.stichtag, quelle: x.quelle, datum: x.datum, euro: c(x.euro), flaschen: f(x.flaschen), ungefaehr: x.ungefaehr,
+        geschaetzt: x.geschaetzt, kostenProFlasche: x.kostenProFlasche });
+      const ff = (x) => ({ flaschen: f(x.flaschen), euro: c(x.euro) });
+      const abnahme = euro(jahrCent.lager);
+      const abgefuellt = ff(ab.abgefuellt);
+      const v = ff(ab.verkauft);
+      const w = ff(ab.weg);
+      const gesamt = abnahme === null || abgefuellt.euro === null ? null : runde(abnahme + abgefuellt.euro);
+      const ungefaehr = ab.anfang.ungefaehr || ab.ende.ungefaehr;
+      return { anfang: bst(ab.anfang), ende: bst(ab.ende), monat: lagerMonat,
+        abnahme: { euro: abnahme, flaschen: ab.anfang.flaschen === null || ab.ende.flaschen === null ? null : f(ab.anfang.flaschen - ab.ende.flaschen), ungefaehr: ungefaehr },
+        abgefuellt: abgefuellt, gesamt: gesamt, verkauft: v, weg: w,
+        weggekommen: { euro: gesamt === null || v.euro === null || w.euro === null ? null : runde(gesamt - v.euro - w.euro), flaschen: f(ab.differenz.flaschen), ungefaehr: ungefaehr } };
+    })();
     const plus = Object.keys(kat).reduce((x, n) => x + Math.max(0, kat[n]), 0);
     const kategorien = Object.keys(kat).map((n) => ({ kategorie: n, netto: cent(kat[n]), anteil: plus > 0 ? zehntel((Math.max(0, kat[n]) / plus) * 100) : 0 }))
       .filter((x) => x.netto !== 0).sort((a, b) => b.netto - a.netto || (a.kategorie < b.kategorie ? -1 : 1));
@@ -2330,12 +2564,17 @@
     const abf = (Array.isArray(abfuellungen) ? abfuellungen : []).filter((a) => a && typeof a.monat === 'string' && proMonat[a.monat] && istZahl(a.flaschen));
     const abgefuellt = !abf.length ? null : { flaschen: cent(abf.reduce((x, a) => x + a.flaschen, 0)),
       kosten: abf.some((a) => !istZahl(a.kostenProFlasche)) ? null : cent(abf.reduce((x, a) => x + a.flaschen * a.kostenProFlasche, 0)) };
-    return { jahre: jahre, jahr: jahr, gewuenscht: istZahl(jahrWahl) ? jahrWahl : null, summe: posten(jahrCent),
+    return Object.assign({ jahre: jahre, jahr: jahr, gewuenscht: istZahl(jahrWahl) ? jahrWahl : null, art: lexware ? 'lexware' : 'app', summe: summe,
       monate: monate.map((m) => Object.assign({ monat: m, laufend: m === jetzt }, posten(imMonat(m)))),
       bis: bis, offenAb: bis < ende ? monatPlus(bis, 1) : null,
       kategorien: kategorien, wareLexware: cent(ware), abgefuellt: abgefuellt, ohneArt: cent(ohneArt),
       belege: istZahl(kosten.belege) ? kosten.belege : null, offen: istZahl(kosten.offen) ? kosten.offen : 0,
-      neuestes: datumGueltig(kosten.neuestes) && kosten.neuestes <= heute ? kosten.neuestes : null, fehler: istZahl(kosten.fehler) && kosten.fehler > 0 ? kosten.fehler : 0 };
+      neuestes: datumGueltig(kosten.neuestes) && kosten.neuestes <= heute ? kosten.neuestes : null, fehler: istZahl(kosten.fehler) && kosten.fehler > 0 ? kosten.fehler : 0 },
+    lexware ? { lager: lager, lagerFehlt: ab ? null : { grund: la.fehlt, stichtag: la.stichtag }, ohneEinnahmen: !einnahmenDa,
+      fehlerEinnahmen: einnahmenDa && istZahl(extra.einnahmen.fehler) && extra.einnahmen.fehler > 0 ? extra.einnahmen.fehler : 0,
+      guv: g ? { stand: datumGueltig(g.stand) ? g.stand : null, umsatz: g.umsatz, ertraege: g.ertraege, material: g.material, aufwand: g.aufwand, zinsen: g.zinsen,
+        ergebnis: euro(guvCent) } : null,
+      abgleichGuv: g ? { euro: euro(jahrCent.abgleich), monat: abgleichMonat } : null } : {});
   }
 
   /** Wie viele Lieferanten das Blatt „Gewinn und Kosten“ einzeln zeigt; der Rest steht als „Weitere“ zusammen. */
@@ -2422,7 +2661,9 @@
         if (datumGueltig(z.datum) && z.datum > heute) return;
         flaschen += z.flaschen;
       });
-      const roh = voll.reduce((x, m) => (x === null || !istZahl(imJahr[m].wareneinsatz) ? null : x + imJahr[m].umsatz - imJahr[m].wareneinsatz), 0);
+      // Rohertrag aus den Verkäufen der App (seit v42 steht beim Gewinn laut Lexware deren Umsatz in `appUmsatz`)
+      const appUmsatz = (x) => (istZahl(x.appUmsatz) ? x.appUmsatz : x.umsatz);
+      const roh = voll.reduce((x, m) => (x === null || !istZahl(imJahr[m].wareneinsatz) ? null : x + appUmsatz(imJahr[m]) - imJahr[m].wareneinsatz), 0);
       const proFlasche = roh !== null && flaschen > 0 ? roh / flaschen : null;
       if (proFlasche !== null && proFlasche > 0) {
         const noetig = fixGenau > 0 ? Math.ceil(fixGenau / proFlasche - 1e-9) : 0;
@@ -2682,7 +2923,7 @@
     kundeSchluessel, rechnungOhnePosition, STANDORT_VERSCHIEDEN, standortAuswahl, verkaufZeilen, monatsWerte, jahresVergleich, kumuliert, zeitraumAuswerten, kundeDetails, nachfassen,
     bestellungenZaehlen, wannText, abstandText, monatName, wochentagText, dauerText, datumAbkuerzungen, buchungVorschau, standText, frageTeilen, inventurAm, jahresStichtag, prognoseSaison, aktivitaet, monatsTage, letzteBestellungen,
     datumMonatePlus, ersterVerkaufsmonat, bekannteRechnungen, bestellPrognose, dashboardDaten, dashboardMehr, bestellListe, fifoSchichten, fifoKosten, kostenAusEingabe, MAX_KOSTEN_PRO_FLASCHE,
-    auswerten, AUSWERTEN_KENNZAHLEN, AUSWERTEN_NACH, spaltenTeilen, gewinnRechnen, centVerteilen, kostenRechnen, TOP_LIEFERANTEN,
+    auswerten, AUSWERTEN_KENNZAHLEN, AUSWERTEN_NACH, spaltenTeilen, gewinnRechnen, centVerteilen, kostenRechnen, TOP_LIEFERANTEN, bestandBewerten, lagerAbgleich,
     forderungenDaten, offeneBelege, faelligText, centFormat, summeFormat,
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = hilfen;

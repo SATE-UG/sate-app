@@ -131,7 +131,8 @@ function betragLesen(wert) {
 
 /**
  * Tab App-Einstellungen (Zeilen [A, B, C], erste Zeile Kopf) → Einstellungen. Gelesen nach Text in A, nicht nach
- * Zeilennummer. Fehlt eine Zeile oder ist der Wert unlesbar, gilt der Standardwert (mit Hinweis).
+ * Zeilennummer. Fehlt eine Zeile oder ist der Wert unlesbar, gilt der Standardwert (mit Hinweis). Seit v42 dazu
+ * `bestandJahresende`: alle Zeilen „Bestand 31.12.JJJJ (€)“ als [{ jahr, euro }] (unlesbar oder negativ: Hinweis).
  */
 function einstellungenLesen(zeilen) {
   const werte = {};
@@ -165,6 +166,18 @@ function einstellungenLesen(zeilen) {
   });
   e.kundenStandorte = kundenStandorteLesen(e.kundenStandorte, e.standorte, e.hinweise);
   e.hauptlager = e.standorte[0] || null;
+  // Bestand zum Jahresende laut Jahresabschluss (seit v42): „Bestand 31.12.JJJJ (€)“ → [{ jahr, euro }], nach Jahr
+  e.bestandJahresende = [];
+  Object.keys(werte).forEach((a) => {
+    const m = BESTAND_JAHRESENDE_MUSTER.exec(a);
+    if (!m) return;
+    const roh = werte[a];
+    if (roh === '' || roh === null || roh === undefined) return;
+    const w = betragLesen(roh);
+    if (w === null || w < 0) e.hinweise.push('Einstellung „' + a + '“ ist unlesbar, zählt nicht.');
+    else e.bestandJahresende.push({ jahr: Number(m[1]), euro: runde_(w, 2) });
+  });
+  e.bestandJahresende.sort((x, y) => x.jahr - y.jahr);
   return e;
 }
 
@@ -309,6 +322,9 @@ function spaeterErfasst_(a, b) {
  * (die späteste erste Zählung), sonst null; `verkauftBisHeute`: Flaschen aller Verkäufe, die ein Lager schon
  * verlassen haben (Lagerdatum bis heute, Standort bekannt). Ein Verkauf mit unbekanntem Standort zählt nicht mit: Er
  * hat keinen Bestand verringert und darf deshalb auch keine Lücke in der Vergangenheit erzeugen (Hinweis oben).
+ * Seit v42 `jahresende`: [{ jahr, flaschen, inventur }] für jedes Jahr, zu dem alle Lager zwischen dem 31.12. und dem
+ * 15.01. (JAHRESINVENTUR_BIS) gezählt sind: Bestand zum 31.12. aus der jeweils ersten Zählung im Fenster, zurückgerechnet
+ * um die Bewegungen zwischen Stichtag und Zähltag; `inventur` = der späteste dieser Zähltage, `zaehltage` = { Standort: Zähltag }.
  */
 function lagerBerechnen(buchungen, verkaeufe, e, heute) {
   const hinweise = [];
@@ -386,8 +402,34 @@ function lagerBerechnen(buchungen, verkaeufe, e, heute) {
     };
   });
   schwundListe.sort((a, b) => (a.datum < b.datum ? -1 : a.datum > b.datum ? 1 : 0));
+  // Bestand zum Jahresende aus den Inventuren (seit v42, für den Lagerabgleich im Gewinn): Jahre, für die jedes Lager
+  // zwischen dem 31.12. und dem 15.01. gezählt wurde. Je Lager zählt die erste Zählung in diesem Fenster, zurückgerechnet
+  // auf den 31.12. (eine Inventur gilt zum Ende ihres Tages: Bewegungen danach bis zum Zähltag wieder abziehen).
+  const kandidaten = Object.create(null);
+  e.standorte.forEach((s) => Object.keys(inventuren[s]).forEach((t) => {
+    if (t.slice(5) === '12-31') kandidaten[t.slice(0, 4)] = true;
+    else if (t.slice(5) <= JAHRESINVENTUR_BIS) kandidaten[String(Number(t.slice(0, 4)) - 1)] = true;
+  }));
+  const jahresende = [];
+  Object.keys(kandidaten).sort().forEach((j) => {
+    const stichtag = j + '-12-31';
+    const bis = (Number(j) + 1) + '-' + JAHRESINVENTUR_BIS;
+    let flaschen = 0;
+    let inventur = '';
+    const zaehltage = {};
+    const alle = e.standorte.length > 0 && e.standorte.every((s) => {
+      const t = Object.keys(inventuren[s]).sort().find((x) => x >= stichtag && x <= bis);
+      if (!t) return false;
+      flaschen += inventuren[s][t].flaschen - summe(s, stichtag, t);
+      if (t > inventur) inventur = t;
+      zaehltage[s] = t;
+      return true;
+    });
+    if (alle) jahresende.push({ jahr: Number(j), flaschen: runde_(flaschen, 2), inventur: inventur, zaehltage: zaehltage });
+  });
   return { standorte: standorte, hinweise: hinweise, schwund: schwundListe, verkauftBisHeute: runde_(verkauftBisHeute, 2),
-    gezaehltSeit: e.standorte.length && ersteZaehlung.length === e.standorte.length ? ersteZaehlung.sort().pop() : null };
+    gezaehltSeit: e.standorte.length && ersteZaehlung.length === e.standorte.length ? ersteZaehlung.sort().pop() : null,
+    jahresende: jahresende };
 }
 
 /**
