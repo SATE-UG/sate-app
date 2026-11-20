@@ -26,8 +26,18 @@ function rechnungOhnePosition(text) {
 }
 
 /**
- * Tab Verkäufe (Zeilen A–L, erste Zeile Kopf) → [{zeile, monat, datum, kanal, kunde, flaschen, umsatz, standort, rechnung}].
- * monat = Rechnungsmonat aus A (sonst aus B), datum = B oder null (Altliste). Gutschriften bleiben negativ.
+ * Rechnung, zu der eine Gutschrift bzw. ein Storno gehört, aus dem Kommentar (Spalte K, „Gutschrift zu RE…“), ohne
+ * Positions-Zusatz; sonst ''.
+ */
+function bezugAusKommentar(text) {
+  const m = VK_BEZUG_MUSTER.exec(String(text === undefined || text === null ? '' : text));
+  return m ? rechnungOhnePosition(m[1].replace(/[.)\]]+$/, '')) : '';
+}
+
+/**
+ * Tab Verkäufe (Zeilen A–L, erste Zeile Kopf) → [{zeile, monat, datum, kanal, kunde, flaschen, umsatz, standort, rechnung,
+ * bezug}]. monat = Rechnungsmonat aus A (sonst aus B), datum = B oder null (Altliste). Gutschriften bleiben negativ,
+ * `bezug` (seit v39) = Rechnung laut Kommentar, zu der eine Gutschrift gehört ('' ohne bzw. bei Flaschen im Plus).
  * Zeilen ohne Flaschen fallen weg (Flaschen 0 heißt im Sheet: Die Zeile zählt nicht), still, solange dort auch kein
  * Umsatz steht; steht einer drin, mit Hinweis, damit kein Geld unbemerkt fehlt. Zeilen ohne lesbaren Monat fallen mit
  * Hinweis weg. Unlesbarer Umsatz zählt als 0 € (mit Hinweis).
@@ -62,6 +72,7 @@ function verkaeufeLesen(zeilen, formatieren) {
       zeile: i + 1, monat: monat, datum: datum, kanal: kanalName(z[VK.KANAL]), kunde: String(z[VK.KUNDE] || '').trim(),
       flaschen: flaschen, umsatz: umsatz || 0, standort: String(z[VK.STANDORT] || '').trim(),
       rechnung: String(z[VK.RECHNUNG] === undefined || z[VK.RECHNUNG] === null ? '' : z[VK.RECHNUNG]).trim(),
+      bezug: flaschen < 0 ? bezugAusKommentar(z[VK.KOMMENTAR]) : '',
     });
   }
   return { verkaeufe: verkaeufe, hinweise: hinweise };
@@ -112,7 +123,8 @@ function zeitraumAuswerten_(verkaeufe, von, bis) {
  * Monat mit Verkäufen bis laufender Monat). `letzte12` (12 volle Monate) bleibt für ältere App-Versionen in der Antwort.
  * `zeilen` (seit 2026-11-09): alle Verkäufe kompakt für Auswertungen in der App (Jahresvergleich, Kunden-Details), je
  * [Monat `JJJJ-MM`, Datum `JJJJ-MM-TT` oder '', Kanal, Kunde, Flaschen, Umsatz, Rechnung oder ''], nach Monat und Datum
- * sortiert.
+ * sortiert. Bei einer Gutschrift mit Bezug im Kommentar (seit v39) als achter Wert die Rechnung, zu der sie gehört; die
+ * App nimmt damit die Herstellkosten genau dieser Rechnung zurück.
  */
 function verkaeufeAuswerten(verkaeufe, heute) {
   const jetzt = heute.slice(0, 7);
@@ -144,5 +156,9 @@ function verkaeufeAuswerten(verkaeufe, heute) {
 function verkaufZeilenKompakt(verkaeufe) {
   return verkaeufe.slice().sort((a, b) => (a.monat < b.monat ? -1 : a.monat > b.monat ? 1 : 0) ||
     ((a.datum || '') < (b.datum || '') ? -1 : (a.datum || '') > (b.datum || '') ? 1 : 0) || (a.zeile || 0) - (b.zeile || 0))
-    .map((v) => [v.monat, v.datum || '', v.kanal, v.kunde, runde_(v.flaschen, 2), runde_(v.umsatz || 0, 2), v.rechnung || '']);
+    .map((v) => {
+      const z = [v.monat, v.datum || '', v.kanal, v.kunde, runde_(v.flaschen, 2), runde_(v.umsatz || 0, 2), v.rechnung || ''];
+      if (v.bezug) z.push(v.bezug);
+      return z;
+    });
 }

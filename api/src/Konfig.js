@@ -62,7 +62,12 @@ const TRIGGER_FUNKTION = 'taeglich';
 const TRIGGER_STUNDE = 7;
 
 /** Spalten im Tab Verkäufe (0 = A). Die Belege-Kette schreibt A–K, hier wird nur gelesen. */
-const VK = { MONAT: 0, DATUM: 1, QUELLE: 2, KANAL: 3, KUNDE: 4, FLASCHEN: 5, UMSATZ: 8, RECHNUNG: 9, STANDORT: 11 };
+const VK = { MONAT: 0, DATUM: 1, QUELLE: 2, KANAL: 3, KUNDE: 4, FLASCHEN: 5, UMSATZ: 8, RECHNUNG: 9, KOMMENTAR: 10, STANDORT: 11 };
+/**
+ * Bezug einer Gutschrift bzw. eines Stornos im Kommentar (Spalte K), wie ihn die Belege-Kette schreibt:
+ * „Gutschrift zu RE760175“, „Storno zu RE760175“ (seit v39 für First in, First out in der App).
+ */
+const VK_BEZUG_MUSTER = /(?:Gutschrift|Storno)\s+zu\s+([^\s;,]+)/i;
 /** Erwartete Spaltenköpfe (Schutz gegen verschobene Spalten). */
 const VK_KOPF = {
   0: 'Monat', 1: 'Datum', 3: 'Kanal', 4: 'Kunde', 5: 'Flaschen', 8: 'Umsatz netto inkl. Pfand (€)', 9: 'Rechnung', 11: 'Standort',

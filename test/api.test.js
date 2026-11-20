@@ -203,7 +203,7 @@ test('doPost uebersicht: Tab Lexware-Kosten wird gelesen, wenn es ihn gibt, und 
   welt.sheetLesen.length = 0;
   const a = post(k, { code: code, aktion: 'uebersicht' });
   assert.strictEqual(a.ok, true, JSON.stringify(a));
-  assert.deepStrictEqual(a.kosten, { zeilen: [['2026-10', 'Sonstiges', 'Werbung', 100]], belege: 1, offen: 0, neuestes: '2026-10-05' });
+  assert.deepStrictEqual(a.kosten, { zeilen: [['2026-10', 'Sonstiges', 'Werbung', 100]], belege: 1, offen: 0, neuestes: '2026-10-05', aeltestes: '2026-10-05', fehler: 0 });
   assert.ok(welt.sheetLesen.includes('Lexware-Kosten!alles'));
   assert.deepStrictEqual(welt.sheetSchreiben, []);
   // ohne den Tab: kosten null, gelesen wird er dann nicht

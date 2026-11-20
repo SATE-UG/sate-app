@@ -324,12 +324,17 @@
     // Gewinn vorläufig (seit v38) neben Rohertrag und Marge: nur mit Kosten aus Lexware für das gezeigte Jahr, sonst
     // bleibt die Karte wie vorher. Ein Tipp öffnet „Gewinn und Kosten“ für dieses Jahr, danach geht der Fokus zurück.
     const gw = mg && j ? gewinnFuer(jv.jahr) : null;
+    // Seit v39 nur, wenn Lexware das Jahr abdeckt (sonst gibt es gar keine Kachel); deckt es nur einen Teil ab, steht
+    // darunter, bis wann; sind Zeilen im Tab unlesbar, „unvollständig“
     const gs = gw && !gw.hinweis && gw.jahr === jv.jahr ? gw.summe : null;
+    const gBis = gs && gw.offenAb ? 'bis ' + H.monatFormat(gw.bis, true).split(' ')[0] : '';
+    const gKlein = !gs ? '' : !zahlDa(gs.gewinn) ? 'Kosten fehlen' : gw.fehler ? 'unvollständig' : gBis || 'vorläufig';
     const gewinnKachel = gs ? h('button', { type: 'button', class: 'dash-kachel kachel-tipp', 'data-start': 'gewinn',
       onclick: () => S.zahlenZeigen('gewinn', jv.jahr, () => document.querySelector('#app [data-start="gewinn"]')),
-      'aria-label': 'Gewinn ' + wann + ' vorläufig ' + (zahlDa(gs.gewinn) ? H.euroFormat(gs.gewinn) : 'unbekannt, Herstellkosten fehlen zum Teil') + '. Gewinn und Kosten öffnen' },
+      'aria-label': 'Gewinn ' + wann + ' vorläufig' + (gBis ? ' ' + gBis : '') + ' ' + (zahlDa(gs.gewinn) ? H.euroFormat(gs.gewinn) : 'unbekannt, Herstellkosten fehlen zum Teil') +
+        (gw.fehler ? ', unvollständig, Zeilen im Tab Lexware-Kosten sind unlesbar' : '') + '. Gewinn und Kosten öffnen' },
     h('span', { class: 'dash-label', text: 'Gewinn' }), h('span', { class: 'dash-wert', text: zahlDa(gs.gewinn) ? H.euroFormat(gs.gewinn) : '–' }),
-    h('span', { class: 'dash-klein', text: zahlDa(gs.gewinn) ? 'vorläufig' : 'Kosten fehlen' })) : null;
+    h('span', { class: 'dash-klein' + (gw.fehler ? ' dash-fehlt' : ''), text: gKlein })) : null;
     // Mit Herstellkosten immer Rohertrag und Marge; fehlen sie nur für eine Abfüllung, steht ein Strich mit Hinweis da,
     // statt dass die Kacheln stillschweigend verschwinden (Codex v37)
     const kacheln = mg && j ? [
@@ -834,7 +839,8 @@
       const gw = gewinnFuer(gewinnJahr());
       const gewinnFuss = [F.stand, 'Gewinn vorläufig: Umsatz minus Wareneinsatz (die Herstellkosten der verkauften Flaschen nach First in, First out, wie beim Rohertrag), ' +
         'minus die Herstellkosten der Flaschen ohne Verkauf (Promo, Eigenverbrauch, Bruch, Schwund), minus die sonstigen Kosten aus Lexware nach Belegdatum.',
-      'Kosten der Art „Ware“ (zum Beispiel Flaschen, Abfüllung, Zutaten) stecken schon in den Herstellkosten je Abfüllung und zählen deshalb nicht noch einmal.']
+      'Kosten der Art „Ware“ (zum Beispiel Flaschen, Abfüllung, Zutaten) stecken schon in den Herstellkosten je Abfüllung und zählen deshalb nicht noch einmal.',
+      'Gerechnet nur für die Monate, die Lexware abdeckt: ab Januar des Jahres mit dem ältesten Beleg (frühestens 2026) bis zum Monat des neuesten Belegs. Rechnungen mit Datum nach heute zählen erst an ihrem Tag.']
         .concat(lk ? ['Die alte Lücke zählt zu keinem Jahr, also auch zu keinem Gewinn.'] : [], ['Alles netto.']);
       // Ohne Kosten aus Lexware (oder ohne einen Beleg) steht hier statt des Gewinns nur, was fehlt
       if (gw) teile = seite('gewinn', 'Gewinn', 'Gewinn und Kosten', gw.hinweis ? [F.stand] : gewinnFuss);
@@ -853,9 +859,14 @@
         const gewinnZeile = (name, x, extra) => Object.assign({ zellen: [name, eur(x.umsatz), leise(eur(x.kosten)), ertragZelle(x.gewinn)] }, extra);
         const jahresWerte = gw.jahre.length > 1 ? gw.jahre.map((jj) => ({ jahr: jj, g: jj === gj ? gw : gewinnFuer(jj) })).filter((x) => x.g && !x.g.hinweis) : [];
         teile.push(
-          dashTitel('Gewinn ' + gj, 'vorläufig'),
+          dashTitel('Gewinn ' + gj, gw.fehler ? 'unvollständig' : 'vorläufig'),
           // Gewählt war ein Jahr ohne Kosten aus Lexware (z. B. in den Verkäufen noch das Vorjahr): offen sagen statt still wechseln (Codex v38)
           gw.gewuenscht !== null && gw.gewuenscht !== gj ? h('p', { class: 'dash-fuss dash-fehlt', text: 'Für ' + gw.gewuenscht + ' gibt es keine Kosten aus Lexware, deshalb steht hier ' + gj + '.' }) : null,
+          // Seit v39: Monate ohne Kosten aus Lexware fehlen, unlesbare Zeilen im Tab machen den Gewinn unvollständig
+          gw.offenAb ? h('p', { class: 'dash-fuss dash-fehlt', text: 'Kosten aus Lexware gibt es erst bis ' + H.monatFormat(gw.bis, true) +
+            '. Deshalb zählt hier alles nur bis dahin, auch Umsatz und Wareneinsatz.' }) : null,
+          gw.fehler ? h('p', { class: 'dash-fuss dash-fehlt', text: (gw.fehler === 1 ? 'Eine Zeile' : gw.fehler + ' Zeilen') + ' im Tab „Lexware-Kosten“ ' +
+            (gw.fehler === 1 ? 'hat' : 'haben') + ' kein lesbares Datum oder keinen lesbaren Betrag und ' + (gw.fehler === 1 ? 'fehlt' : 'fehlen') + '. Der Gewinn ist deshalb unvollständig.' }) : null,
           sg.gewinn === null ? h('p', { class: 'dash-fuss dash-fehlt', text: (mg.fehlt.length ? 'Für ' + mg.fehlt.join(', ') + ' fehlen die Herstellkosten (Tab Abfüllungen, Spalte „Kosten/Fl (€)“). '
             : 'Herstellkosten fehlen zum Teil. ') + 'Deshalb steht beim Gewinn ein Strich.' }) : null,
           dashTabelle('treppe', 'Vorläufiger Gewinn ' + gj + ': Umsatz minus Kosten', [{ vorlesen: 'Posten' }, 'Euro', { text: 'Anteil', vorlesen: 'Anteil am Umsatz' }], [
@@ -863,7 +874,7 @@
             { zellen: ['Wareneinsatz', minus(sg.wareneinsatz), vomUmsatz(sg.wareneinsatz)] },
             { zellen: ['Ohne Verkauf weg', minus(sg.weg), vomUmsatz(sg.weg)] },
             { zellen: ['Sonstige Kosten', minus(sg.sonstige), vomUmsatz(sg.sonstige)] },
-            { klasse: 'dash-summe', zellen: [nameMit('Gewinn', 'vorläufig'), ertragZelle(sg.gewinn), margeZelle(sg.anteil)] }]),
+            { klasse: 'dash-summe', zellen: [nameMit('Gewinn', gw.fehler ? 'unvollständig' : 'vorläufig'), ertragZelle(sg.gewinn), margeZelle(sg.anteil)] }]),
           h('p', { class: 'dash-fuss dash-fehlt', text: 'Stand: Lexware, täglich' + (gw.neuestes ? ', neuester Beleg vom ' + H.datumText(gw.neuestes) : '') + '. ' +
             'Buchungen ohne Beleg (z. B. Zinsen, Bankgebühren) fehlen. Kein Ersatz für GuV oder Jahresabschluss.' }),
           dashTitel('Sonstige Kosten ' + gj, 'nach Kategorie'),
@@ -885,7 +896,8 @@
               { klasse: x.laufend ? 'laufend' : '', balken: hochMonat > 0 && x.gewinn > 0 ? (x.gewinn / hochMonat) * 100 : 0 }))),
           jahresWerte.length ? [
             dashTitel('Gewinn je Jahr', 'vorläufig'),
-            dashTabelle('bleibt dash-zebra', 'Umsatz, Kosten und vorläufiger Gewinn je Jahr', gewinnKopf('Jahr'), jahresWerte.map((x) => gewinnZeile(String(x.jahr), x.g.summe))),
+            dashTabelle('bleibt dash-zebra', 'Umsatz, Kosten und vorläufiger Gewinn je Jahr', gewinnKopf('Jahr'),
+              jahresWerte.map((x) => gewinnZeile(String(x.jahr) + (x.g.offenAb ? ' bis ' + H.monatFormat(x.g.bis) : ''), x.g.summe))),
           ] : null);
       }
     }
@@ -1055,7 +1067,8 @@
     if (id === 'gewinn') {
       const g = gewinnFuer(typeof Z.verkaufJahr === 'number' ? Z.verkaufJahr : null);
       if (!g || g.hinweis) return g && g.grund === 'belege' ? 'Noch keine Belege aus Lexware' : 'Noch keine Kosten aus Lexware';
-      return zahlDa(g.summe.gewinn) ? 'Vorläufig ' + H.euroFormat(g.summe.gewinn) + ' in ' + g.jahr : 'Herstellkosten fehlen zum Teil';
+      if (!zahlDa(g.summe.gewinn)) return 'Herstellkosten fehlen zum Teil';
+      return (g.fehler ? 'Unvollständig ' : 'Vorläufig ') + H.euroFormat(g.summe.gewinn) + ' in ' + g.jahr + (g.offenAb ? ' bis ' + H.monatFormat(g.bis, true).split(' ')[0] : '');
     }
     if (id === 'abgaenge') {
       const v = mehr.marge.verluste;

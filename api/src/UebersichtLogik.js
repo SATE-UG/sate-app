@@ -25,15 +25,17 @@ function abfuellungenLesen(zeilen, formatieren) {
 }
 
 /**
- * Tab Lexware-Kosten (seit v38, getValues, erste Zeile Kopf) → { zeilen, belege, offen, neuestes } für die App:
- * `zeilen` = [[Monat `JJJJ-MM`, Art (`Ware`, `Sonstiges` oder '' = noch ohne Kategorie), Kategorie, netto]], je Monat,
- * Art und Kategorie zusammengefasst (Belegdatum, netto auf den Cent, Summe 0 fällt weg), ohne stornierte Belege.
- * `belege` = Anzahl Belege, die zählen, `offen` = davon in Lexware noch zu prüfen (blank/unchecked), `neuestes` = das
- * neueste Belegdatum (oder null). Fehlt der Tab (`zeilen` null): null. Passt die Kopfzeile nicht: null mit Hinweis.
- * Leere Zeilen (das Skript überschreibt alte Reste mit leeren Zeilen) fallen still weg, Zeilen ohne lesbares Datum oder
- * ohne lesbaren Betrag mit einem Hinweis.
+ * Tab Lexware-Kosten (seit v38, getValues, erste Zeile Kopf) → { zeilen, belege, offen, neuestes, aeltestes, fehler }
+ * für die App: `zeilen` = [[Monat `JJJJ-MM`, Art (`Ware`, `Sonstiges` oder '' = noch ohne Kategorie), Kategorie, netto]],
+ * je Monat, Art und Kategorie zusammengefasst (Belegdatum, netto auf den Cent, Summe 0 fällt weg), ohne stornierte Belege.
+ * `belege` = Anzahl Belege, die zählen, `offen` = davon in Lexware noch zu prüfen (blank/unchecked), `neuestes` und
+ * `aeltestes` (seit v39) = das neueste und älteste Belegdatum (oder null; auch Belege, die sich auf 0 aufheben, zählen:
+ * daraus liest die App, welche Zeit der Tab abdeckt). Fehlt der Tab (`zeilen` null): null. Passt die Kopfzeile nicht:
+ * null mit Hinweis. Leere Zeilen (das Skript überschreibt alte Reste mit leeren Zeilen) fallen still weg, Zeilen ohne
+ * lesbares Datum oder ohne lesbaren Betrag mit einem Hinweis; seit v39 steht ihre Anzahl in `fehler` (die App zeigt den
+ * Gewinn dann als unvollständig). Belege mit Datum nach `heute` (`JJJJ-MM-TT`, seit v39) zählen noch nicht.
  */
-function lexwareKostenLesen(zeilen, formatieren, hinweise) {
+function lexwareKostenLesen(zeilen, formatieren, hinweise, heute) {
   if (!Array.isArray(zeilen)) return null;
   const kopf = zeilen[0] || [];
   if (Object.keys(LK_KOPF).some((i) => String(kopf[i] || '').trim() !== LK_KOPF[i])) {
@@ -45,6 +47,7 @@ function lexwareKostenLesen(zeilen, formatieren, hinweise) {
   const belege = Object.create(null);
   const offen = Object.create(null);
   let neuestes = null;
+  let aeltestes = null;
   let kaputt = 0;
   for (let i = 1; i < zeilen.length; i++) {
     const z = zeilen[i] || [];
@@ -54,6 +57,7 @@ function lexwareKostenLesen(zeilen, formatieren, hinweise) {
     const datum = zelleDatum(z[LK.DATUM], formatieren);
     const netto = betragLesen(z[LK.NETTO]);
     if (!datum || netto === null) { kaputt++; continue; }
+    if (heute && datum > heute) continue; // Beleg aus der Zukunft: zählt erst an seinem Tag
     const artText = String(z[LK.ART] || '').trim().toLowerCase();
     const art = KOSTEN_ARTEN.find((a) => a.toLowerCase() === artText) || '';
     const kategorie = String(z[LK.KATEGORIE] || '').trim();
@@ -64,6 +68,7 @@ function lexwareKostenLesen(zeilen, formatieren, hinweise) {
     belege[id] = true;
     if (KOSTEN_STATUS_OFFEN.test(status)) offen[id] = true;
     if (!neuestes || datum > neuestes) neuestes = datum;
+    if (!aeltestes || datum < aeltestes) aeltestes = datum;
   }
   if (kaputt) {
     hinweise.push('Tab ' + LEXWARE_KOSTEN_TAB + ': ' + kaputt + (kaputt === 1 ? ' Zeile' : ' Zeilen') + ' ohne lesbares Datum oder Betrag, zählt nicht.');
@@ -73,6 +78,8 @@ function lexwareKostenLesen(zeilen, formatieren, hinweise) {
     belege: Object.keys(belege).length,
     offen: Object.keys(offen).length,
     neuestes: neuestes,
+    aeltestes: aeltestes,
+    fehler: kaputt,
   };
 }
 
@@ -96,7 +103,7 @@ function uebersichtBauen(roh, formatieren, jetzt) {
   const bestellung = bestellStatus(gesamt.wert, ab.genau, e, heute);
 
   const hinweise = [].concat(e.hinweise, vk.hinweise, log.hinweise, lager.hinweise);
-  const kosten = lexwareKostenLesen(roh.lexwareKosten, formatieren, hinweise);
+  const kosten = lexwareKostenLesen(roh.lexwareKosten, formatieren, hinweise, heute);
   if (gesamt.quelle === 'rechnerisch') {
     hinweise.unshift(gesamt.fehlen.length === lager.standorte.length
       ? 'Noch keine Inventur: Gesamtbestand ist der rechnerische aus der Übersicht (ohne Promo, Eigenverbrauch, Bruch).'

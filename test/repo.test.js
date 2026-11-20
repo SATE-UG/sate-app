@@ -340,7 +340,7 @@ test('PWA: Mehr Zahlen (früher Dashboard, v30 bis v35) – dichte Tabellen und 
   const konfig = lies('api/src/Konfig.js');
   assert.match(konfig, /const AB = \{ NAME: 0, MONAT: 1, FLASCHEN: 2, QUELLE: 3, KOSTEN: 4 \};/);
   assert.match(konfig, /const AB_KOSTEN_KOPF = 'Kosten\/Fl \(€\)';/);
-  assert.match(lies('docs/hilfen.js'), /function fifoSchichten\(abfuellungen\)[\s\S]*function fifoKosten\(zeilen, schichten, abgaenge\)/);
+  assert.match(lies('docs/hilfen.js'), /function fifoSchichten\(abfuellungen\)[\s\S]*function fifoKosten\(zeilen, schichten, abgaenge, heute\)/);
   // Eingabe: Feld nur bei einer Abfüllung sichtbar, gesendet nur mit Wert
   assert.match(html, /<div class="feld" id="b-kosten-feld" hidden>\s*<label for="b-kosten" class="feld-label">Herstellkosten pro Flasche in Euro/);
   assert.match(html, /<input id="b-kosten" type="text" inputmode="decimal" autocomplete="off"/);
@@ -465,7 +465,8 @@ test('PWA: Gewinn vorläufig (v38) – Kachel auf dem Start, Thema „Gewinn und
   // Start: Kachel „Gewinn“ mit „vorläufig“ nur mit Kosten für das gezeigte Jahr, sie öffnet das Blatt für dieses Jahr
   assert.match(ansichten, /const gs = gw && !gw\.hinweis && gw\.jahr === jv\.jahr \? gw\.summe : null;/);
   assert.match(ansichten, /onclick: \(\) => S\.zahlenZeigen\('gewinn', jv\.jahr, \(\) => document\.querySelector\('#app \[data-start="gewinn"\]'\)\),/);
-  assert.match(ansichten, /text: zahlDa\(gs\.gewinn\) \? 'vorläufig' : 'Kosten fehlen'/);
+  // seit v39: „unvollständig“ bei unlesbaren Zeilen im Tab, „bis …“, wenn Lexware das Jahr nur zum Teil abdeckt
+  assert.match(ansichten, /const gKlein = !gs \? '' : !zahlDa\(gs\.gewinn\) \? 'Kosten fehlen' : gw\.fehler \? 'unvollständig' : gBis \|\| 'vorläufig';/);
   assert.match(ansichten, /gewinnKachel,\s*kachel\('Flaschen',/);
   assert.match(css, /\.jahr-start-kacheln\.zwei, \.jahr-start-kacheln\.vier \{ grid-template-columns: repeat\(2, minmax\(0, 1fr\)\); \}/);
   // Blatt: Treppe, Kategorien, Vergleich, Monate; die Hinweise zu Grenzen und Stand stehen sichtbar da

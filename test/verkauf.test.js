@@ -32,7 +32,7 @@ test('Verkäufe lesen: Monat aus Seriennummer, Datum oder Text; Kanal; Hinweise'
   assert.strictEqual(r.verkaeufe.length, 9);
   const erste = roh(r.verkaeufe[0]);
   assert.deepStrictEqual(erste, { zeile: 2, monat: '2026-11', datum: '2026-11-03', kanal: 'Karlsruhe', kunde: 'Bar Eins',
-    flaschen: 48, umsatz: 60, standort: '', rechnung: 'RE1' });
+    flaschen: 48, umsatz: 60, standort: '', rechnung: 'RE1', bezug: '' });
   assert.strictEqual(r.verkaeufe[1].monat, '2025-10');
   assert.strictEqual(r.verkaeufe[1].datum, null);
   assert.strictEqual(r.verkaeufe[2].kanal, 'Karlsruhe');
@@ -220,7 +220,8 @@ test('uebersichtBauen: Lexware-Kosten je Monat, Art und Kategorie, ohne Storno, 
     kostenZeile(D.zelle(2026, 5, 8), 'Miete', 'Sonstiges', 'viel', 'paid', 'j'),
     ['', '', '', '', '', '', '', '', '', '', '', ''], [], // leere Zeilen über alten Resten
     kostenZeile(D.zelle(2026, 6, 1), 'Werbung', 'Sonstiges', 10, 'paid', 'k'),
-    kostenZeile(D.zelle(2026, 6, 2), 'Werbung', 'Sonstiges', -10, 'paid', 'l')]; // hebt sich auf: fällt weg
+    kostenZeile(D.zelle(2026, 6, 2), 'Werbung', 'Sonstiges', -10, 'paid', 'l'), // hebt sich auf: fällt weg
+    kostenZeile(D.zelle(2026, 11, 9), 'Miete', 'Sonstiges', 700, 'open', 'm')]; // v39: nach heute, zählt noch nicht
   const u = roh(k.uebersichtBauen(r, D.berlin, new Date('2026-11-08T15:00:00Z')));
   assert.deepStrictEqual(u.kosten.zeilen, [
     ['2026-03', 'Sonstiges', 'Werbung', 130.56], ['2026-03', 'Ware', 'Flaschen', 800],
@@ -228,6 +229,8 @@ test('uebersichtBauen: Lexware-Kosten je Monat, Art und Kategorie, ohne Storno, 
     ['2026-05', '', 'Miete', 10], ['2026-05', 'Sonstiges', 'Miete', 1234.5]]);
   // a, b, c, d, e, g, h, k, l zählen (f storniert, i und j unlesbar); offen sind d und e
   assert.deepStrictEqual([u.kosten.belege, u.kosten.offen, u.kosten.neuestes], [9, 2, '2026-06-02']);
+  // v39: ältester Beleg (für den Zeitraum, den der Tab abdeckt) und die Zahl unlesbarer Zeilen (Gewinn „unvollständig“)
+  assert.deepStrictEqual([u.kosten.aeltestes, u.kosten.fehler], ['2026-03-04', 2]);
   assert.ok(u.hinweise.includes('Tab Lexware-Kosten: 2 Zeilen ohne lesbares Datum oder Betrag, zählt nicht.'), JSON.stringify(u.hinweise));
 });
 
@@ -239,7 +242,7 @@ test('uebersichtBauen: Lexware-Kosten mit falscher Kopfzeile oder nur Kopf (v38)
   assert.ok(u.hinweise.includes('Tab Lexware-Kosten: Kopfzeile passt nicht, Kosten und Gewinn fehlen in der App.'));
   r.lexwareKosten = [kostenKopf()];
   assert.deepStrictEqual(roh(k.uebersichtBauen(r, D.berlin, new Date('2026-11-08T15:00:00Z')).kosten),
-    { zeilen: [], belege: 0, offen: 0, neuestes: null });
+    { zeilen: [], belege: 0, offen: 0, neuestes: null, aeltestes: null, fehler: 0 });
 });
 
 test('Vergleichsmonate: die 12 Monate vor dem Diagramm-Zeitraum', () => {
@@ -266,4 +269,19 @@ test('Verkaufszeilen kompakt: alle Zeilen, sortiert nach Monat und Datum, Gutsch
   assert.deepStrictEqual(okt[2], ['2026-10', '2026-10-30', 'Berlin', 'Späti Zwei', -24, -26.5, 'RE1']);
   for (let i = 1; i < a.zeilen.length; i++) assert.ok(a.zeilen[i - 1][0] <= a.zeilen[i][0], 'nach Monat sortiert');
   assert.deepStrictEqual(roh(k.verkaeufeAuswerten([], '2026-11-08').zeilen), []);
+});
+
+test('v39: Gutschrift mit Bezug im Kommentar bekommt die Rechnung als achten Wert der kompakten Zeile', () => {
+  const zeile = (t, flaschen, rechnung, kommentar) => [D.zelle(2026, 10, 1), D.zelle(2026, 10, t), 'Lexware', 'Berlin', 'Späti', flaschen, 1, 0.08,
+    flaschen * 1.08, rechnung, kommentar, ''];
+  const v = k.verkaeufeLesen([D.verkaufKopf(),
+    zeile(2, 24, 'RE7', 'Leistungszeitraum September 2026'),
+    zeile(9, -12, 'GS1', 'prüfen: Summe weicht ab; Gutschrift zu RE7 #2; Pfand anteilig auf alle Flaschen verteilt'),
+    zeile(10, -12, 'GS2 #2', 'Storno zu RE7.'),
+    zeile(11, -1, 'GS3', 'Gutschrift ohne Bezug'),
+    zeile(12, 5, 'RE8', 'Gutschrift zu RE7')], D.berlin).verkaeufe; // Flaschen im Plus: kein Bezug
+  assert.deepStrictEqual(roh(v.map((x) => x.bezug)), ['', 'RE7', 'RE7', '', '']);
+  const z = roh(k.verkaeufeAuswerten(v, '2026-11-08').zeilen);
+  assert.deepStrictEqual(z.map((x) => x.length), [7, 8, 8, 7, 7]);
+  assert.deepStrictEqual(z[1].slice(6), ['GS1', 'RE7']);
 });
