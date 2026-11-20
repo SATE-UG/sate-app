@@ -25,9 +25,63 @@ function abfuellungenLesen(zeilen, formatieren) {
 }
 
 /**
- * `roh`: { verkaeufe, lagerLog, einstellungen, abfuellungen } (2D-Arrays ganzer Tabs) und `uebersicht`
- * (Übersicht!B8:B13 als 6×1). `formatieren(date)` → `JJJJ-MM-TT` in Europe/Berlin, `jetzt` = Date.
- * Antwort ohne ok/name: { stand, heute, kennzahlen, bestellung, lager, verkaeufe, abfuellungen, abgaenge, schwund, verkaufListe, hinweise }.
+ * Tab Lexware-Kosten (seit v38, getValues, erste Zeile Kopf) → { zeilen, belege, offen, neuestes } für die App:
+ * `zeilen` = [[Monat `JJJJ-MM`, Art (`Ware`, `Sonstiges` oder '' = noch ohne Kategorie), Kategorie, netto]], je Monat,
+ * Art und Kategorie zusammengefasst (Belegdatum, netto auf den Cent, Summe 0 fällt weg), ohne stornierte Belege.
+ * `belege` = Anzahl Belege, die zählen, `offen` = davon in Lexware noch zu prüfen (blank/unchecked), `neuestes` = das
+ * neueste Belegdatum (oder null). Fehlt der Tab (`zeilen` null): null. Passt die Kopfzeile nicht: null mit Hinweis.
+ * Leere Zeilen (das Skript überschreibt alte Reste mit leeren Zeilen) fallen still weg, Zeilen ohne lesbares Datum oder
+ * ohne lesbaren Betrag mit einem Hinweis.
+ */
+function lexwareKostenLesen(zeilen, formatieren, hinweise) {
+  if (!Array.isArray(zeilen)) return null;
+  const kopf = zeilen[0] || [];
+  if (Object.keys(LK_KOPF).some((i) => String(kopf[i] || '').trim() !== LK_KOPF[i])) {
+    hinweise.push('Tab ' + LEXWARE_KOSTEN_TAB + ': Kopfzeile passt nicht, Kosten und Gewinn fehlen in der App.');
+    return null;
+  }
+  const leer = (w) => w === '' || w === null || w === undefined || (typeof w === 'string' && !w.trim());
+  const summen = Object.create(null);
+  const belege = Object.create(null);
+  const offen = Object.create(null);
+  let neuestes = null;
+  let kaputt = 0;
+  for (let i = 1; i < zeilen.length; i++) {
+    const z = zeilen[i] || [];
+    if ([LK.DATUM, LK.KATEGORIE, LK.ART, LK.NETTO, LK.STATUS, LK.ID].every((sp) => leer(z[sp]))) continue;
+    const status = String(z[LK.STATUS] === undefined || z[LK.STATUS] === null ? '' : z[LK.STATUS]).trim();
+    if (KOSTEN_STATUS_ZAEHLT_NICHT.test(status)) continue;
+    const datum = zelleDatum(z[LK.DATUM], formatieren);
+    const netto = betragLesen(z[LK.NETTO]);
+    if (!datum || netto === null) { kaputt++; continue; }
+    const artText = String(z[LK.ART] || '').trim().toLowerCase();
+    const art = KOSTEN_ARTEN.find((a) => a.toLowerCase() === artText) || '';
+    const kategorie = String(z[LK.KATEGORIE] || '').trim();
+    const schluessel = datum.slice(0, 7) + '\u0000' + art + '\u0000' + kategorie;
+    summen[schluessel] = (summen[schluessel] || 0) + netto;
+    // Ein Beleg kann mehrere Zeilen haben (eine je Kategorie); ohne ID zählt die Zeile für sich
+    const id = String(z[LK.ID] === undefined || z[LK.ID] === null ? '' : z[LK.ID]).trim() || 'Zeile ' + (i + 1);
+    belege[id] = true;
+    if (KOSTEN_STATUS_OFFEN.test(status)) offen[id] = true;
+    if (!neuestes || datum > neuestes) neuestes = datum;
+  }
+  if (kaputt) {
+    hinweise.push('Tab ' + LEXWARE_KOSTEN_TAB + ': ' + kaputt + (kaputt === 1 ? ' Zeile' : ' Zeilen') + ' ohne lesbares Datum oder Betrag, zählt nicht.');
+  }
+  return {
+    zeilen: Object.keys(summen).sort().map((k) => k.split('\u0000').concat([runde_(summen[k], 2)])).filter((x) => x[3] !== 0),
+    belege: Object.keys(belege).length,
+    offen: Object.keys(offen).length,
+    neuestes: neuestes,
+  };
+}
+
+/**
+ * `roh`: { verkaeufe, lagerLog, einstellungen, abfuellungen } (2D-Arrays ganzer Tabs), `uebersicht`
+ * (Übersicht!B8:B13 als 6×1) und `lexwareKosten` (ganzer Tab oder null, wenn es ihn nicht gibt).
+ * `formatieren(date)` → `JJJJ-MM-TT` in Europe/Berlin, `jetzt` = Date.
+ * Antwort ohne ok/name: { stand, heute, kennzahlen, bestellung, lager, verkaeufe, abfuellungen, abgaenge, schwund, kosten,
+ * verkaufListe, hinweise }.
  */
 function uebersichtBauen(roh, formatieren, jetzt) {
   const heute = formatieren(jetzt);
@@ -42,6 +96,7 @@ function uebersichtBauen(roh, formatieren, jetzt) {
   const bestellung = bestellStatus(gesamt.wert, ab.genau, e, heute);
 
   const hinweise = [].concat(e.hinweise, vk.hinweise, log.hinweise, lager.hinweise);
+  const kosten = lexwareKostenLesen(roh.lexwareKosten, formatieren, hinweise);
   if (gesamt.quelle === 'rechnerisch') {
     hinweise.unshift(gesamt.fehlen.length === lager.standorte.length
       ? 'Noch keine Inventur: Gesamtbestand ist der rechnerische aus der Übersicht (ohne Promo, Eigenverbrauch, Bruch).'
@@ -93,6 +148,8 @@ function uebersichtBauen(roh, formatieren, jetzt) {
     // Promo, Eigenverbrauch und Bruch als [Datum, Flaschen, Art], Schwund als [Datum, Flaschen, Standort ('' = Lücke vom Anfang)]
     abgaenge: abgaenge.map((b) => [b.datum, b.flaschen, b.art]),
     schwund: schwund,
+    // Kosten aus Lexware (seit v38) für den vorläufigen Gewinn; null, solange es den Tab nicht gibt
+    kosten: kosten,
     verkaufListe: verkaufListeBauen(vk.verkaeufe, e, heute),
     hinweise: hinweise.length > MAX_HINWEISE
       ? hinweise.slice(0, MAX_HINWEISE - 1).concat(['… und ' + (hinweise.length - MAX_HINWEISE + 1) + ' weitere Hinweise.'])

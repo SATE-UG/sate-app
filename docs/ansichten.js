@@ -273,7 +273,8 @@
    * ist, zeigt die Karte das Jahr davor. Der Umsatz des Jahres groß mit der Veränderung zum Vorjahr
    * (volle Monate), die zwölf Monate als kleine Balken (der laufende in der Akzentfarbe, darunter sein Stand bisher),
    * darunter drei Kacheln: Rohertrag, Marge und Flaschen (ohne Herstellkosten Flaschen und Umsatz pro Flasche). Der
-   * Kopf öffnet die Verkäufe mit Umsatz, jede Kachel mit ihrer Kennzahl. Ohne Monate null.
+   * Kopf öffnet die Verkäufe mit Umsatz, jede Kachel mit ihrer Kennzahl. Seit v38 mit Kosten aus Lexware eine vierte
+   * Kachel „Gewinn“ (vorläufig, zwei mal zwei), sie öffnet „Gewinn und Kosten“. Ohne Monate null.
    */
   function jahrStart(a) {
     if (!a.jv || !a.jv.bisher) return null;
@@ -320,6 +321,15 @@
       'aria-label': vorlesen + '. Verkäufe öffnen' },
     h('span', { class: 'dash-label', text: label }), h('span', { class: 'dash-wert', text: wert }), unter ? h('span', { class: 'dash-klein' }, unter) : null);
     const mitTrend = (p) => (p === null ? '' : ', ' + H.prozentText(p) + ' ' + zumJahrDavor);
+    // Gewinn vorläufig (seit v38) neben Rohertrag und Marge: nur mit Kosten aus Lexware für das gezeigte Jahr, sonst
+    // bleibt die Karte wie vorher. Ein Tipp öffnet „Gewinn und Kosten“ für dieses Jahr, danach geht der Fokus zurück.
+    const gw = mg && j ? gewinnFuer(jv.jahr) : null;
+    const gs = gw && !gw.hinweis && gw.jahr === jv.jahr ? gw.summe : null;
+    const gewinnKachel = gs ? h('button', { type: 'button', class: 'dash-kachel kachel-tipp', 'data-start': 'gewinn',
+      onclick: () => S.zahlenZeigen('gewinn', jv.jahr, () => document.querySelector('#app [data-start="gewinn"]')),
+      'aria-label': 'Gewinn ' + wann + ' vorläufig ' + (zahlDa(gs.gewinn) ? H.euroFormat(gs.gewinn) : 'unbekannt, Herstellkosten fehlen zum Teil') + '. Gewinn und Kosten öffnen' },
+    h('span', { class: 'dash-label', text: 'Gewinn' }), h('span', { class: 'dash-wert', text: zahlDa(gs.gewinn) ? H.euroFormat(gs.gewinn) : '–' }),
+    h('span', { class: 'dash-klein', text: zahlDa(gs.gewinn) ? 'vorläufig' : 'Kosten fehlen' })) : null;
     // Mit Herstellkosten immer Rohertrag und Marge; fehlen sie nur für eine Abfüllung, steht ein Strich mit Hinweis da,
     // statt dass die Kacheln stillschweigend verschwinden (Codex v37)
     const kacheln = mg && j ? [
@@ -327,8 +337,9 @@
         ? kachel('Rohertrag', H.euroFormat(j.rohertrag), pRoh !== null ? trendChip({ prozent: pRoh }, '') : wann, 'rohertrag', 'Rohertrag ' + wann + ' ' + H.euroFormat(j.rohertrag) + mitTrend(pRoh))
         : kachel('Rohertrag', '–', 'Kosten fehlen', 'rohertrag', 'Rohertrag ' + wann + ' unbekannt, Herstellkosten fehlen zum Teil'),
       kachel('Marge', zahlDa(j.marge) ? H.zahlFormat(j.marge, 1) + ' %' : '–', 'vom Umsatz', 'rohertrag', 'Marge ' + (zahlDa(j.marge) ? H.zahlFormat(j.marge, 1) + ' Prozent vom Umsatz' : 'unbekannt')),
+      gewinnKachel,
       kachel('Flaschen', H.zahlFormat(jv.bisher.flaschen, 0), pFlaschen !== null ? trendChip({ prozent: pFlaschen }, '') : wann, 'flaschen', flaschen(jv.bisher.flaschen) + ' ' + wann + mitTrend(pFlaschen)),
-    ] : [
+    ].filter(Boolean) : [
       kachel('Flaschen', H.zahlFormat(jv.bisher.flaschen, 0), pFlaschen !== null ? trendChip({ prozent: pFlaschen }, '') : wann, 'flaschen', flaschen(jv.bisher.flaschen) + ' ' + wann + mitTrend(pFlaschen)),
       kachel('Pro Flasche', cent(jv.bisher.flaschen > 0 ? umsatz / jv.bisher.flaschen : null), 'Umsatz', 'umsatz', 'Umsatz pro Flasche ' + cent(jv.bisher.flaschen > 0 ? umsatz / jv.bisher.flaschen : null)),
     ];
@@ -341,7 +352,7 @@
         : vjHinweis ? h('span', { class: 'trend-hinweis', text: vjHinweis }) : null,
       laufend && laufend.dieses ? h('span', { class: 'jahr-start-monat', text: H.monatName(laufend.monat) + ' bisher ' + H.euroFormat(laufend.dieses.umsatz) }) : null),
       svg),
-      h('div', { class: 'dash-kacheln jahr-start-kacheln' + (kacheln.length === 2 ? ' zwei' : '') }, kacheln));
+      h('div', { class: 'dash-kacheln jahr-start-kacheln' + (kacheln.length === 2 ? ' zwei' : kacheln.length === 4 ? ' vier' : '') }, kacheln));
   }
 
   /**
@@ -479,8 +490,8 @@
   // Die Filter („Auswerten“ in v35) sitzen im Reiter Verkäufe. Auf breiten Bildschirmen ist das Blatt breit und die
   // Blöcke stehen in zwei Spalten (style.css). Gerechnet wird in H.dashboardDaten und H.dashboardMehr.
 
-  const ZAHLEN_TITEL = { ueberblick: 'Überblick kompakt', vergleich: 'Vergleich zum Vorjahr', rohertrag: 'Rohertrag und Marge', abgaenge: 'Ohne Verkauf weg',
-    bestellungen: 'Bestellungen und Preise', kunden: 'Kunden in Zahlen', bestand: 'Bestand in Zahlen', rekorde: 'Rekorde und Gesamt' };
+  const ZAHLEN_TITEL = { ueberblick: 'Überblick kompakt', vergleich: 'Vergleich zum Vorjahr', rohertrag: 'Rohertrag und Marge', gewinn: 'Gewinn und Kosten',
+    abgaenge: 'Ohne Verkauf weg', bestellungen: 'Bestellungen und Preise', kunden: 'Kunden in Zahlen', bestand: 'Bestand in Zahlen', rekorde: 'Rekorde und Gesamt' };
 
   /** Zahlen fürs Dashboard aus dem gezeigten Stand, einmal pro Antwort gerechnet: { d, mehr }; ohne Daten null. */
   let zahlenMemo = { daten: null, wert: null };
@@ -496,6 +507,22 @@
     zahlenMemo = { daten: u, wert: d ? { d: d, mehr: mehr } : null };
     return zahlenMemo.wert;
   }
+
+  /**
+   * Vorläufiger Gewinn eines Jahres aus dem gezeigten Stand (seit v38, H.gewinnRechnen: Umsatz − Wareneinsatz − ohne
+   * Verkauf weg − sonstige Kosten aus Lexware). `jahr` null: das neueste Jahr mit Kosten. Ohne Herstellkosten null (dann
+   * gibt es auch keinen Rohertrag); ohne Kosten aus Lexware { hinweis }.
+   */
+  function gewinnFuer(jahr) {
+    const u = Z.daten;
+    const a = auswertung();
+    const zd = zahlenDaten();
+    if (!u || !a || !a.zeilen || !zd || !zd.mehr || !zd.mehr.marge) return null;
+    return H.gewinnRechnen(a.zeilen, zd.mehr.marge, u.kosten, u.abfuellungen, a.heute, jahr);
+  }
+
+  /** Jahr fürs Blatt „Gewinn und Kosten“: vom Start aus das dort gezeigte, sonst die Wahl oben in den Verkäufen. */
+  const gewinnJahr = () => (typeof Z.zahlenJahr === 'number' ? Z.zahlenJahr : typeof Z.verkaufJahr === 'number' ? Z.verkaufJahr : null);
 
   /** Kachel: Beschriftung, Hauptzahl mit Einheit, darunter weitere Zeilen (zweite Zahl, Vergleich). */
   function dashKachel(label, wert, einheit, zeilen) {
@@ -798,6 +825,69 @@
               vl.monate.map((x) => ({ zellen: [monatKurz(x.monat), fl(x.flaschen), eur(x.kosten)] }))),
           ] : null);
       }
+
+      // Gewinn und Kosten (seit v38, Lexware-API Task 8) ------------------------------------------------------------
+      // Vorläufiger Gewinn = Umsatz − Wareneinsatz (Herstellkosten der verkauften Flaschen, wie beim Rohertrag) − ohne
+      // Verkauf weg (wie in „Ohne Verkauf weg“) − sonstige Kosten aus Lexware (Tab „Lexware-Kosten“, Art „Sonstiges“).
+      // Kosten der Art „Ware“ stecken schon in den Herstellkosten je Abfüllung: nur zum Vergleich, nie im Gewinn.
+      // Gerechnet in H.gewinnRechnen, fürs gewählte Jahr (Verkäufe) bzw. das Jahr, das der Start zeigt.
+      const gw = gewinnFuer(gewinnJahr());
+      const gewinnFuss = [F.stand, 'Gewinn vorläufig: Umsatz minus Wareneinsatz (die Herstellkosten der verkauften Flaschen nach First in, First out, wie beim Rohertrag), ' +
+        'minus die Herstellkosten der Flaschen ohne Verkauf (Promo, Eigenverbrauch, Bruch, Schwund), minus die sonstigen Kosten aus Lexware nach Belegdatum.',
+      'Kosten der Art „Ware“ (zum Beispiel Flaschen, Abfüllung, Zutaten) stecken schon in den Herstellkosten je Abfüllung und zählen deshalb nicht noch einmal.']
+        .concat(lk ? ['Die alte Lücke zählt zu keinem Jahr, also auch zu keinem Gewinn.'] : [], ['Alles netto.']);
+      // Ohne Kosten aus Lexware (oder ohne einen Beleg) steht hier statt des Gewinns nur, was fehlt
+      if (gw) teile = seite('gewinn', 'Gewinn', 'Gewinn und Kosten', gw.hinweis ? [F.stand] : gewinnFuss);
+      if (gw && gw.hinweis) {
+        teile.push(dashTitel('Gewinn', 'vorläufig'), h('p', { class: 'dash-fuss dash-fehlt', text: gw.hinweis }));
+      } else if (gw) {
+        const gj = gw.jahr;
+        const sg = gw.summe;
+        // Kosten mit Minus, daneben ihr Anteil am Umsatz
+        const minus = (z) => (zahlDa(z) ? eur(z === 0 ? 0 : -z) : '–');
+        const vomUmsatz = (z) => klein(zahlDa(z) && sg.umsatz > 0 ? anteil((z / sg.umsatz) * 100) : '');
+        const hochKat = Math.max.apply(null, gw.kategorien.map((x) => x.netto).concat([0]));
+        const hochMonat = Math.max.apply(null, gw.monate.map((x) => (x.gewinn > 0 ? x.gewinn : 0)).concat([0]));
+        // Monate und Jahre ohne Prozent: Bei kleinen Monaten wird der Anteil schnell riesig und sagt wenig
+        const gewinnKopf = (erste) => [{ vorlesen: erste }, 'Umsatz', { text: 'Kosten', vorlesen: 'Kosten zusammen' }, 'Gewinn'];
+        const gewinnZeile = (name, x, extra) => Object.assign({ zellen: [name, eur(x.umsatz), leise(eur(x.kosten)), ertragZelle(x.gewinn)] }, extra);
+        const jahresWerte = gw.jahre.length > 1 ? gw.jahre.map((jj) => ({ jahr: jj, g: jj === gj ? gw : gewinnFuer(jj) })).filter((x) => x.g && !x.g.hinweis) : [];
+        teile.push(
+          dashTitel('Gewinn ' + gj, 'vorläufig'),
+          // Gewählt war ein Jahr ohne Kosten aus Lexware (z. B. in den Verkäufen noch das Vorjahr): offen sagen statt still wechseln (Codex v38)
+          gw.gewuenscht !== null && gw.gewuenscht !== gj ? h('p', { class: 'dash-fuss dash-fehlt', text: 'Für ' + gw.gewuenscht + ' gibt es keine Kosten aus Lexware, deshalb steht hier ' + gj + '.' }) : null,
+          sg.gewinn === null ? h('p', { class: 'dash-fuss dash-fehlt', text: (mg.fehlt.length ? 'Für ' + mg.fehlt.join(', ') + ' fehlen die Herstellkosten (Tab Abfüllungen, Spalte „Kosten/Fl (€)“). '
+            : 'Herstellkosten fehlen zum Teil. ') + 'Deshalb steht beim Gewinn ein Strich.' }) : null,
+          dashTabelle('treppe', 'Vorläufiger Gewinn ' + gj + ': Umsatz minus Kosten', [{ vorlesen: 'Posten' }, 'Euro', { text: 'Anteil', vorlesen: 'Anteil am Umsatz' }], [
+            { zellen: ['Umsatz', eur(sg.umsatz), klein('')] },
+            { zellen: ['Wareneinsatz', minus(sg.wareneinsatz), vomUmsatz(sg.wareneinsatz)] },
+            { zellen: ['Ohne Verkauf weg', minus(sg.weg), vomUmsatz(sg.weg)] },
+            { zellen: ['Sonstige Kosten', minus(sg.sonstige), vomUmsatz(sg.sonstige)] },
+            { klasse: 'dash-summe', zellen: [nameMit('Gewinn', 'vorläufig'), ertragZelle(sg.gewinn), margeZelle(sg.anteil)] }]),
+          h('p', { class: 'dash-fuss dash-fehlt', text: 'Stand: Lexware, täglich' + (gw.neuestes ? ', neuester Beleg vom ' + H.datumText(gw.neuestes) : '') + '. ' +
+            'Buchungen ohne Beleg (z. B. Zinsen, Bankgebühren) fehlen. Kein Ersatz für GuV oder Jahresabschluss.' }),
+          dashTitel('Sonstige Kosten ' + gj, 'nach Kategorie'),
+          gw.kategorien.length
+            ? dashTabelle('treppe', 'Sonstige Kosten ' + gj + ' nach Kategorie', [{ vorlesen: 'Kategorie' }, 'Euro', 'Anteil'],
+              gw.kategorien.map((x) => ({ balken: hochKat > 0 ? (Math.max(0, x.netto) / hochKat) * 100 : 0, zellen: [x.kategorie || 'Ohne Namen', eur(x.netto), klein(anteil(x.anteil))] }))
+                .concat([{ klasse: 'dash-summe', zellen: ['Zusammen', eur(sg.sonstige), klein('')] }]))
+            : dashFakten([['Sonstige Kosten', eur(0), 'noch kein Beleg in ' + gj]]),
+          dashTitel('Zum Vergleich', 'nicht im Gewinn'),
+          dashFakten([
+            ['Wareneinkauf laut Lexware', eur(gw.wareLexware), 'steckt schon im Wareneinsatz'],
+            gw.abgefuellt ? ['Abfüllungen ' + gj + ' zu Herstellkosten', eur(gw.abgefuellt.kosten), fl(gw.abgefuellt.flaschen) + ' Fl. laut Tab Abfüllungen'] : null,
+            gw.ohneArt !== 0 ? ['Belege noch ohne Kategorie', eur(gw.ohneArt), 'zählen erst mit Kategorie'] : null,
+            gw.offen ? ['In Lexware noch zu prüfen', fl(gw.offen) + (gw.offen === 1 ? ' Beleg' : ' Belege')] : null,
+          ]),
+          dashTitel('Monate ' + gj, 'Gewinn vorläufig'),
+          dashTabelle('bleibt', 'Umsatz, Kosten und vorläufiger Gewinn je Monat ' + gj + ', neuester zuerst', gewinnKopf('Monat'),
+            gw.monate.slice().reverse().map((x) => gewinnZeile(H.monatFormat(x.monat), x,
+              { klasse: x.laufend ? 'laufend' : '', balken: hochMonat > 0 && x.gewinn > 0 ? (x.gewinn / hochMonat) * 100 : 0 }))),
+          jahresWerte.length ? [
+            dashTitel('Gewinn je Jahr', 'vorläufig'),
+            dashTabelle('bleibt dash-zebra', 'Umsatz, Kosten und vorläufiger Gewinn je Jahr', gewinnKopf('Jahr'), jahresWerte.map((x) => gewinnZeile(String(x.jahr), x.g.summe))),
+          ] : null);
+      }
     }
 
     // Preise und Bestellungen -------------------------------------------------------------------------------------
@@ -943,7 +1033,7 @@
     const mehr = zd.mehr;
     const voll = !!(mehr && mehr.gesamt);
     const mg = voll ? mehr.marge : null;
-    return { ueberblick: true, vergleich: !!mehr, rohertrag: !!mg, abgaenge: !!(mg && mg.verluste), bestellungen: voll, kunden: voll, bestand: voll, rekorde: voll };
+    return { ueberblick: true, vergleich: !!mehr, rohertrag: !!mg, gewinn: !!mg, abgaenge: !!(mg && mg.verluste), bestellungen: voll, kunden: voll, bestand: voll, rekorde: voll };
   }
 
   /** Die Kernzahl eines Themas als kurzer Satz für seine Zeile. */
@@ -961,6 +1051,11 @@
     if (id === 'rohertrag') {
       const j = mehr.marge.jahr;
       return zahlDa(j.rohertrag) ? H.euroFormat(j.rohertrag) + ' in ' + jahr + (zahlDa(j.marge) ? ', Marge ' + H.zahlFormat(j.marge, 1) + ' %' : '') : 'Herstellkosten fehlen zum Teil';
+    }
+    if (id === 'gewinn') {
+      const g = gewinnFuer(typeof Z.verkaufJahr === 'number' ? Z.verkaufJahr : null);
+      if (!g || g.hinweis) return g && g.grund === 'belege' ? 'Noch keine Belege aus Lexware' : 'Noch keine Kosten aus Lexware';
+      return zahlDa(g.summe.gewinn) ? 'Vorläufig ' + H.euroFormat(g.summe.gewinn) + ' in ' + g.jahr : 'Herstellkosten fehlen zum Teil';
     }
     if (id === 'abgaenge') {
       const v = mehr.marge.verluste;
@@ -1030,10 +1125,14 @@
         akt.fuss.length ? h('p', { class: 'dash-fuss', text: akt.fuss.join(' ') }) : null));
   }
 
-  /** Blatt zu einem Thema öffnen (Zeile in Verkäufe, Kunden oder Lager). Nach dem Schließen zurück auf die Zeile. */
-  S.zahlenZeigen = function (id) {
+  /**
+   * Blatt zu einem Thema öffnen (Zeile in Verkäufe, Kunden oder Lager). Nach dem Schließen zurück auf die Zeile.
+   * Seit v38 auch vom Start aus („Gewinn“): `jahr` = das dort gezeigte Jahr, `zurueck` = wohin der Fokus danach geht.
+   */
+  S.zahlenZeigen = function (id, jahr, zurueck) {
+    Z.zahlenJahr = typeof jahr === 'number' ? jahr : undefined;
     const inhalt = zahlenInhalt(id);
-    if (inhalt) S.blattZeigen(ZAHLEN_TITEL[id], inhalt, () => document.querySelector('#app [data-zahlen="' + id + '"]'), true);
+    if (inhalt) S.blattZeigen(ZAHLEN_TITEL[id], inhalt, typeof zurueck === 'function' ? zurueck : () => document.querySelector('#app [data-zahlen="' + id + '"]'), true);
   };
 
   /**
@@ -1572,7 +1671,7 @@
       summeKarte(v, waehlen),
       v.jv ? [h('h2', { id: 'monate-anker' }, h('strong', { text: 'Pro' }), ' Monat'), monateKarte(v, waehlen)] : null,
       aufteilung(v, waehlen),
-      zahlenAbschnitt(['ueberblick', 'vergleich', 'rohertrag', 'bestellungen', 'rekorde']));
+      zahlenAbschnitt(['ueberblick', 'vergleich', 'rohertrag', 'gewinn', 'bestellungen', 'rekorde']));
     reihen().forEach((e, i) => { if (i < links.length) e.scrollLeft = links[i]; });
     // Der gewählte Chip steht in seiner Reihe ganz im Blick
     reihen().forEach((reihe) => {

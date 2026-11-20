@@ -322,7 +322,7 @@ h2 {
 .jahr-balken .jb-minus { fill: var(--rot); }
 .jahr-balken .jb-jetzt { fill: var(--akzent); font-weight: 700; }
 .jahr-start-kacheln.dash-kacheln { margin: 0; padding: 0 12px 12px; }
-.jahr-start-kacheln.zwei { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.jahr-start-kacheln.zwei, .jahr-start-kacheln.vier { grid-template-columns: repeat(2, minmax(0, 1fr)); } /* vier (v38): mit Gewinn zwei mal zwei */
 .kachel-tipp { display: block; width: 100%; border: 0; color: var(--text); font: inherit; text-align: left; cursor: pointer; -webkit-appearance: none; appearance: none;
   -webkit-tap-highlight-color: transparent; }
 .kachel-tipp > span { display: block; white-space: nowrap; font-variant-numeric: tabular-nums; }
@@ -1339,6 +1339,7 @@ body.mit-leiste::after {
 .dash-weg .dash-zeile { grid-template-columns: minmax(0, 1fr) 72px 84px; }                 /* Art oder Monat, Flaschen, Herstellkosten */
 .dash-bleibt .dash-zeile { grid-template-columns: minmax(0, 1fr) 74px 62px 74px; }         /* Jahr oder Abfüllung, Rohertrag, ohne Verkauf weg, bleibt */
 .dash-rohkan .dash-zeile { grid-template-columns: minmax(0, 1fr) 50px 66px 52px 44px; }    /* Kanal, je Fl., Rohertrag, Marge, Anteil */
+.dash-treppe .dash-zeile { grid-template-columns: minmax(0, 1fr) 84px 52px; }              /* Gewinn (v38): Posten oder Kategorie, Euro, Anteil */
 .dash-zeile > :not(.dash-balken) { position: relative; z-index: 1; }
 .dash-balken { position: absolute; left: 0; top: 2px; bottom: 2px; z-index: 0; border-radius: 6px; background: rgba(255, 255, 255, 0.075); }
 /* Laufender Monat: schraffiert statt gefüllt, er zählt erst bis heute */

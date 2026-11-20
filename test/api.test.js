@@ -196,6 +196,24 @@ test('doPost uebersicht: Kennzahlen, Lager, Verkäufe, Bestellung als JSON, nich
   assert.ok(JSON.stringify(a).length < 20000, 'Antwort kompakt');
 });
 
+test('doPost uebersicht: Tab Lexware-Kosten wird gelesen, wenn es ihn gibt, und nie beschrieben (v38)', () => {
+  const { welt, k, code } = mitTabs();
+  welt.tabs['Lexware-Kosten'] = [['Datum', 'Lieferant', 'Belegnr.', 'Typ', 'Kategorie', 'Gruppe', 'Art', 'netto (€)', 'USt (€)', 'brutto (€)', 'Status', 'Lexware-ID'],
+    [D.zelle(2026, 10, 5), 'Lieferant X', 'B-1', 'Rechnung', 'Werbung', 'Gruppe', 'Sonstiges', 100, 19, 119, 'paid', 'x1']];
+  welt.sheetLesen.length = 0;
+  const a = post(k, { code: code, aktion: 'uebersicht' });
+  assert.strictEqual(a.ok, true, JSON.stringify(a));
+  assert.deepStrictEqual(a.kosten, { zeilen: [['2026-10', 'Sonstiges', 'Werbung', 100]], belege: 1, offen: 0, neuestes: '2026-10-05' });
+  assert.ok(welt.sheetLesen.includes('Lexware-Kosten!alles'));
+  assert.deepStrictEqual(welt.sheetSchreiben, []);
+  // ohne den Tab: kosten null, gelesen wird er dann nicht
+  delete welt.tabs['Lexware-Kosten'];
+  welt.sheetLesen.length = 0;
+  const b = post(k, { code: code, aktion: 'uebersicht' });
+  assert.strictEqual(b.kosten, null);
+  assert.ok(!welt.sheetLesen.some((x) => /Lexware/.test(x)));
+});
+
 test('doPost uebersicht: falscher Code liest nichts, fehlender Tab → Serverfehler', () => {
   const { welt, k, code } = mitTabs();
   welt.sheetLesen.length = 0;

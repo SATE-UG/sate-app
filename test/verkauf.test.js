@@ -190,6 +190,58 @@ test('uebersichtBauen: Hinweise werden gekappt, Abweichung zu B9 wird gemeldet',
   assert.match(u.hinweise[19], /weitere Hinweise/);
 });
 
+/** Tab Lexware-Kosten wie vom Belege-Skript (erfundene Belege): Kopf A–L, Datum als Datumszelle, netto als Zahl. */
+const kostenKopf = () => ['Datum', 'Lieferant', 'Belegnr.', 'Typ', 'Kategorie', 'Gruppe', 'Art', 'netto (€)', 'USt (€)', 'brutto (€)', 'Status', 'Lexware-ID'];
+const kostenZeile = (datum, kategorie, art, netto, status, id) => [datum, 'Lieferant X', 'B-1', netto < 0 ? 'Gutschrift' : 'Rechnung', kategorie, '', art,
+  netto, 0, netto, status, id];
+
+test('uebersichtBauen: ohne Tab Lexware-Kosten ist kosten null, sonst nichts anders (v38)', () => {
+  const ohne = roh(k.uebersichtBauen(rohdaten(), D.berlin, new Date('2026-11-08T15:00:00Z')));
+  assert.strictEqual(ohne.kosten, null);
+  const r = rohdaten();
+  r.lexwareKosten = null;
+  const mitNull = roh(k.uebersichtBauen(r, D.berlin, new Date('2026-11-08T15:00:00Z')));
+  assert.deepStrictEqual(mitNull, ohne);
+});
+
+test('uebersichtBauen: Lexware-Kosten je Monat, Art und Kategorie, ohne Storno, mit offenen Belegen (v38)', () => {
+  const r = rohdaten();
+  r.lexwareKosten = [kostenKopf(),
+    kostenZeile(D.zelle(2026, 3, 4), 'Werbung', 'Sonstiges', 120, 'paid', 'a'),
+    kostenZeile(D.zelle(2026, 3, 20), 'Werbung', 'Sonstiges', 30.555, 'open', 'b'),
+    kostenZeile(D.zelle(2026, 3, 20), 'Flaschen', 'Ware', 800, 'open', 'b'), // derselbe Beleg, zweite Kategorie
+    kostenZeile(D.zelle(2026, 3, 25), 'Werbung', 'Sonstiges', -20, 'paidoff', 'c'), // Gutschrift
+    kostenZeile(D.zelle(2026, 4, 1), 'Reise', 'sonstiges', 55, 'unchecked', 'd'), // Art klein geschrieben
+    kostenZeile(D.zelle(2026, 4, 2), '', '', 99.9, 'blank', 'e'), // noch ohne Kategorie
+    kostenZeile(D.zelle(2026, 4, 3), 'Werbung', 'Sonstiges', 500, 'voided', 'f'), // storniert: zählt nicht
+    kostenZeile('2026-05-06', 'Miete', 'Sonstiges', '1.234,50 €', 'paid', 'g'), // Text statt Zahl
+    kostenZeile(D.zelle(2026, 5, 7), 'Miete', 'Quatsch', 10, 'paid', 'h'), // unbekannte Art: wie ohne Kategorie
+    kostenZeile('kaputt', 'Miete', 'Sonstiges', 10, 'paid', 'i'),
+    kostenZeile(D.zelle(2026, 5, 8), 'Miete', 'Sonstiges', 'viel', 'paid', 'j'),
+    ['', '', '', '', '', '', '', '', '', '', '', ''], [], // leere Zeilen über alten Resten
+    kostenZeile(D.zelle(2026, 6, 1), 'Werbung', 'Sonstiges', 10, 'paid', 'k'),
+    kostenZeile(D.zelle(2026, 6, 2), 'Werbung', 'Sonstiges', -10, 'paid', 'l')]; // hebt sich auf: fällt weg
+  const u = roh(k.uebersichtBauen(r, D.berlin, new Date('2026-11-08T15:00:00Z')));
+  assert.deepStrictEqual(u.kosten.zeilen, [
+    ['2026-03', 'Sonstiges', 'Werbung', 130.56], ['2026-03', 'Ware', 'Flaschen', 800],
+    ['2026-04', '', '', 99.9], ['2026-04', 'Sonstiges', 'Reise', 55],
+    ['2026-05', '', 'Miete', 10], ['2026-05', 'Sonstiges', 'Miete', 1234.5]]);
+  // a, b, c, d, e, g, h, k, l zählen (f storniert, i und j unlesbar); offen sind d und e
+  assert.deepStrictEqual([u.kosten.belege, u.kosten.offen, u.kosten.neuestes], [9, 2, '2026-06-02']);
+  assert.ok(u.hinweise.includes('Tab Lexware-Kosten: 2 Zeilen ohne lesbares Datum oder Betrag, zählt nicht.'), JSON.stringify(u.hinweise));
+});
+
+test('uebersichtBauen: Lexware-Kosten mit falscher Kopfzeile oder nur Kopf (v38)', () => {
+  const r = rohdaten();
+  r.lexwareKosten = [['Datum', 'Lieferant', 'Belegnr.', 'Typ', 'Kategorie', 'Gruppe', 'Art', 'brutto (€)']];
+  const u = roh(k.uebersichtBauen(r, D.berlin, new Date('2026-11-08T15:00:00Z')));
+  assert.strictEqual(u.kosten, null);
+  assert.ok(u.hinweise.includes('Tab Lexware-Kosten: Kopfzeile passt nicht, Kosten und Gewinn fehlen in der App.'));
+  r.lexwareKosten = [kostenKopf()];
+  assert.deepStrictEqual(roh(k.uebersichtBauen(r, D.berlin, new Date('2026-11-08T15:00:00Z')).kosten),
+    { zeilen: [], belege: 0, offen: 0, neuestes: null });
+});
+
 test('Vergleichsmonate: die 12 Monate vor dem Diagramm-Zeitraum', () => {
   const v = [{ monat: '2024-11', kanal: 'Karlsruhe', kunde: 'A', flaschen: 7, umsatz: 7 },
     { monat: '2025-10', kanal: 'Karlsruhe', kunde: 'A', flaschen: 9, umsatz: 9 }];

@@ -1136,3 +1136,100 @@ test('spaltenTeilen (v35): Blöcke des Dashboards in zwei etwa gleich lange Spal
   assert.strictEqual(H.spaltenTeilen(null), 0);
   assert.strictEqual(H.spaltenTeilen([2, 'x', -1, 2]), 3, 'Unsinn zählt als 0');
 });
+
+// Gewinn vorläufig (v38, Lexware-API Task 8) ----------------------------------------------------------------------
+
+/** Erfundene Daten: eine Abfüllung zu 1 € je Flasche (dann eine zweite zu 0,80 €), Verkäufe 2025 und 2026, Abgänge, Lexware-Kosten. */
+function gewinnDaten(heute, abfKosten) {
+  const zeilen = H.verkaufZeilen({ zeilen: [
+    ['2025-12', '2025-12-05', 'Berlin', 'A', 100, 200, 'R0'],
+    ['2026-02', '2026-02-05', 'Berlin', 'A', 100, 250, 'R1'],
+    ['2026-03', '2026-03-05', 'Karlsruhe', 'B', 200, 500, 'R2'],
+    ['2026-11', '2026-11-03', 'Berlin', 'C', 50, 125, 'R3'],
+    ['2026-12', '2026-12-01', 'Berlin', 'D', 10, 25, 'R4']] }, heute);
+  const abf = [{ abfuellung: '1. Abfüllung', monat: '2025-11', flaschen: 1000, kostenProFlasche: abfKosten === undefined ? 1 : abfKosten },
+    { abfuellung: '2. Abfüllung', monat: '2026-05', flaschen: 500, kostenProFlasche: 0.8 }];
+  const lager = { abgaenge: [['2026-03-10', 20, 'Promo'], ['2025-12-24', 10, 'Eigenverbrauch']], schwund: [['2026-06-30', 5, 'Lager Süd']] };
+  const werte = H.monatsWerte({ zeilen: [] }, zeilen);
+  const marge = H.dashboardMehr(zeilen, werte, heute, 24, abf, lager).marge;
+  const kosten = { zeilen: [['2026-01', 'Sonstiges', 'Werbung', 100], ['2026-03', 'Sonstiges', 'Miete', 300], ['2026-03', 'Ware', 'Flaschen', 900],
+    ['2026-04', '', '', 50], ['2026-03', 'Sonstiges', 'Werbung', -20], ['2099-12', 'Sonstiges', 'Werbung', 999], ['kaputt'], ['2026-05', 'Sonstiges', 'X', 'viel']],
+  belege: 5, offen: 1, neuestes: '2026-11-02' };
+  return { zeilen, abf, lager, marge, kosten };
+}
+
+test('Gewinn vorläufig: Umsatz − Wareneinsatz − ohne Verkauf weg − sonstige Kosten, Ware nur zum Vergleich', () => {
+  const heute = '2026-11-15';
+  const d = gewinnDaten(heute);
+  const g = H.gewinnRechnen(d.zeilen, d.marge, d.kosten, d.abf, heute, 2026);
+  assert.deepStrictEqual(g.jahre, [2026], 'Lexware-Kosten erst seit 2026');
+  assert.strictEqual(g.jahr, 2026);
+  // 2026: 875 € Umsatz − 350 € Wareneinsatz (alles aus der ersten Abfüllung zu 1 €) − 25 € weg (20 Promo, 5 Schwund)
+  // − 380 € sonstige (100 + 300 − 20 Werbung-Gutschrift) = 120 €; 900 € Ware und 50 € ohne Kategorie zählen nicht
+  assert.deepStrictEqual(g.summe, { umsatz: 875, wareneinsatz: 350, weg: 25, sonstige: 380, kosten: 755, gewinn: 120, anteil: 13.7 });
+  // Umsatz minus Wareneinsatz ist genau der Rohertrag, ohne Verkauf weg genau das aus „Ohne Verkauf weg“
+  assert.strictEqual(g.summe.umsatz - g.summe.wareneinsatz, d.marge.jahr.rohertrag);
+  assert.strictEqual(g.summe.weg, d.marge.verluste.jahr.kosten);
+  assert.deepStrictEqual(g.monate.map((m) => [m.monat, m.umsatz, m.wareneinsatz, m.weg, m.sonstige, m.gewinn, m.anteil, m.laufend]), [
+    ['2026-01', 0, 0, 0, 100, -100, null, false], ['2026-02', 250, 100, 0, 0, 150, 60, false], ['2026-03', 500, 200, 20, 280, 0, 0, false],
+    ['2026-04', 0, 0, 0, 0, 0, null, false], ['2026-05', 0, 0, 0, 0, 0, null, false], ['2026-06', 0, 0, 5, 0, -5, null, false],
+    ['2026-07', 0, 0, 0, 0, 0, null, false], ['2026-08', 0, 0, 0, 0, 0, null, false], ['2026-09', 0, 0, 0, 0, 0, null, false],
+    ['2026-10', 0, 0, 0, 0, 0, null, false], ['2026-11', 125, 50, 0, 0, 75, 60, true]]);
+  assert.deepStrictEqual(g.kategorien, [{ kategorie: 'Miete', netto: 300, anteil: 78.9 }, { kategorie: 'Werbung', netto: 80, anteil: 21.1 }]);
+  assert.deepStrictEqual([g.wareLexware, g.ohneArt, g.abgefuellt], [900, 50, { flaschen: 500, kosten: 400 }]);
+  assert.deepStrictEqual([g.belege, g.offen, g.neuestes], [5, 1, '2026-11-02']);
+  // Ein Jahr ohne Lexware-Kosten gibt es nicht zu wählen: dann das neueste
+  assert.strictEqual(H.gewinnRechnen(d.zeilen, d.marge, d.kosten, d.abf, heute, 2025).jahr, 2026);
+  assert.strictEqual(H.gewinnRechnen(d.zeilen, d.marge, d.kosten, d.abf, heute, null).jahr, 2026);
+});
+
+test('Gewinn vorläufig: ohne Kosten, ohne Herstellkosten oder ohne Belege nur ein Hinweis; fehlende Kosten machen den Gewinn unbekannt', () => {
+  const heute = '2026-11-15';
+  const d = gewinnDaten(heute);
+  assert.strictEqual(H.gewinnRechnen(d.zeilen, d.marge, d.kosten, d.abf, 'kaputt', 2026), null);
+  assert.strictEqual(H.gewinnRechnen(d.zeilen, d.marge, null, d.abf, heute, 2026).grund, 'kosten');
+  assert.match(H.gewinnRechnen(d.zeilen, d.marge, null, d.abf, heute, 2026).hinweis, /^Noch keine Kosten aus Lexware/);
+  assert.strictEqual(H.gewinnRechnen(d.zeilen, null, d.kosten, d.abf, heute, 2026).grund, 'herstellkosten');
+  assert.strictEqual(H.gewinnRechnen(d.zeilen, d.marge, { zeilen: [], belege: 0, offen: 0, neuestes: null }, d.abf, heute, 2026).grund, 'belege');
+  // Erste Abfüllung ohne Herstellkosten: Wareneinsatz, weg und Gewinn unbekannt, Umsatz und sonstige Kosten bleiben
+  const ohne = gewinnDaten(heute, null);
+  const g = H.gewinnRechnen(ohne.zeilen, ohne.marge, ohne.kosten, ohne.abf, heute, 2026);
+  assert.deepStrictEqual(g.summe, { umsatz: 875, wareneinsatz: null, weg: null, sonstige: 380, kosten: null, gewinn: null, anteil: null });
+  assert.deepStrictEqual(g.monate[0], { monat: '2026-01', laufend: false, umsatz: 0, wareneinsatz: 0, weg: 0, sonstige: 100, kosten: 100, gewinn: -100, anteil: null });
+  assert.deepStrictEqual(g.abgefuellt, { flaschen: 500, kosten: 400 });
+  // Ältere Schnittstelle ohne Abgänge: „ohne Verkauf weg“ und damit der Gewinn unbekannt
+  const alt = H.dashboardMehr(d.zeilen, H.monatsWerte({ zeilen: [] }, d.zeilen), heute, 24, d.abf).marge;
+  assert.strictEqual(alt.wegJeMonat, null);
+  assert.deepStrictEqual(H.gewinnRechnen(d.zeilen, alt, d.kosten, d.abf, heute, 2026).summe.gewinn, null);
+});
+
+test('Gewinn vorläufig: im Januar das ganze Vorjahr wählbar, das neue Jahr bis zum laufenden Monat', () => {
+  const heute = '2027-01-10';
+  const d = gewinnDaten(heute);
+  const g = H.gewinnRechnen(d.zeilen, d.marge, d.kosten, d.abf, heute, 2026);
+  assert.deepStrictEqual(g.jahre, [2027, 2026]);
+  assert.strictEqual(g.monate.length, 12);
+  assert.ok(g.monate.every((m) => !m.laufend));
+  // Dezember 2026 ist jetzt dabei: 25 € Umsatz, 10 Flaschen zu 1 €
+  assert.deepStrictEqual([g.monate[11].umsatz, g.monate[11].wareneinsatz, g.summe.gewinn], [25, 10, 135]);
+  const neu = H.gewinnRechnen(d.zeilen, d.marge, d.kosten, d.abf, heute, 2027);
+  assert.deepStrictEqual([neu.jahr, neu.monate.length, neu.monate[0].laufend, neu.summe.gewinn, neu.abgefuellt], [2027, 1, true, 0, null]);
+});
+
+test('Gewinn vorläufig: Codex v38 – gewünschtes Jahr ohne Kosten, Belege, die sich aufheben, Abgänge auf den Cent', () => {
+  const heute = '2026-11-15';
+  const d = gewinnDaten(heute);
+  const g = H.gewinnRechnen(d.zeilen, d.marge, d.kosten, d.abf, heute, 2025);
+  assert.deepStrictEqual([g.jahr, g.gewuenscht], [2026, 2025], 'für 2025 gibt es keine Kosten: gezeigt wird 2026, das Blatt sagt es');
+  assert.deepStrictEqual([H.gewinnRechnen(d.zeilen, d.marge, d.kosten, d.abf, heute, null).gewuenscht, H.gewinnRechnen(d.zeilen, d.marge, d.kosten, d.abf, heute, 2026).gewuenscht], [null, 2026]);
+  // Rechnung und Gutschrift heben sich auf: keine Zeilen, aber Belege, also Gewinn mit 0 € sonstigen Kosten statt Hinweis
+  const null2 = H.gewinnRechnen(d.zeilen, d.marge, { zeilen: [], belege: 2, offen: 0, neuestes: '2026-03-01' }, d.abf, heute, 2026);
+  assert.deepStrictEqual([null2.hinweis, null2.jahre, null2.summe.sonstige, null2.summe.gewinn], [undefined, [2026], 0, 500]);
+  // Je eine Promo-Flasche zu 0,3333 € im Januar und Februar: zusammen 0,67 € wie in „Ohne Verkauf weg“, nicht 0,66 €
+  const zeilen = H.verkaufZeilen({ zeilen: [['2026-03', '2026-03-02', 'Berlin', 'A', 1, 2, 'R1']] }, heute);
+  const marge = H.dashboardMehr(zeilen, H.monatsWerte({ zeilen: [] }, zeilen), heute, 24,
+    [{ abfuellung: '1. Abfüllung', monat: '2025-12', flaschen: 10, kostenProFlasche: 0.3333 }],
+    { abgaenge: [['2026-01-10', 1, 'Promo'], ['2026-02-10', 1, 'Promo']], schwund: [] }).marge;
+  const cent = H.gewinnRechnen(zeilen, marge, { zeilen: [['2026-01', 'Sonstiges', 'X', 1]], belege: 1, offen: 0, neuestes: '2026-01-05' }, [], heute, 2026);
+  assert.deepStrictEqual([marge.verluste.jahr.kosten, cent.summe.weg], [0.67, 0.67]);
+});

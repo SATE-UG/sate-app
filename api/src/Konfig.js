@@ -152,6 +152,24 @@ const AB_KOPF = { 0: 'Abfüllung', 1: 'Monat', 2: 'Flaschen' };
 const AB_KOSTEN_KOPF = 'Kosten/Fl (€)';
 const AB_FORMATE = { 2: 'MM.yyyy', 3: '#,##0' };
 const AB_FORMATE_KOSTEN = { 2: 'MM.yyyy', 3: '#,##0', 5: '0.0000 "€"' };
+/**
+ * Tab „Lexware-Kosten“ (seit v38, nur lesen): schreibt das Belege-Skript (sate-belege, docs/lexware-api.md Abschnitt 4)
+ * täglich neu, eine Zeile pro Eingangsbeleg und Kategorie, Gutschriften negativ. Fehlt der Tab, liefert die Übersicht
+ * `kosten: null` und die App zeigt keinen Gewinn. Spalten A Datum, B Lieferant, C Belegnr., D Typ, E Kategorie,
+ * F Gruppe, G Art, H netto (€), I USt (€), J brutto (€), K Status, L Lexware-ID; gelesen werden nur A, E, G, H, K, L.
+ */
+const LEXWARE_KOSTEN_TAB = 'Lexware-Kosten';
+const LK = { DATUM: 0, KATEGORIE: 4, ART: 6, NETTO: 7, STATUS: 10, ID: 11 };
+const LK_KOPF = { 0: 'Datum', 4: 'Kategorie', 6: 'Art', 7: 'netto (€)', 10: 'Status', 11: 'Lexware-ID' };
+/**
+ * Werte der Spalte Art: `Ware` steckt über die Herstellkosten je Abfüllung schon im Wareneinsatz und zählt nicht in den
+ * Gewinn, `Sonstiges` sind die sonstigen Kosten. Alles andere (leer: Beleg in Lexware noch ohne Kategorie) wird ''.
+ */
+const KOSTEN_ARTEN = ['Ware', 'Sonstiges'];
+/** Status, der nicht zählt (storniert), und Status „in Lexware noch zu prüfen“. */
+const KOSTEN_STATUS_ZAEHLT_NICHT = /^voided$/i;
+const KOSTEN_STATUS_OFFEN = /^(blank|unchecked)$/i;
+
 /** Herstellkosten pro Flasche beim Eintragen: über 0 bis so viele Euro. */
 const MAX_KOSTEN_PRO_FLASCHE = 100;
 
