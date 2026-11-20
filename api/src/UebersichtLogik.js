@@ -34,6 +34,9 @@ function abfuellungenLesen(zeilen, formatieren) {
  * null mit Hinweis. Leere Zeilen (das Skript überschreibt alte Reste mit leeren Zeilen) fallen still weg, Zeilen ohne
  * lesbares Datum oder ohne lesbaren Betrag mit einem Hinweis; seit v39 steht ihre Anzahl in `fehler` (die App zeigt den
  * Gewinn dann als unvollständig). Belege mit Datum nach `heute` (`JJJJ-MM-TT`, seit v39) zählen noch nicht.
+ * Seit v40 dazu `lieferanten` = [[Jahr `JJJJ`, Lieferant ('' = ohne Namen), netto, Belege, davon Art `Ware` netto]]
+ * je Jahr und Lieferant (Beträge auf den Cent, Summe 0 fällt weg, Belege = verschiedene Lexware-IDs), sortiert nach
+ * Jahr und größtem Betrag. Nur wenn die Kopfzeile in B „Lieferant“ hat, sonst fehlt das Feld (ältere Tabs bleiben lesbar).
  */
 function lexwareKostenLesen(zeilen, formatieren, hinweise, heute) {
   if (!Array.isArray(zeilen)) return null;
@@ -43,7 +46,9 @@ function lexwareKostenLesen(zeilen, formatieren, hinweise, heute) {
     return null;
   }
   const leer = (w) => w === '' || w === null || w === undefined || (typeof w === 'string' && !w.trim());
+  const mitLieferant = String(kopf[LK.LIEFERANT] || '').trim() === LK_LIEFERANT_KOPF;
   const summen = Object.create(null);
+  const jeLieferant = Object.create(null);
   const belege = Object.create(null);
   const offen = Object.create(null);
   let neuestes = null;
@@ -66,6 +71,14 @@ function lexwareKostenLesen(zeilen, formatieren, hinweise, heute) {
     // Ein Beleg kann mehrere Zeilen haben (eine je Kategorie); ohne ID zählt die Zeile für sich
     const id = String(z[LK.ID] === undefined || z[LK.ID] === null ? '' : z[LK.ID]).trim() || 'Zeile ' + (i + 1);
     belege[id] = true;
+    if (mitLieferant) {
+      const lieferant = String(z[LK.LIEFERANT] === undefined || z[LK.LIEFERANT] === null ? '' : z[LK.LIEFERANT]).trim();
+      const lk = datum.slice(0, 4) + '\u0000' + lieferant;
+      const l = jeLieferant[lk] || (jeLieferant[lk] = { netto: 0, ware: 0, ids: Object.create(null) });
+      l.netto += netto;
+      if (art === 'Ware') l.ware += netto;
+      l.ids[id] = true;
+    }
     if (KOSTEN_STATUS_OFFEN.test(status)) offen[id] = true;
     if (!neuestes || datum > neuestes) neuestes = datum;
     if (!aeltestes || datum < aeltestes) aeltestes = datum;
@@ -73,7 +86,7 @@ function lexwareKostenLesen(zeilen, formatieren, hinweise, heute) {
   if (kaputt) {
     hinweise.push('Tab ' + LEXWARE_KOSTEN_TAB + ': ' + kaputt + (kaputt === 1 ? ' Zeile' : ' Zeilen') + ' ohne lesbares Datum oder Betrag, zählt nicht.');
   }
-  return {
+  const aus = {
     zeilen: Object.keys(summen).sort().map((k) => k.split('\u0000').concat([runde_(summen[k], 2)])).filter((x) => x[3] !== 0),
     belege: Object.keys(belege).length,
     offen: Object.keys(offen).length,
@@ -81,6 +94,14 @@ function lexwareKostenLesen(zeilen, formatieren, hinweise, heute) {
     aeltestes: aeltestes,
     fehler: kaputt,
   };
+  if (mitLieferant) {
+    aus.lieferanten = Object.keys(jeLieferant).map((k) => {
+      const l = jeLieferant[k];
+      return k.split('\u0000').concat([runde_(l.netto, 2), Object.keys(l.ids).length, runde_(l.ware, 2)]);
+    }).filter((x) => x[2] !== 0)
+      .sort((a, b) => (a[0] !== b[0] ? (a[0] < b[0] ? -1 : 1) : b[2] - a[2] || (a[1] < b[1] ? -1 : a[1] > b[1] ? 1 : 0)));
+  }
+  return aus;
 }
 
 /**

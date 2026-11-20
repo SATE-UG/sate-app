@@ -1340,6 +1340,7 @@ body.mit-leiste::after {
 .dash-bleibt .dash-zeile { grid-template-columns: minmax(0, 1fr) 74px 62px 74px; }         /* Jahr oder Abfüllung, Rohertrag, ohne Verkauf weg, bleibt */
 .dash-rohkan .dash-zeile { grid-template-columns: minmax(0, 1fr) 50px 66px 52px 44px; }    /* Kanal, je Fl., Rohertrag, Marge, Anteil */
 .dash-treppe .dash-zeile { grid-template-columns: minmax(0, 1fr) 84px 52px; }              /* Gewinn (v38): Posten oder Kategorie, Euro, Anteil */
+.dash-lief .dash-zeile { grid-template-columns: minmax(0, 1fr) 34px 76px 46px; }           /* Lieferanten (v40): Name, Belege, Euro, Anteil */
 .dash-zeile > :not(.dash-balken) { position: relative; z-index: 1; }
 .dash-balken { position: absolute; left: 0; top: 2px; bottom: 2px; z-index: 0; border-radius: 6px; background: rgba(255, 255, 255, 0.075); }
 /* Laufender Monat: schraffiert statt gefüllt, er zählt erst bis heute */
@@ -1400,6 +1401,8 @@ body.mit-leiste::after {
   .dash-jahre .dash-zeile > :last-child, .dash-jahre .dash-zeile > :nth-last-child(2) { display: none; }
   .dash-bestellung { grid-template-columns: 44px minmax(0, 1fr) auto 58px; column-gap: 6px; }
   .dash-erklaerung { display: none; }
+  .dash-lief .dash-zeile { grid-template-columns: minmax(0, 1fr) 72px 44px; }
+  .dash-lief .dash-zeile > :nth-last-child(3) { display: none; }
 }
 
 /* Schmale iPhones (375 px): in den Tabellen mit fünf und sechs Spalten etwas weniger Abstand, damit „Gesamt“ ganz zu lesen ist */
@@ -1535,6 +1538,56 @@ span.anteil, span.anteil-fuell { display: block; }
 }
 
 /* „Transparenz reduzieren“ (iOS-Bedienungshilfen): Glas wird deckend */
+/* Gewinn und Kosten (v40): Monate als Balken Umsatz (hell) und Kosten (grau) mit dem Gewinn als Linie in der
+   Akzentfarbe, Ring der sonstigen Kosten nach Kategorie, Break-even als Balken mit Strich, Wareneinkauf gegen
+   Abfüllungen, auf dem Start eine feine Gewinnlinie in der Kachel. Grau #6C6C70 auf #1C1C1E 3,2:1 (Grafik ≥ 3:1). */
+.dash-bild { margin: 0 0 12px; }
+.dash-bild .legende { margin-bottom: 4px; }
+.diagramm .gm-umsatz { fill: #D1D1D6; }
+.diagramm .gm-kosten { fill: #6C6C70; }
+.diagramm .gm-umsatz.gm-laufend { fill: rgba(255, 255, 255, 0.08); stroke: #D1D1D6; stroke-width: 1; stroke-dasharray: 3 2; }
+.diagramm .gm-kosten.gm-laufend { fill: rgba(255, 255, 255, 0.04); stroke: #8E8E93; stroke-width: 1; stroke-dasharray: 3 2; }
+.diagramm .gm-umsatz.negativ { fill: var(--rot); stroke: none; }
+.diagramm .gm-linie { fill: none; stroke: var(--akzent); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.diagramm .gm-punkt { fill: var(--akzent); stroke: var(--karte); stroke-width: 1.5; }
+.diagramm .gm-punkt.negativ { fill: var(--rot); }
+.diagramm .gm-punkt.gm-laufend { fill: var(--karte); stroke: var(--akzent); stroke-width: 1.5; }
+.diagramm .gm-jetzt { fill: var(--akzent); font-weight: 700; }
+.ring-zeile { display: flex; align-items: center; gap: 16px; margin: 2px 0 14px; padding: 0 8px; }
+.diagramm.ring { flex: none; width: 112px; }
+.diagramm .ring-grund { fill: none; stroke: var(--feld); stroke-width: 14; }
+.diagramm .ring-teil { fill: none; stroke-width: 14; }
+.diagramm .ring-wert { fill: var(--text); font-size: 15px; font-weight: 700; }
+.diagramm .ring-text { font-size: 11px; }
+.kat-0 { background: var(--akzent); stroke: var(--akzent); }
+.kat-1 { background: #F2F2F7; stroke: #F2F2F7; }
+.kat-2 { background: #AEAEB2; stroke: #AEAEB2; }
+.kat-3 { background: #6C6C70; stroke: #6C6C70; }
+.ring-legende { flex: 1; min-width: 0; list-style: none; margin: 0; padding: 0; font-size: 14px; }
+.ring-legende li { display: flex; align-items: center; gap: 8px; min-height: 26px; }
+.ring-legende .vt-punkt { flex: none; }
+.ring-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ring-anteil { flex: none; font-size: 13px; color: var(--leise); font-variant-numeric: tabular-nums; }
+.be { margin: -8px 8px 16px; }
+.be-spur { position: relative; height: 10px; border-radius: 5px; background: var(--feld); }
+.be-fuellung { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 5px; background: #D1D1D6; }
+.be-fuellung.gut { background: var(--gruen); }
+.be-marke { position: absolute; top: -4px; bottom: -4px; width: 2px; margin-left: -1px; border-radius: 1px; background: var(--text); }
+.be-text { position: relative; height: 16px; margin-top: 6px; font-size: 12px; color: var(--leise); }
+.be-noetig { position: absolute; top: 0; transform: translateX(-50%); white-space: nowrap; }
+.vb { margin: 0 8px 12px; }
+.vb-zeile { display: grid; grid-template-columns: 82px minmax(0, 1fr) 76px; align-items: center; gap: 8px; min-height: 24px; font-size: 13px; }
+.vb-name { color: var(--leise); white-space: nowrap; }
+.vb-spur { height: 8px; border-radius: 4px; background: var(--feld); overflow: hidden; }
+.vb-fuellung { display: block; height: 100%; border-radius: 4px; }
+.vb-0 { background: #D1D1D6; }
+.vb-1 { background: #6C6C70; }
+.vb-wert { text-align: right; font-weight: 600; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.diagramm.spark { margin: 6px 0 2px; }
+.diagramm .spark-linie { fill: none; stroke: var(--akzent); stroke-width: 1.6; stroke-linejoin: round; stroke-linecap: round; }
+.diagramm .spark-null { stroke: rgba(255, 255, 255, 0.24); stroke-width: 1; stroke-dasharray: 2 2; }
+.diagramm .spark-punkt { fill: var(--akzent); }
+
 @media (prefers-reduced-transparency: reduce) {
   .leiste, .toast, .dialog { background: #222225; -webkit-backdrop-filter: none; backdrop-filter: none; }
 }

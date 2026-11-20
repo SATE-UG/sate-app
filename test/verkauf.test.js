@@ -232,6 +232,36 @@ test('uebersichtBauen: Lexware-Kosten je Monat, Art und Kategorie, ohne Storno, 
   // v39: ältester Beleg (für den Zeitraum, den der Tab abdeckt) und die Zahl unlesbarer Zeilen (Gewinn „unvollständig“)
   assert.deepStrictEqual([u.kosten.aeltestes, u.kosten.fehler], ['2026-03-04', 2]);
   assert.ok(u.hinweise.includes('Tab Lexware-Kosten: 2 Zeilen ohne lesbares Datum oder Betrag, zählt nicht.'), JSON.stringify(u.hinweise));
+  // v40: je Jahr und Lieferant (hier alles von „Lieferant X“), Belege = verschiedene IDs (b mit zwei Kategorien einmal), davon Ware
+  assert.deepStrictEqual(u.kosten.lieferanten, [['2026', 'Lieferant X', 2329.96, 9, 800]]);
+});
+
+test('uebersichtBauen: Lexware-Kosten je Lieferant und Jahr, ohne Lieferant-Kopf kein Feld (v40)', () => {
+  const r = rohdaten();
+  const zeile = (datum, lieferant, kategorie, art, netto, status, id) => [datum, lieferant, 'B', 'Rechnung', kategorie, '', art, netto, 0, netto, status, id];
+  r.lexwareKosten = [kostenKopf(),
+    zeile(D.zelle(2025, 12, 4), 'Abfüller', 'Fremdleistungen', 'Ware', 500, 'paid', 'a'),
+    zeile(D.zelle(2026, 1, 4), 'Abfüller', 'Fremdleistungen', 'Ware', 8000.5, 'paid', 'b'),
+    zeile(D.zelle(2026, 1, 5), ' Meta ', 'Marketing', 'Sonstiges', 10.1, 'paid', 'c'),
+    zeile(D.zelle(2026, 2, 5), 'Meta', 'Marketing', 'Sonstiges', 20.2, 'paid', 'd'),
+    zeile(D.zelle(2026, 2, 6), 'Meta', 'Marketing', 'Sonstiges', 30, 'voided', 'e'), // storniert
+    zeile(D.zelle(2026, 3, 1), 'Druckerei', 'Verpackungsmaterial', 'Ware', 300, 'paid', 'f'),
+    zeile(D.zelle(2026, 3, 1), 'Druckerei', 'Marketing', 'Sonstiges', 40, 'paid', 'f'), // derselbe Beleg, zweite Art
+    zeile(D.zelle(2026, 3, 2), '', 'Bewirtung', 'Sonstiges', 12, 'paid', 'g'), // ohne Namen
+    zeile(D.zelle(2026, 4, 2), 'Bank', 'Zinsen', 'Sonstiges', 5, 'paid', 'h'),
+    zeile(D.zelle(2026, 4, 3), 'Bank', 'Zinsen', 'Sonstiges', -5, 'paid', 'i'), // hebt sich auf: fällt weg
+    zeile(D.zelle(2026, 12, 1), 'Meta', 'Marketing', 'Sonstiges', 99, 'paid', 'j')]; // nach heute
+  const u = roh(k.uebersichtBauen(r, D.berlin, new Date('2026-11-08T15:00:00Z')));
+  // Je Jahr und Lieferant, größter zuerst; Druckerei: ein Beleg mit Ware und Marketing; Bank hebt sich auf und fällt weg
+  assert.deepStrictEqual(u.kosten.lieferanten, [['2025', 'Abfüller', 500, 1, 500],
+    ['2026', 'Abfüller', 8000.5, 1, 8000.5], ['2026', 'Druckerei', 340, 1, 300], ['2026', 'Meta', 30.3, 2, 0], ['2026', '', 12, 1, 0]]);
+  // Die Verdichtung je Monat bleibt, wie sie war
+  assert.strictEqual(u.kosten.belege, 8);
+  // Ältere Kopfzeile (B heißt anders): alles wie vorher, nur ohne `lieferanten`
+  r.lexwareKosten[0] = kostenKopf().map((x, i) => (i === 1 ? 'Kreditor' : x));
+  const alt = roh(k.uebersichtBauen(r, D.berlin, new Date('2026-11-08T15:00:00Z')));
+  assert.strictEqual('lieferanten' in alt.kosten, false);
+  assert.deepStrictEqual(alt.kosten.zeilen, u.kosten.zeilen);
 });
 
 test('uebersichtBauen: Lexware-Kosten mit falscher Kopfzeile oder nur Kopf (v38)', () => {
@@ -242,7 +272,7 @@ test('uebersichtBauen: Lexware-Kosten mit falscher Kopfzeile oder nur Kopf (v38)
   assert.ok(u.hinweise.includes('Tab Lexware-Kosten: Kopfzeile passt nicht, Kosten und Gewinn fehlen in der App.'));
   r.lexwareKosten = [kostenKopf()];
   assert.deepStrictEqual(roh(k.uebersichtBauen(r, D.berlin, new Date('2026-11-08T15:00:00Z')).kosten),
-    { zeilen: [], belege: 0, offen: 0, neuestes: null, aeltestes: null, fehler: 0 });
+    { zeilen: [], belege: 0, offen: 0, neuestes: null, aeltestes: null, fehler: 0, lieferanten: [] });
 });
 
 test('Vergleichsmonate: die 12 Monate vor dem Diagramm-Zeitraum', () => {

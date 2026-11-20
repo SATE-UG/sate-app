@@ -1530,3 +1530,121 @@ test('v39 Nachfix Rundung: halbe Cent kaufmännisch und robust gegen Gleitkomma,
   assert.deepStrictEqual([mg.jahr.umsatz, mg.jahr.rohertrag, g.summe.umsatz, Math.round((g.summe.umsatz - g.summe.wareneinsatz) * 100) / 100], [2.01, 1.01, 2.01, 1.01]);
   assert.deepStrictEqual(g.monate.slice(1, 3).map((m) => m.umsatz), [1.01, 1]);
 });
+
+// Kosten im Detail (v40, Lexware-API Task 15) ----------------------------------------------------------------------
+
+/** Erfunden: jeden Monat 100 Flaschen für 250 €, Herstellkosten 1 € (zweite Abfüllung 0,80 €), Kosten aus Lexware. */
+function kostenDaten(heute, mitLieferanten) {
+  const roh = [];
+  for (let m = 1; m <= 11; m++) {
+    const mm = String(m).padStart(2, '0');
+    roh.push(['2026-' + mm, '2026-' + mm + '-02', 'Berlin', 'Kunde ' + m, 100, 250, 'R' + m]);
+  }
+  roh.push(['2026-11', '2026-11-30', 'Berlin', 'Später', 500, 1250, 'R99']); // nach heute: zählt nicht
+  const zeilen = H.verkaufZeilen({ zeilen: roh }, heute);
+  const abf = [{ abfuellung: '1. Abfüllung', monat: '2025-11', flaschen: 1000, kostenProFlasche: 1 },
+    { abfuellung: '2. Abfüllung', monat: '2026-05', flaschen: 500, kostenProFlasche: 0.8 }];
+  const marge = H.dashboardMehr(zeilen, H.monatsWerte({ zeilen: [] }, zeilen), heute, 24, abf, { abgaenge: [], schwund: [] }).marge;
+  const kz = [];
+  for (let m = 1; m <= 11; m++) {
+    const mm = '2026-' + String(m).padStart(2, '0');
+    kz.push([mm, 'Sonstiges', 'Marketing', 100], [mm, 'Sonstiges', 'Lizenzen', 50]);
+  }
+  kz.push(['2026-03', 'Sonstiges', 'Beiträge', 120], ['2026-06', 'Sonstiges', 'Messe', 1200], ['2026-02', 'Ware', 'Fremdleistungen', 900],
+    ['2026-02', 'Ware', 'Verpackungsmaterial', 100], ['2026-04', '', '', 30], ['2026-11', 'Sonstiges', 'Beratung', 2000]);
+  const kosten = { zeilen: kz, belege: 30, offen: 0, neuestes: '2026-11-10', aeltestes: '2026-01-02', fehler: 0 };
+  if (mitLieferanten !== false) {
+    kosten.lieferanten = [['2025', 'Alt', 99, 1, 0], ['2026', 'Messe GmbH', 1200, 1, 0], ['2026', 'Meta', 1100, 11, 0], ['2026', 'Abfüller', 900, 1, 900],
+      ['2026', 'Druckerei', 150, 2, 100], ['2026', '', 20, 1, 0], ['2026', 'A1', 10, 1, 0], ['2026', 'A2', 5, 1, 0], ['2026', 'A3', -3, 1, 0], ['2026', 'Null', 0, 2, 0]];
+  }
+  const gw = H.gewinnRechnen(zeilen, marge, kosten, abf, heute, 2026);
+  return { zeilen, abf, marge, kosten, gw };
+}
+
+test('v40 Kosten: Fixkosten ohne Einmaliges, Break-even in Flaschen, Top-Lieferanten, Wareneinkauf gegen Abfüllungen', () => {
+  const heute = '2026-11-15';
+  const d = kostenDaten(heute);
+  const k = H.kostenRechnen(d.gw, d.zeilen, d.kosten, heute);
+  // Volle Monate Januar bis Oktober (November läuft). Je Monat 150 €, März 270 € (Beiträge), Juni 1.350 € (Messe);
+  // typischer Monat (Median) 150 €. Messe kommt nur einmal vor und ist größer: einmalig. Beiträge (120 €) nicht.
+  // Beratung im laufenden November zählt nicht. (2.820 € − 1.200 €) / 10 = 162 € im Monat.
+  assert.deepStrictEqual(k.fix, { monate: 10, von: '2026-01', bis: '2026-10', summe: 2820, typisch: 150,
+    einmalig: [{ kategorie: 'Messe', monat: '2026-06', netto: 1200 }], proMonat: 162 });
+  // Rohertrag je Flasche: (2.500 € − 1.000 €) / 1.000 Flaschen = 1,50 €; 162 / 1,5 = 108 Flaschen, verkauft 100 im Monat
+  assert.deepStrictEqual(k.breakEven, { rohertragProFlasche: 1.5, flaschen: 108, verkauftProMonat: 100, abstand: -8, deckung: 92.6 });
+  // Lieferanten 2026: größte zuerst, höchstens sechs, der Rest (auch eine reine Gutschrift) als „Weitere“; 0 fällt weg
+  assert.deepStrictEqual(k.lieferanten, {
+    liste: [{ lieferant: 'Messe GmbH', netto: 1200, belege: 1, art: 'Sonstiges', anteil: 35.5 },
+      { lieferant: 'Meta', netto: 1100, belege: 11, art: 'Sonstiges', anteil: 32.5 },
+      { lieferant: 'Abfüller', netto: 900, belege: 1, art: 'Ware', anteil: 26.6 },
+      { lieferant: 'Druckerei', netto: 150, belege: 2, art: 'gemischt', anteil: 4.4 },
+      { lieferant: '', netto: 20, belege: 1, art: 'Sonstiges', anteil: 0.6 },
+      { lieferant: 'A1', netto: 10, belege: 1, art: 'Sonstiges', anteil: 0.3 }],
+    weitere: { anzahl: 2, netto: 2 }, summe: 3382, anzahl: 8 });
+  // Wareneinkauf 1.000 € gegen die zweite Abfüllung (500 Fl. zu 0,80 € = 400 €): 600 € bzw. 150 % mehr
+  assert.deepStrictEqual(k.ware, { kategorien: [{ kategorie: 'Fremdleistungen', netto: 900 }, { kategorie: 'Verpackungsmaterial', netto: 100 }],
+    summe: 1000, abgefuellt: { flaschen: 500, kosten: 400 }, differenz: 600, prozent: 150 });
+});
+
+test('v40 Kosten: wenige Monate, fehlende Herstellkosten, ältere Schnittstelle, Abdeckung endet vor dem laufenden Monat', () => {
+  // März: nur Januar und Februar sind voll, zu wenig für Fixkosten und Break-even
+  const maerz = kostenDaten('2026-03-15');
+  const km = H.kostenRechnen(maerz.gw, maerz.zeilen, maerz.kosten, '2026-03-15');
+  assert.deepStrictEqual([km.fix, km.breakEven], [null, null]);
+  assert.strictEqual(km.ware.summe, 1000);
+  // Ältere Schnittstelle ohne Lieferanten: keine Liste, der Rest wie gehabt
+  const alt = kostenDaten('2026-11-15', false);
+  const ka = H.kostenRechnen(alt.gw, alt.zeilen, alt.kosten, '2026-11-15');
+  assert.strictEqual(ka.lieferanten, null);
+  assert.strictEqual(ka.fix.proMonat, 162);
+  // Herstellkosten fehlen: Fixkosten ja, Break-even nicht; der Vergleich mit den Abfüllungen ohne Differenz
+  const d = kostenDaten('2026-11-15');
+  const ohne = d.abf.map((a) => Object.assign({}, a, { kostenProFlasche: null }));
+  const mo = H.dashboardMehr(d.zeilen, H.monatsWerte({ zeilen: [] }, d.zeilen), '2026-11-15', 24, ohne, { abgaenge: [], schwund: [] }).marge;
+  const go = H.gewinnRechnen(d.zeilen, mo, d.kosten, ohne, '2026-11-15', 2026);
+  const ko = H.kostenRechnen(go, d.zeilen, d.kosten, '2026-11-15');
+  assert.deepStrictEqual([ko.fix.proMonat, ko.breakEven, ko.ware.differenz, ko.ware.prozent], [162, null, null, null]);
+  // Lexware deckt nur bis September ab (heute im November): September kann unvollständig sein, voll sind Januar bis August
+  const sep = Object.assign({}, d.kosten, { zeilen: d.kosten.zeilen.filter((x) => x[0] <= '2026-09'), neuestes: '2026-09-03' });
+  const gs = H.gewinnRechnen(d.zeilen, d.marge, sep, d.abf, '2026-11-15', 2026);
+  assert.strictEqual(gs.offenAb, '2026-10');
+  const ks = H.kostenRechnen(gs, d.zeilen, sep, '2026-11-15');
+  assert.deepStrictEqual([ks.fix.monate, ks.fix.bis, ks.fix.proMonat], [8, '2026-08', 165]);
+  // Ohne Gewinn (Hinweis) oder ohne gültiges Datum: nichts
+  assert.strictEqual(H.kostenRechnen({ hinweis: 'x' }, d.zeilen, d.kosten, '2026-11-15'), null);
+  assert.strictEqual(H.kostenRechnen(d.gw, d.zeilen, d.kosten, 'kaputt'), null);
+  // Im Januar danach: Reicht Lexware schon ins neue Jahr, ist das alte ganz voll (alle zwölf Monate) …
+  const jan = kostenDaten('2027-01-10');
+  const neu = Object.assign({}, jan.kosten, { zeilen: jan.kosten.zeilen.concat([['2027-01', 'Sonstiges', 'Marketing', 100]]), neuestes: '2027-01-05' });
+  const gj = H.gewinnRechnen(jan.zeilen, jan.marge, neu, jan.abf, '2027-01-10', 2026);
+  const kj = H.kostenRechnen(gj, jan.zeilen, neu, '2027-01-10');
+  assert.deepStrictEqual([gj.jahr, gj.offenAb, kj.fix.monate, kj.fix.bis], [2026, null, 12, '2026-12']);
+  // … endet es im November, kann der November unvollständig sein: voll sind dann Januar bis Oktober
+  const kn = H.kostenRechnen(jan.gw, jan.zeilen, jan.kosten, '2027-01-10');
+  assert.deepStrictEqual([jan.gw.jahr, jan.gw.offenAb, kn.fix.monate, kn.fix.bis], [2026, '2026-12', 10, '2026-10']);
+});
+
+test('v40 Kosten, Codex: Vergleich in Cent, letzter Belegmonat über den Jahreswechsel, Break-even aus den ungerundeten Fixkosten', () => {
+  const heute = '2026-11-15';
+  const d = kostenDaten(heute);
+  const gw = (kz, neuestes, h, jahr) => H.gewinnRechnen(d.zeilen, d.marge, { zeilen: kz, belege: 9, offen: 0, neuestes: neuestes, aeltestes: '2026-01-02', fehler: 0 }, d.abf, h || heute, jahr || 2026);
+  // 0,70 € + 0,20 € im Januar und Februar, 0,90 € einer einzelnen Kategorie im März: gleich hohe Monate, nichts ist einmalig
+  const kz = [['2026-01', 'Sonstiges', 'A', 0.7], ['2026-01', 'Sonstiges', 'B', 0.2], ['2026-02', 'Sonstiges', 'A', 0.7], ['2026-02', 'Sonstiges', 'B', 0.2],
+    ['2026-03', 'Sonstiges', 'C', 0.9], ['2026-04', 'Sonstiges', 'A', 1]];
+  const g = gw(kz, '2026-04-02', '2026-04-10');
+  const k = H.kostenRechnen(g, d.zeilen, { zeilen: kz }, '2026-04-10');
+  assert.deepStrictEqual([k.fix.monate, k.fix.einmalig, k.fix.proMonat, k.fix.typisch], [3, [], 0.9, 0.9]);
+  // Letzter Beleg am 2. Dezember, gerechnet am 5. Januar: der Dezember kann unvollständig sein, voll sind Januar bis November
+  const dez = d.kosten.zeilen.concat([['2026-12', 'Sonstiges', 'Marketing', 100]]);
+  const gd = gw(dez, '2026-12-02', '2027-01-05');
+  assert.deepStrictEqual([gd.jahr, gd.offenAb], [2026, null]);
+  assert.deepStrictEqual(H.kostenRechnen(gd, d.zeilen, { zeilen: dez }, '2027-01-05').fix.bis, '2026-11');
+  // 3,01 € in drei Monaten (1,00 + 1,00 + 1,01) und 0,01 € Rohertrag je Flasche: 101 Flaschen, nicht 100
+  const z = H.verkaufZeilen({ zeilen: ['01', '02', '03', '04'].map((m) => ['2026-' + m, '2026-' + m + '-02', 'Berlin', 'K', 100, 101, 'R' + m]) }, '2026-04-10');
+  const abf = [{ abfuellung: '1. Abfüllung', monat: '2025-11', flaschen: 1000, kostenProFlasche: 1 }];
+  const mg = H.dashboardMehr(z, H.monatsWerte({ zeilen: [] }, z), '2026-04-10', 24, abf, { abgaenge: [], schwund: [] }).marge;
+  const kk = { zeilen: [['2026-01', 'Sonstiges', 'A', 1], ['2026-02', 'Sonstiges', 'A', 1], ['2026-03', 'Sonstiges', 'A', 1.01], ['2026-04', 'Sonstiges', 'A', 1]],
+    belege: 4, offen: 0, neuestes: '2026-04-02', aeltestes: '2026-01-02', fehler: 0 };
+  const kb = H.kostenRechnen(H.gewinnRechnen(z, mg, kk, abf, '2026-04-10', 2026), z, kk, '2026-04-10');
+  assert.deepStrictEqual([kb.fix.proMonat, kb.breakEven.rohertragProFlasche, kb.breakEven.flaschen], [1, 0.01, 101]);
+});

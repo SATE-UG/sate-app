@@ -314,7 +314,7 @@ test('PWA: Mehr Zahlen (früher Dashboard, v30 bis v35) – dichte Tabellen und 
   // Seit v31: viele weitere Abschnitte zum Runterscrollen, jede Tabellenart hat ihre Spalten, Gruppen als Überschriften
   assert.match(ansichten, /H\.dashboardMehr\(a\.zeilen, a\.werte, a\.heute, u\.kennzahlen\.flaschenProKiste, u\.abfuellungen, lagerStand\)/);
   const arten = Array.from(new Set(Array.from(ansichten.matchAll(/dashTabelle\('([a-z0-9]+)/g), (m) => m[1])));
-  assert.deepStrictEqual(arten.sort(), ['abf', 'bleibt', 'gr', 'jahre', 'kan', 'lager', 'preis', 'roh', 'rohabf', 'rohkan', 's5', 'top', 'treppe', 'vj', 'weg']);
+  assert.deepStrictEqual(arten.sort(), ['abf', 'bleibt', 'gr', 'jahre', 'kan', 'lager', 'lief', 'preis', 'roh', 'rohabf', 'rohkan', 's5', 'top', 'treppe', 'vj', 'weg']);
   arten.forEach((art) => assert.match(dash, new RegExp('\\.dash-' + art + ' \\.dash-zeile \\{ grid-template-columns: '), art));
   // Jede Gruppe ist ein Thema für sich (Überblick, fünf Gruppen, Rohertrag und Marge, Ohne Verkauf weg), jedes hat seinen Titel
   const themen = Array.from(ansichten.matchAll(/seite\('([a-z]+)', '/g), (m) => m[1]);
@@ -473,7 +473,9 @@ test('PWA: Gewinn vorläufig (v38) – Kachel auf dem Start, Thema „Gewinn und
   assert.match(ansichten, /gewinn: 'Gewinn und Kosten'/);
   assert.match(ansichten, /'Buchungen ohne Beleg \(z\. B\. Zinsen, Bankgebühren\) fehlen\. Kein Ersatz für GuV oder Jahresabschluss\.'/);
   assert.match(ansichten, /text: 'Stand: Lexware, täglich' \+ \(gw\.neuestes \? ', neuester Beleg vom ' \+ H\.datumText\(gw\.neuestes\) : ''\)/);
-  assert.match(ansichten, /\['Wareneinkauf laut Lexware', eur\(gw\.wareLexware\), 'steckt schon im Wareneinsatz'\]/);
+  // seit v40: Wareneinkauf je Kategorie mit Summe, „steckt schon im Wareneinsatz“ in der Fußnote
+  assert.match(ansichten, /zellen: \['Wareneinkauf', eur\(gw\.wareLexware\), klein\(''\)\]/);
+  assert.match(ansichten, /'Wareneinkauf laut Lexware steckt über die Herstellkosten je Abfüllung schon im Wareneinsatz\./);
   ['Umsatz', 'Wareneinsatz', 'Ohne Verkauf weg', 'Sonstige Kosten'].forEach((x) => assert.match(ansichten, new RegExp("\\{ zellen: \\['" + x + "', ")));
   // Ohne Kosten aus Lexware kein Gewinn, nur der Hinweis
   assert.match(hilfen, /hinweis: 'Noch keine Kosten aus Lexware\./);
@@ -486,4 +488,30 @@ test('PWA: Gewinn vorläufig (v38) – Kachel auf dem Start, Thema „Gewinn und
   assert.match(api, /const kosten = ss\.getSheetByName\(LEXWARE_KOSTEN_TAB\);/);
   assert.match(api, /lexwareKosten: kosten \? kosten\.getDataRange\(\)\.getValues\(\) : null,/);
   assert.match(lies('api/src/Konfig.js'), /const LEXWARE_KOSTEN_TAB = 'Lexware-Kosten';/);
+});
+
+test('PWA: Gewinn und Kosten als Dashboard (v40) – Monatsbild, Fixkosten und Break-even, Ring, Lieferanten, Wareneinkauf, eingebettet', () => {
+  const css = lies('docs/style.css');
+  const ansichten = lies('docs/ansichten.js');
+  const hilfen = lies('docs/hilfen.js');
+  // Gerechnet in hilfen.js aus dem Gewinn des Blatts, gezeichnet als eigenes SVG (keine fremden Bibliotheken)
+  assert.match(ansichten, /const kd = H\.kostenRechnen\(gw, a\.zeilen, u\.kosten, a\.heute\);/);
+  ['function gewinnDiagramm(gw)', 'function ringDiagramm(teile, mitte, unter)', 'function breakEvenBalken(be)', 'function vergleichBalken(paare)', 'function gewinnSpark(gw)']
+    .forEach((f) => assert.ok(ansichten.includes(f), f));
+  assert.doesNotMatch(lies('docs/index.html'), /chart|d3|cdn/i);
+  // Kein neuer Einstieg: dasselbe Thema „Gewinn und Kosten“, auf dem Start nur die feine Linie in der Kachel
+  assert.match(ansichten, /zahlDa\(gs\.gewinn\) \? gewinnSpark\(gw\) : null,/);
+  assert.doesNotMatch(ansichten, /seite\('kosten'/);
+  assert.match(ansichten, /fixBlock\(\),[\s\S]{0,1200}lieferantenBlock\(\),\s*wareBlock\(\),/);
+  // Die Regel für Fixkosten steht sichtbar in der Fußnote
+  assert.match(ansichten, /Nicht mitgerechnet wird Einmaliges: eine Kategorie, die nur in einem Monat Kosten hat, wenn der Betrag größer ist als ein typischer Monat \(Median\)/);
+  // Farben aus den Variablen, die Spaltenbreiten der Lieferanten-Tabelle, keine Trennpunkte zwischen Wörtern (Mark)
+  assert.match(css, /\.diagramm \.gm-linie \{ fill: none; stroke: var\(--akzent\);/);
+  assert.match(css, /\.kat-0 \{ background: var\(--akzent\); stroke: var\(--akzent\); \}/);
+  const neu = ansichten.slice(ansichten.indexOf('// Gewinn und Kosten als Bilder (seit v40'), ansichten.indexOf('function dashboardSeiten()'));
+  assert.ok(neu.length > 2000);
+  assert.doesNotMatch(neu + hilfen.slice(hilfen.indexOf('const TOP_LIEFERANTEN'), hilfen.indexOf('function spaltenTeilen')), /[·•]/);
+  // Schnittstelle: Lieferant nur mit passendem Kopf, sonst fehlt das Feld
+  assert.match(lies('api/src/Konfig.js'), /const LK_LIEFERANT_KOPF = 'Lieferant';/);
+  assert.match(lies('api/src/UebersichtLogik.js'), /if \(mitLieferant\) \{\s*aus\.lieferanten = /);
 });

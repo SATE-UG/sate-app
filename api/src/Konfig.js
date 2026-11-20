@@ -161,10 +161,12 @@ const AB_FORMATE_KOSTEN = { 2: 'MM.yyyy', 3: '#,##0', 5: '0.0000 "€"' };
  * Tab „Lexware-Kosten“ (seit v38, nur lesen): schreibt das Belege-Skript (sate-belege, docs/lexware-api.md Abschnitt 4)
  * täglich neu, eine Zeile pro Eingangsbeleg und Kategorie, Gutschriften negativ. Fehlt der Tab, liefert die Übersicht
  * `kosten: null` und die App zeigt keinen Gewinn. Spalten A Datum, B Lieferant, C Belegnr., D Typ, E Kategorie,
- * F Gruppe, G Art, H netto (€), I USt (€), J brutto (€), K Status, L Lexware-ID; gelesen werden nur A, E, G, H, K, L.
+ * F Gruppe, G Art, H netto (€), I USt (€), J brutto (€), K Status, L Lexware-ID; gelesen werden nur A, E, G, H, K, L und
+ * seit v40 B (Lieferant, nur wenn B1 genau „Lieferant“ heißt, sonst fehlt die Auswertung je Lieferant).
  */
 const LEXWARE_KOSTEN_TAB = 'Lexware-Kosten';
-const LK = { DATUM: 0, KATEGORIE: 4, ART: 6, NETTO: 7, STATUS: 10, ID: 11 };
+const LK = { DATUM: 0, LIEFERANT: 1, KATEGORIE: 4, ART: 6, NETTO: 7, STATUS: 10, ID: 11 };
+const LK_LIEFERANT_KOPF = 'Lieferant';
 const LK_KOPF = { 0: 'Datum', 4: 'Kategorie', 6: 'Art', 7: 'netto (€)', 10: 'Status', 11: 'Lexware-ID' };
 /**
  * Werte der Spalte Art: `Ware` steckt über die Herstellkosten je Abfüllung schon im Wareneinsatz und zählt nicht in den

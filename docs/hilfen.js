@@ -2262,6 +2262,148 @@
       neuestes: datumGueltig(kosten.neuestes) && kosten.neuestes <= heute ? kosten.neuestes : null, fehler: istZahl(kosten.fehler) && kosten.fehler > 0 ? kosten.fehler : 0 };
   }
 
+  /** Wie viele Lieferanten das Blatt „Gewinn und Kosten“ einzeln zeigt; der Rest steht als „Weitere“ zusammen. */
+  const TOP_LIEFERANTEN = 6;
+
+  /**
+   * Kosten im Detail (seit v40, Lexware-API Task 15) für das Blatt „Gewinn und Kosten“, zum Jahr eines Ergebnisses von
+   * gewinnRechnen (`gw`; mit `hinweis` oder ohne gültiges `heute`: null). Eingaben wie dort: `zeilen` (verkaufZeilen),
+   * `kosten` (uebersicht.kosten), `heute`. Ergebnis { fix, breakEven, lieferanten, ware }:
+   * - `fix`: Fixkosten pro Monat aus den sonstigen Kosten der vollen Monate. Voll ist ein Monat des Jahres, den Lexware
+   *   abdeckt, ohne den laufenden; endet die Abdeckung vor dem laufenden Monat (`gw.offenAb`), zählt ihr letzter Monat
+   *   auch nicht, er kann unvollständig sein. Einmalig (zählt nicht) ist eine Kategorie, die in diesen Monaten nur in
+   *   einem einzigen Monat Kosten hat, wenn der Betrag größer ist als ein typischer Monat (Median der Monatssummen).
+   *   Erst ab drei vollen Monaten, sonst null. { monate (Anzahl), von, bis, summe (alle sonstigen Kosten dieser Monate),
+   *   typisch, einmalig ([{ kategorie, monat, netto }], größter zuerst), proMonat ((summe − einmalig) / monate) }.
+   * - `breakEven`: verkaufte Flaschen pro Monat, deren Rohertrag die Fixkosten deckt = proMonat / Ø Rohertrag je
+   *   Flasche (Umsatz minus Wareneinsatz der vollen Monate durch ihre verkauften Flaschen), aufgerundet; dazu
+   *   `verkauftProMonat` (Ø derselben Monate), `abstand` (verkauft minus nötig) und `deckung` (verkauft in Prozent von
+   *   nötig). null ohne `fix`, wenn Herstellkosten fehlen oder der Rohertrag je Flasche nicht über 0 liegt.
+   * - `lieferanten`: alle Kosten des Jahres (Ware, Sonstiges und noch ohne Kategorie) je Lieferant aus
+   *   `kosten.lieferanten` ([Jahr, Lieferant, netto, Belege, davon Ware]), größter zuerst: { liste (höchstens
+   *   TOP_LIEFERANTEN mit Betrag über 0: { lieferant ('' = ohne Namen), netto, belege, art ('Ware', 'Sonstiges' oder
+   *   'gemischt'), anteil (an allen im Plus) }), weitere ({ anzahl, netto } oder null), summe, anzahl }. Ohne
+   *   `kosten.lieferanten` (ältere Schnittstelle) oder ohne Lieferant im Jahr: null.
+   * - `ware`: Wareneinkauf laut Lexware (Art `Ware`) in den Monaten, die `gw` rechnet, je Kategorie, größte zuerst,
+   *   neben den Abfüllungen des Jahres zu Herstellkosten (`gw.abgefuellt`): { kategorien ([{ kategorie, netto }]), summe
+   *   (= gw.wareLexware), abgefuellt, differenz (summe minus Herstellkosten der Abfüllungen; null, wenn die fehlen),
+   *   prozent (differenz in Prozent der Herstellkosten, null ohne) }.
+   * Beträge auf den Cent, Prozent auf ein Zehntel.
+   */
+  function kostenRechnen(gw, zeilen, kosten, heute) {
+    if (!gw || gw.hinweis || !Array.isArray(gw.monate) || !datumGueltig(heute)) return null;
+    const jetzt = heute.slice(0, 7);
+    const cent = (z) => runde(z) || 0; // kein −0
+    const imJahr = Object.create(null);
+    gw.monate.forEach((m) => { imJahr[m.monat] = m; });
+    const kz = (kosten && Array.isArray(kosten.zeilen) ? kosten.zeilen : [])
+      .filter((x) => Array.isArray(x) && typeof x[0] === 'string' && imJahr[x[0]] && istZahl(x[3]));
+
+    // Fixkosten: volle Monate, je Monat und Kategorie die sonstigen Kosten
+    // Der Monat des neuesten Belegs kann unvollständig sein (auch über den Jahreswechsel, Codex v40): zählt nicht als voll
+    const standMonat = datumGueltig(gw.neuestes) ? gw.neuestes.slice(0, 7) : '';
+    const voll = gw.monate.map((m) => m.monat).filter((m) => m < jetzt && (!gw.offenAb || m < gw.bis) && (!standMonat || m < standMonat));
+    const istVoll = Object.create(null);
+    voll.forEach((m) => { istVoll[m] = true; });
+    const jeMonat = Object.create(null);
+    const jeKat = Object.create(null);
+    voll.forEach((m) => { jeMonat[m] = 0; });
+    kz.forEach((x) => {
+      if (x[1] !== 'Sonstiges' || !istVoll[x[0]]) return;
+      const name = String(x[2] === undefined || x[2] === null ? '' : x[2]);
+      jeMonat[x[0]] += x[3];
+      const k = jeKat[name] || (jeKat[name] = Object.create(null));
+      k[x[0]] = (k[x[0]] || 0) + x[3];
+    });
+    let fix = null;
+    let fixGenau = 0; // ungerundet, für den Break-even (Codex v40)
+    if (voll.length >= 3) {
+      // Verglichen wird in ganzen Cent, damit Gleitkomma-Reste nichts zum Ausreißer machen (Codex v40)
+      const inCent = (z) => Math.round(Number((z * 100).toPrecision(15)));
+      const summen = voll.map((m) => inCent(jeMonat[m]));
+      const sortiert = summen.slice().sort((a, b) => a - b);
+      const mitte = Math.floor(sortiert.length / 2);
+      const typisch = sortiert.length % 2 ? sortiert[mitte] : (sortiert[mitte - 1] + sortiert[mitte]) / 2;
+      const einmalig = [];
+      Object.keys(jeKat).forEach((name) => {
+        const monate = Object.keys(jeKat[name]).filter((m) => inCent(jeKat[name][m]) !== 0);
+        if (monate.length === 1 && inCent(jeKat[name][monate[0]]) > typisch) einmalig.push({ kategorie: name, monat: monate[0], netto: cent(jeKat[name][monate[0]]) });
+      });
+      einmalig.sort((a, b) => b.netto - a.netto || (a.kategorie < b.kategorie ? -1 : 1));
+      const summe = summen.reduce((x, y) => x + y, 0);
+      const ohne = summe - einmalig.reduce((x, e) => x + inCent(e.netto), 0);
+      fixGenau = ohne / 100 / voll.length;
+      fix = { monate: voll.length, von: voll[0], bis: voll[voll.length - 1], summe: cent(summe / 100), typisch: cent(typisch / 100), einmalig: einmalig,
+        proMonat: cent(fixGenau) };
+    }
+
+    // Break-even: Rohertrag je Flasche der vollen Monate
+    let breakEven = null;
+    if (fix) {
+      let flaschen = 0;
+      (Array.isArray(zeilen) ? zeilen : []).forEach((z) => {
+        if (!z || !istVoll[z.monat] || !istZahl(z.flaschen)) return;
+        if (datumGueltig(z.datum) && z.datum > heute) return;
+        flaschen += z.flaschen;
+      });
+      const roh = voll.reduce((x, m) => (x === null || !istZahl(imJahr[m].wareneinsatz) ? null : x + imJahr[m].umsatz - imJahr[m].wareneinsatz), 0);
+      const proFlasche = roh !== null && flaschen > 0 ? roh / flaschen : null;
+      if (proFlasche !== null && proFlasche > 0) {
+        const noetig = fixGenau > 0 ? Math.ceil(fixGenau / proFlasche - 1e-9) : 0;
+        const verkauft = Math.round(flaschen / voll.length);
+        breakEven = { rohertragProFlasche: cent(proFlasche), flaschen: noetig, verkauftProMonat: verkauft, abstand: verkauft - noetig,
+          deckung: noetig > 0 ? zehntel((verkauft / noetig) * 100) : null };
+      }
+    }
+
+    // Lieferanten des Jahres
+    let lieferanten = null;
+    if (kosten && Array.isArray(kosten.lieferanten)) {
+      const jahr = String(gw.jahr);
+      const je = Object.create(null);
+      kosten.lieferanten.forEach((x) => {
+        if (!Array.isArray(x) || String(x[0]) !== jahr || !istZahl(x[2])) return;
+        const name = String(x[1] === undefined || x[1] === null ? '' : x[1]).trim();
+        const l = je[name] || (je[name] = { lieferant: name, netto: 0, belege: 0, ware: 0 });
+        l.netto += x[2];
+        l.belege += istZahl(x[3]) ? x[3] : 0;
+        l.ware += istZahl(x[4]) ? x[4] : 0;
+      });
+      const alle = Object.keys(je).map((n) => je[n]).filter((l) => cent(l.netto) !== 0)
+        .sort((a, b) => b.netto - a.netto || (a.lieferant < b.lieferant ? -1 : 1));
+      if (alle.length) {
+        const plus = alle.reduce((x, l) => x + Math.max(0, l.netto), 0);
+        const liste = alle.filter((l) => l.netto > 0).slice(0, TOP_LIEFERANTEN);
+        const rest = alle.filter((l) => liste.indexOf(l) < 0);
+        lieferanten = {
+          liste: liste.map((l) => ({ lieferant: l.lieferant, netto: cent(l.netto), belege: l.belege,
+            art: cent(l.ware) === 0 ? 'Sonstiges' : cent(l.ware - l.netto) === 0 ? 'Ware' : 'gemischt',
+            anteil: plus > 0 ? zehntel((l.netto / plus) * 100) : 0 })),
+          weitere: rest.length ? { anzahl: rest.length, netto: cent(rest.reduce((x, l) => x + l.netto, 0)) } : null,
+          summe: cent(alle.reduce((x, l) => x + l.netto, 0)),
+          anzahl: alle.length,
+        };
+      }
+    }
+
+    // Wareneinkauf je Kategorie neben den Abfüllungen
+    const wk = Object.create(null);
+    kz.forEach((x) => {
+      if (x[1] !== 'Ware') return;
+      const name = String(x[2] === undefined || x[2] === null ? '' : x[2]);
+      wk[name] = (wk[name] || 0) + x[3];
+    });
+    const abf = gw.abgefuellt && istZahl(gw.abgefuellt.kosten) ? gw.abgefuellt.kosten : null;
+    const differenz = abf !== null ? cent(gw.wareLexware - abf) : null;
+    const ware = {
+      kategorien: Object.keys(wk).map((n) => ({ kategorie: n, netto: cent(wk[n]) })).filter((x) => x.netto !== 0)
+        .sort((a, b) => b.netto - a.netto || (a.kategorie < b.kategorie ? -1 : 1)),
+      summe: gw.wareLexware, abgefuellt: gw.abgefuellt, differenz: differenz,
+      prozent: differenz !== null && abf > 0 ? zehntel((differenz / abf) * 100) : null,
+    };
+    return { fix: fix, breakEven: breakEven, lieferanten: lieferanten, ware: ware };
+  }
+
   /**
    * Blöcke auf zwei Spalten verteilen, ohne die Reihenfolge zu ändern: Rückgabe = wie viele Blöcke vorn in die erste
    * Spalte kommen, sodass beide nach den geschätzten Höhen (`hoehen`, Zahlen > 0) möglichst gleich lang sind. Bei
@@ -2464,7 +2606,7 @@
     kundeSchluessel, rechnungOhnePosition, STANDORT_VERSCHIEDEN, standortAuswahl, verkaufZeilen, monatsWerte, jahresVergleich, kumuliert, zeitraumAuswerten, kundeDetails, nachfassen,
     bestellungenZaehlen, wannText, abstandText, monatName, wochentagText, dauerText, datumAbkuerzungen, buchungVorschau, standText, frageTeilen, inventurAm, jahresStichtag, prognoseSaison, aktivitaet, monatsTage, letzteBestellungen,
     datumMonatePlus, ersterVerkaufsmonat, bekannteRechnungen, bestellPrognose, dashboardDaten, dashboardMehr, bestellListe, fifoSchichten, fifoKosten, kostenAusEingabe, MAX_KOSTEN_PRO_FLASCHE,
-    auswerten, AUSWERTEN_KENNZAHLEN, AUSWERTEN_NACH, spaltenTeilen, gewinnRechnen, centVerteilen,
+    auswerten, AUSWERTEN_KENNZAHLEN, AUSWERTEN_NACH, spaltenTeilen, gewinnRechnen, centVerteilen, kostenRechnen, TOP_LIEFERANTEN,
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = hilfen;
   else wurzel.SATE_HILFEN = hilfen;

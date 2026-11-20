@@ -334,6 +334,8 @@
       'aria-label': 'Gewinn ' + wann + ' vorläufig' + (gBis ? ' ' + gBis : '') + ' ' + (zahlDa(gs.gewinn) ? H.euroFormat(gs.gewinn) : 'unbekannt, Herstellkosten fehlen zum Teil') +
         (gw.fehler ? ', unvollständig, Zeilen im Tab Lexware-Kosten sind unlesbar' : '') + '. Gewinn und Kosten öffnen' },
     h('span', { class: 'dash-label', text: 'Gewinn' }), h('span', { class: 'dash-wert', text: zahlDa(gs.gewinn) ? H.euroFormat(gs.gewinn) : '–' }),
+    // Seit v40: der Gewinn je Monat als feine Linie (Januar bis zum letzten gerechneten Monat), Zahlen im Blatt
+    zahlDa(gs.gewinn) ? gewinnSpark(gw) : null,
     h('span', { class: 'dash-klein' + (gw.fehler ? ' dash-fehlt' : ''), text: gKlein })) : null;
     // Mit Herstellkosten immer Rohertrag und Marge; fehlen sie nur für eine Abfüllung, steht ein Strich mit Hinweis da,
     // statt dass die Kacheln stillschweigend verschwinden (Codex v37)
@@ -576,6 +578,128 @@
   function dashFakten(zeilen) {
     return h('dl', { class: 'dash-fakten' }, zeilen.filter(Boolean).map(([was, zahl, kleiner]) => h('div', { class: 'dash-fakt' },
       h('dt', { text: was }), h('dd', {}, zahl, kleiner ? h('span', { class: 'dash-unter', text: kleiner }) : null))));
+  }
+
+  // Gewinn und Kosten als Bilder (seit v40, Lexware-API Task 15) -------------------------------------------------
+
+  /**
+   * Monate eines Jahres (Januar bis Dezember): je Monat ein heller Balken Umsatz und daneben ein grauer Balken Kosten
+   * (Wareneinsatz, ohne Verkauf weg und sonstige Kosten zusammen), dazu der Gewinn als Linie in der Akzentfarbe. Monate,
+   * die Lexware noch nicht abdeckt, bleiben leer; fehlen Kosten, gibt es dort keinen Kostenbalken und keinen Punkt.
+   * Der laufende Monat ist gestrichelt. Zahlen dazu stehen in der Tabelle darunter (für Vorleseprogramme dort).
+   */
+  function gewinnDiagramm(gw) {
+    const M = { breite: 340, hoehe: 168, links: 40, unten: 20, oben: 16 };
+    const je = Object.create(null);
+    gw.monate.forEach((x) => { je[x.monat] = x; });
+    const monate = [];
+    for (let i = 1; i <= 12; i++) monate.push(je[gw.jahr + '-' + String(i).padStart(2, '0')] || null);
+    const alle = [];
+    monate.forEach((x) => { if (x) [x.umsatz, x.kosten, x.gewinn].forEach((w) => { if (zahlDa(w)) alle.push(w); }); });
+    const r = jahresRaster(M, alle, 3);
+    const rund = (z) => Math.round(z * 100) / 100;
+    const bb = Math.min(9, (r.platz - 6) / 2);
+    const svg = s('svg', { viewBox: '0 0 ' + M.breite + ' ' + M.hoehe, class: 'diagramm gewinn-monate', 'aria-hidden': 'true', focusable: 'false' });
+    gitter(svg, M, r);
+    const punkte = [];
+    monate.forEach((x, i) => {
+      const mitte = M.links + (i + 0.5) * r.platz;
+      const balken = (wert, xx, klasse) => {
+        if (!zahlDa(wert)) return;
+        const yy = r.y(wert);
+        const hh = Math.abs(r.null0 - yy);
+        if (hh < 0.5) return;
+        svg.append(s('rect', { x: rund(xx), y: rund(Math.min(yy, r.null0)), width: rund(bb), height: rund(hh), rx: Math.min(2.5, bb / 2, hh / 2),
+          class: klasse + (x.laufend ? ' gm-laufend' : '') + (wert < 0 ? ' negativ' : '') }));
+      };
+      if (x) {
+        balken(x.umsatz, mitte - bb - 1, 'gm-umsatz');
+        balken(x.kosten, mitte + 1, 'gm-kosten');
+        if (zahlDa(x.gewinn)) punkte.push({ x: rund(mitte), y: rund(r.y(x.gewinn)), wert: x.gewinn, laufend: x.laufend });
+      }
+      svg.append(s('text', { x: rund(mitte), y: r.basis + 14, 'text-anchor': 'middle', class: 'monat' + (x && x.laufend ? ' gm-jetzt' : ''),
+        text: H.monatFormat(gw.jahr + '-' + String(i + 1).padStart(2, '0')).slice(0, 1) }));
+    });
+    if (punkte.length > 1) svg.append(s('path', { d: punkte.map((p, i) => (i ? 'L' : 'M') + p.x + ' ' + p.y).join(' '), class: 'gm-linie' }));
+    punkte.forEach((p) => svg.append(s('circle', { cx: p.x, cy: p.y, r: p.laufend ? 3 : 3.5, class: 'gm-punkt' + (p.wert < 0 ? ' negativ' : '') + (p.laufend ? ' gm-laufend' : '') })));
+    return svg;
+  }
+
+  /** Legende unter einem Diagramm: [[Zeichen-Klasse, Text], …]. */
+  function legende(eintraege) {
+    return h('div', { class: 'legende', 'aria-hidden': 'true' }, eintraege.map(([klasse, text]) => h('span', {}, h('span', { class: 'zeichen ' + klasse }), text)));
+  }
+
+  /**
+   * Ring mit Anteilen (Kosten nach Kategorie): `teile` = [{ wert (> 0), klasse }], in der Mitte groß `mitte` und klein
+   * `unter`. Kleine Lücken zwischen den Stücken; ein Stück allein ist ein ganzer Ring.
+   */
+  function ringDiagramm(teile, mitte, unter) {
+    const R = 46;
+    const umfang = 2 * Math.PI * R;
+    const summe = teile.reduce((x, t) => x + (t.wert > 0 ? t.wert : 0), 0);
+    const svg = s('svg', { viewBox: '0 0 120 120', class: 'diagramm ring', 'aria-hidden': 'true', focusable: 'false' });
+    svg.append(s('circle', { cx: 60, cy: 60, r: R, class: 'ring-grund' }));
+    let start = 0;
+    const luecke = teile.filter((t) => t.wert > 0).length > 1 ? 2 : 0;
+    teile.forEach((t) => {
+      if (!(t.wert > 0) || !(summe > 0)) return;
+      const laenge = (t.wert / summe) * umfang;
+      const sichtbar = Math.max(laenge - luecke, 0.8);
+      svg.append(s('circle', { cx: 60, cy: 60, r: R, class: 'ring-teil ' + t.klasse, transform: 'rotate(-90 60 60)',
+        'stroke-dasharray': Math.round(sichtbar * 100) / 100 + ' ' + Math.round((umfang - sichtbar) * 100) / 100,
+        'stroke-dashoffset': Math.round(-start * 100) / 100 }));
+      start += laenge;
+    });
+    svg.append(s('text', { x: 60, y: 61, 'text-anchor': 'middle', class: 'ring-wert', text: mitte }));
+    svg.append(s('text', { x: 60, y: 77, 'text-anchor': 'middle', class: 'ring-text', text: unter }));
+    return svg;
+  }
+
+  /**
+   * Balken „verkauft gegen nötig“ (Break-even): gefüllt bis zu den verkauften Flaschen pro Monat, ein Strich bei den
+   * nötigen, darunter „Break-even“. Liegt der Verkauf darüber, ist die Füllung grün, sonst hell.
+   */
+  function breakEvenBalken(be) {
+    const ende = Math.max(be.verkauftProMonat, be.flaschen) * 1.15 || 1;
+    return h('div', { class: 'be', 'aria-hidden': 'true', 'data-hoehe': 2 },
+      h('div', { class: 'be-spur' },
+        prozent(h('span', { class: 'be-fuellung' + (be.abstand >= 0 ? ' gut' : '') }), (be.verkauftProMonat / ende) * 100),
+        prozent(h('span', { class: 'be-marke' }), (be.flaschen / ende) * 100, 'left')),
+      h('div', { class: 'be-text' }, prozent(h('span', { class: 'be-noetig', text: 'Break-even' }), Math.min(88, Math.max(12, (be.flaschen / ende) * 100)), 'left')));
+  }
+
+  /** Zwei Beträge nebeneinander als Balken (Wareneinkauf gegen Abfüllungen): [[Name, Euro], …]. */
+  function vergleichBalken(paare) {
+    const hoch = Math.max.apply(null, paare.map((p) => (zahlDa(p[1]) ? p[1] : 0)).concat([0])); // ein Minus bleibt ohne Balken
+    return h('div', { class: 'vb', 'aria-hidden': 'true' }, paare.map(([name, wert], i) => h('div', { class: 'vb-zeile' },
+      h('span', { class: 'vb-name', text: name }),
+      h('div', { class: 'vb-spur' }, prozent(h('span', { class: 'vb-fuellung vb-' + i }), hoch > 0 && zahlDa(wert) ? (Math.max(0, wert) / hoch) * 100 : 0)),
+      h('span', { class: 'vb-wert', text: H.euroFormat(wert) }))));
+  }
+
+  /**
+   * Kleine Linie „Gewinn je Monat“ für die Kachel auf dem Start: Januar bis zum letzten gerechneten Monat, die Nulllinie
+   * fein, der letzte Punkt betont. Weniger als zwei Monate mit Gewinn: null.
+   */
+  function gewinnSpark(gw) {
+    const werte = gw.monate.map((x) => (zahlDa(x.gewinn) ? x.gewinn : null));
+    const da = werte.filter((w) => w !== null);
+    if (da.length < 2) return null;
+    const M = { breite: 100, hoehe: 18, rand: 3 };
+    const max = Math.max.apply(null, da.concat([0]));
+    const min = Math.min.apply(null, da.concat([0]));
+    const spanne = max - min || 1;
+    const rund = (z) => Math.round(z * 100) / 100;
+    const x = (i) => rund(M.rand + (i / 11) * (M.breite - 2 * M.rand));
+    const y = (w) => rund(M.rand + ((max - w) / spanne) * (M.hoehe - 2 * M.rand));
+    const svg = s('svg', { viewBox: '0 0 ' + M.breite + ' ' + M.hoehe, class: 'diagramm spark', 'aria-hidden': 'true', focusable: 'false' });
+    if (min < 0) svg.append(s('line', { x1: 0, x2: M.breite, y1: y(0), y2: y(0), class: 'spark-null' }));
+    const p = werte.map((w, i) => (w === null ? null : [x(i), y(w)])).filter(Boolean);
+    svg.append(s('path', { d: p.map((q, i) => (i ? 'L' : 'M') + q[0] + ' ' + q[1]).join(' '), class: 'spark-linie' }));
+    const ende = p[p.length - 1];
+    svg.append(s('circle', { cx: ende[0], cy: ende[1], r: 2.4, class: 'spark-punkt' }));
+    return svg;
   }
 
   /**
@@ -845,8 +969,11 @@
       const gewinnFuss = [F.stand, 'Gewinn vorläufig: Umsatz minus Wareneinsatz (die Herstellkosten der verkauften Flaschen nach First in, First out, wie beim Rohertrag), ' +
         'minus die Herstellkosten der Flaschen ohne Verkauf (Promo, Eigenverbrauch, Bruch, Schwund), minus die sonstigen Kosten aus Lexware nach Belegdatum.',
       'Kosten der Art „Ware“ (zum Beispiel Flaschen, Abfüllung, Zutaten) stecken schon in den Herstellkosten je Abfüllung und zählen deshalb nicht noch einmal.',
-      'Gerechnet nur für die Monate, die Lexware abdeckt: ab Januar des Jahres mit dem ältesten Beleg (frühestens 2026) bis zum Monat des neuesten Belegs. Rechnungen mit Datum nach heute zählen erst an ihrem Tag.']
-        .concat(lk ? ['Die alte Lücke zählt zu keinem Jahr, also auch zu keinem Gewinn.'] : [], ['Alles netto.']);
+      'Gerechnet nur für die Monate, die Lexware abdeckt: ab Januar des Jahres mit dem ältesten Beleg (frühestens 2026) bis zum Monat des neuesten Belegs. Rechnungen mit Datum nach heute zählen erst an ihrem Tag.',
+      'Fixkosten pro Monat: Durchschnitt der sonstigen Kosten aus den vollen Monaten (ohne den laufenden). Nicht mitgerechnet wird Einmaliges: eine Kategorie, die nur in einem Monat Kosten hat, wenn der Betrag größer ist als ein typischer Monat (Median). ' +
+        'Break-even: Fixkosten geteilt durch den Rohertrag je verkaufter Flasche in denselben Monaten, aufgerundet. Promo, Bruch und Schwund sind darin nicht eingerechnet.',
+      'Wareneinkauf laut Lexware steckt über die Herstellkosten je Abfüllung schon im Wareneinsatz. Ein Unterschied zu den Abfüllungen ist normal, wenn Material für die nächste Abfüllung schon gekauft ist oder eine Rechnung in ein anderes Jahr fällt.']
+        .concat(u.kosten && Array.isArray(u.kosten.lieferanten) ? ['Lieferanten: alle Belege des Jahres, auch Ware und noch ohne Kategorie.'] : [], lk ? ['Die alte Lücke zählt zu keinem Jahr, also auch zu keinem Gewinn.'] : [], ['Alles netto.']);
       // Ohne Kosten aus Lexware (oder ohne einen Beleg) steht hier statt des Gewinns nur, was fehlt
       if (gw) teile = seite('gewinn', 'Gewinn', 'Gewinn und Kosten', gw.hinweis ? [F.stand] : gewinnFuss);
       if (gw && gw.hinweis) {
@@ -863,6 +990,85 @@
         const gewinnKopf = (erste) => [{ vorlesen: erste }, 'Umsatz', { text: 'Kosten', vorlesen: 'Kosten zusammen' }, 'Gewinn'];
         const gewinnZeile = (name, x, extra) => Object.assign({ zellen: [name, eur(x.umsatz), leise(eur(x.kosten)), ertragZelle(x.gewinn)] }, extra);
         const jahresWerte = gw.jahre.length > 1 ? gw.jahre.map((jj) => ({ jahr: jj, g: jj === gj ? gw : gewinnFuer(jj) })).filter((x) => x.g && !x.g.hinweis) : [];
+        // Kosten im Detail (seit v40, Lexware-API Task 15): Fixkosten und Break-even, Lieferanten, Wareneinkauf
+        const kd = H.kostenRechnen(gw, a.zeilen, u.kosten, a.heute);
+        const monatIm = (m) => H.monatName(m);
+        // Fixkosten pro Monat und Break-even in Flaschen; vor drei vollen Monaten nur, ab wann es sie gibt
+        const fixBlock = () => {
+          const fx = kd ? kd.fix : null;
+          const be = kd ? kd.breakEven : null;
+          if (!fx) {
+            return [dashTitel('Fixkosten und Break-even'),
+              dashFakten([['Fixkosten pro Monat', '–', 'ab drei vollen Monaten mit Kosten aus Lexware']])];
+          }
+          const einmal = fx.einmalig.reduce((x, e) => x + e.netto, 0);
+          return [
+            dashTitel('Fixkosten und Break-even', 'Ø ' + monateVonBis(fx.von, fx.bis)),
+            dashFakten([
+              ['Fixkosten pro Monat', eur(fx.proMonat), fl(fx.monate) + ' volle Monate'],
+              fx.einmalig.length ? ['Einmalig, nicht mitgerechnet', eur(einmal), fx.einmalig.map((e) => (e.kategorie || 'Ohne Namen') + ' im ' + monatIm(e.monat)).join(', ')] : null,
+              be ? ['Rohertrag je Flasche', cent(be.rohertragProFlasche), 'Umsatz minus Herstellkosten'] : null,
+              be ? ['Break-even', fl(be.flaschen) + ' Fl. im Monat', '≈ ' + H.kistenFormat(be.flaschen / (k.flaschenProKiste > 0 ? k.flaschenProKiste : 24)) + ' Kisten, deckt die Fixkosten']
+                : ['Break-even', '–', sg.wareneinsatz === null ? 'Herstellkosten fehlen zum Teil' : 'Rohertrag je Flasche liegt nicht über 0'],
+              be ? ['Verkauft im Schnitt', fl(be.verkauftProMonat) + ' Fl. im Monat',
+                be.abstand >= 0 ? fl(be.abstand) + ' Fl. über dem Break-even' : fl(-be.abstand) + ' Fl. fehlen bis dahin'] : null,
+            ]),
+            be ? breakEvenBalken(be) : null,
+          ];
+        };
+        // Ring: die drei größten Kategorien einzeln, der Rest zusammen; daneben die Legende mit Anteilen
+        const katRing = () => {
+          const plus = gw.kategorien.filter((x) => x.netto > 0);
+          const vorn = plus.slice(0, plus.length > 4 ? 3 : 4);
+          const rest = plus.slice(vorn.length);
+          const teileRing = vorn.map((x, i) => ({ wert: x.netto, klasse: 'kat-' + i, name: x.kategorie || 'Ohne Namen', anteil: x.anteil }))
+            .concat(rest.length ? [{ wert: rest.reduce((x, y) => x + y.netto, 0), klasse: 'kat-3', name: rest.length === 1 ? (rest[0].kategorie || 'Ohne Namen') : 'Weitere ' + rest.length,
+              anteil: Math.round(rest.reduce((x, y) => x + y.anteil, 0) * 10) / 10 }] : []);
+          return h('div', { class: 'ring-zeile', 'data-hoehe': 5 },
+            // In der Mitte die Summe dessen, was der Ring zeigt (Gutschriften einer Kategorie stehen nur in der Tabelle, Codex v40)
+            ringDiagramm(teileRing, H.euroFormat(plus.reduce((x, y) => x + y.netto, 0)), 'sonstige'),
+            h('ul', { class: 'ring-legende', role: 'list' }, teileRing.map((t) => h('li', {},
+              h('span', { class: 'vt-punkt ' + t.klasse, 'aria-hidden': 'true' }), h('span', { class: 'ring-name', text: t.name }),
+              h('span', { class: 'ring-anteil', text: anteil(t.anteil) })))));
+        };
+        // Top-Lieferanten: alle Kosten des Jahres, auch Ware; nur mit der neuen Schnittstelle
+        const lieferantenBlock = () => {
+          const lf = kd ? kd.lieferanten : null;
+          if (!lf) return null;
+          const hoch = lf.liste.length ? lf.liste[0].netto : 0;
+          return [
+            dashTitel('Lieferanten ' + gj, 'alle Kosten, auch Ware'),
+            dashTabelle('lief', 'Die Lieferanten mit den höchsten Kosten ' + gj, [{ vorlesen: 'Lieferant' }, { text: 'Bel.', vorlesen: 'Belege' }, 'Euro', 'Anteil'],
+              lf.liste.map((x) => ({ balken: hoch > 0 ? (x.netto / hoch) * 100 : 0,
+                zellen: [x.lieferant || 'Ohne Namen', leise(fl(x.belege)), eur(x.netto), klein(anteil(x.anteil))] }))
+                .concat(lf.weitere ? [{ zellen: ['Weitere ' + fl(lf.weitere.anzahl), '', eur(lf.weitere.netto), klein('')] }] : [],
+                  [{ klasse: 'dash-summe', zellen: ['Zusammen', '', eur(lf.summe), klein('')] }])),
+          ];
+        };
+        // Wareneinkauf laut Lexware gegen die Abfüllungen des Jahres zu Herstellkosten (Plausibilität, nicht im Gewinn)
+        const wareBlock = () => {
+          const w = kd ? kd.ware : null;
+          const ab = gw.abgefuellt;
+          const unterschied = w && w.differenz !== null && w.differenz !== 0
+            ? ['Unterschied', (w.differenz > 0 ? '+' : '−') + eur(Math.abs(w.differenz)) + (w.prozent !== null ? ' (' + anteil(Math.abs(w.prozent)) + ')' : ''),
+              w.differenz > 0 ? 'mehr eingekauft als abgefüllt' : 'weniger eingekauft als abgefüllt']
+            : null;
+          return [
+            dashTitel('Wareneinkauf und Abfüllungen', 'nicht im Gewinn'),
+            ab && zahlDa(ab.kosten) ? h('div', { 'data-hoehe': 2 }, vergleichBalken([['Lexware', gw.wareLexware], ['Abfüllungen', ab.kosten]])) : null,
+            // Wareneinkauf je Kategorie mit Anteil, darunter die Summe; ohne Ware-Beleg nur die Zeile mit 0 €
+            w && w.kategorien.length ? dashTabelle('treppe', 'Wareneinkauf ' + gj + ' laut Lexware nach Kategorie', [{ vorlesen: 'Kategorie' }, 'Euro', 'Anteil'],
+              w.kategorien.map((x) => ({ zellen: [x.kategorie || 'Ohne Namen', eur(x.netto), klein(gw.wareLexware > 0 && x.netto > 0 ? anteil((x.netto / gw.wareLexware) * 100) : '')] }))
+                .concat([{ klasse: 'dash-summe', zellen: ['Wareneinkauf', eur(gw.wareLexware), klein('')] }])) : null,
+            dashFakten([
+              w && w.kategorien.length ? null : ['Wareneinkauf laut Lexware', eur(gw.wareLexware), 'noch kein Beleg in ' + gj],
+              ab ? ['Abfüllungen ' + gj, eur(ab.kosten), fl(ab.flaschen) + ' Fl. zu Herstellkosten'] : ['Abfüllungen ' + gj, '–', 'keine im Tab Abfüllungen'],
+              unterschied,
+              gw.ohneArt !== 0 ? ['Belege noch ohne Kategorie', eur(gw.ohneArt), 'zählen erst mit Kategorie'] : null,
+              gw.offen ? ['In Lexware noch zu prüfen', fl(gw.offen) + (gw.offen === 1 ? ' Beleg' : ' Belege')] : null,
+            ]),
+          ];
+        };
         teile.push(
           dashTitel('Gewinn ' + gj, gw.fehler ? 'unvollständig' : 'vorläufig'),
           // Gewählt war ein Jahr ohne Kosten aus Lexware (z. B. in den Verkäufen noch das Vorjahr): offen sagen statt still wechseln (Codex v38)
@@ -882,23 +1088,23 @@
             { klasse: 'dash-summe', zellen: [nameMit('Gewinn', gw.fehler ? 'unvollständig' : 'vorläufig'), ertragZelle(sg.gewinn), margeZelle(sg.anteil)] }]),
           h('p', { class: 'dash-fuss dash-fehlt', text: 'Stand: Lexware, täglich' + (gw.neuestes ? ', neuester Beleg vom ' + H.datumText(gw.neuestes) : '') + '. ' +
             'Buchungen ohne Beleg (z. B. Zinsen, Bankgebühren) fehlen. Kein Ersatz für GuV oder Jahresabschluss.' }),
-          dashTitel('Sonstige Kosten ' + gj, 'nach Kategorie'),
-          gw.kategorien.length
-            ? dashTabelle('treppe', 'Sonstige Kosten ' + gj + ' nach Kategorie', [{ vorlesen: 'Kategorie' }, 'Euro', 'Anteil'],
-              gw.kategorien.map((x) => ({ balken: hochKat > 0 ? (Math.max(0, x.netto) / hochKat) * 100 : 0, zellen: [x.kategorie || 'Ohne Namen', eur(x.netto), klein(anteil(x.anteil))] }))
-                .concat([{ klasse: 'dash-summe', zellen: ['Zusammen', eur(sg.sonstige), klein('')] }]))
-            : dashFakten([['Sonstige Kosten', eur(0), 'noch kein Beleg in ' + gj]]),
-          dashTitel('Zum Vergleich', 'nicht im Gewinn'),
-          dashFakten([
-            ['Wareneinkauf laut Lexware', eur(gw.wareLexware), 'steckt schon im Wareneinsatz'],
-            gw.abgefuellt ? ['Abfüllungen ' + gj + ' zu Herstellkosten', eur(gw.abgefuellt.kosten), fl(gw.abgefuellt.flaschen) + ' Fl. laut Tab Abfüllungen'] : null,
-            gw.ohneArt !== 0 ? ['Belege noch ohne Kategorie', eur(gw.ohneArt), 'zählen erst mit Kategorie'] : null,
-            gw.offen ? ['In Lexware noch zu prüfen', fl(gw.offen) + (gw.offen === 1 ? ' Beleg' : ' Belege')] : null,
-          ]),
-          dashTitel('Monate ' + gj, 'Gewinn vorläufig'),
+          // Seit v40: die Monate als Bild (Umsatz und Kosten als Balken, Gewinn als Linie), die Zahlen in der Tabelle darunter
+          dashTitel('Monate ' + gj, 'Umsatz, Kosten, Gewinn'),
+          h('div', { class: 'dash-bild', 'data-hoehe': 9 }, gewinnDiagramm(gw),
+            legende([['zeichen-dieses', 'Umsatz'], ['zeichen-vorjahr', 'Kosten'], ['zeichen-linie', 'Gewinn']])),
           dashTabelle('bleibt', 'Umsatz, Kosten und vorläufiger Gewinn je Monat ' + gj + ', neuester zuerst', gewinnKopf('Monat'),
             gw.monate.slice().reverse().map((x) => gewinnZeile(H.monatFormat(x.monat), x,
               { klasse: x.laufend ? 'laufend' : '', balken: hochMonat > 0 && x.gewinn > 0 ? (x.gewinn / hochMonat) * 100 : 0 }))),
+          fixBlock(),
+          dashTitel('Sonstige Kosten ' + gj, 'nach Kategorie'),
+          gw.kategorien.length ? [
+            katRing(),
+            dashTabelle('treppe', 'Sonstige Kosten ' + gj + ' nach Kategorie', [{ vorlesen: 'Kategorie' }, 'Euro', 'Anteil'],
+              gw.kategorien.map((x) => ({ balken: hochKat > 0 ? (Math.max(0, x.netto) / hochKat) * 100 : 0, zellen: [x.kategorie || 'Ohne Namen', eur(x.netto), klein(anteil(x.anteil))] }))
+                .concat([{ klasse: 'dash-summe', zellen: ['Zusammen', eur(sg.sonstige), klein('')] }])),
+          ] : dashFakten([['Sonstige Kosten', eur(0), 'noch kein Beleg in ' + gj]]),
+          lieferantenBlock(),
+          wareBlock(),
           jahresWerte.length ? [
             dashTitel('Gewinn je Jahr', 'vorläufig'),
             dashTabelle('bleibt dash-zebra', 'Umsatz, Kosten und vorläufiger Gewinn je Jahr', gewinnKopf('Jahr'),
@@ -1136,7 +1342,8 @@
       bloecke[bloecke.length - 1].append(e);
     });
     const spalten = H.spaltenTeilen(bloecke.map((b) => 1.5 + b.querySelectorAll('.dash-zeile, .dash-bestellung, .dash-kanalbalken').length
-      + 1.6 * b.querySelectorAll('.dash-fakt').length + 4 * b.querySelectorAll('.dash-kacheln').length + 2 * b.querySelectorAll('.dash-fuss').length));
+      + 1.6 * b.querySelectorAll('.dash-fakt').length + 4 * b.querySelectorAll('.dash-kacheln').length + 2 * b.querySelectorAll('.dash-fuss').length
+      + Array.prototype.reduce.call(b.querySelectorAll('[data-hoehe]'), (x, e) => x + (Number(e.getAttribute('data-hoehe')) || 0), 0)));
     return h('div', { id: 'dash', class: 'dash', 'data-seite': id },
       h('div', { class: 'dash-inhalt dash-spalten' },
         h('div', { class: 'dash-spalte' }, bloecke.slice(0, spalten)), h('div', { class: 'dash-spalte' }, bloecke.slice(spalten)),
