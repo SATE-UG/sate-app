@@ -689,63 +689,67 @@ test('Dashboard (v31, v32): mehr Zahlen – Vorjahresvergleiche, Quartale, Jahre
   // alles zu 0,50 €; die Gutschrift (−20) zu RE12 legt Flaschen dieser Rechnung zurück (zweite Abfüllung)
   assert.deepStrictEqual(H.fifoKosten(zeilen, schichten).kosten, [100, 50, 200, 275, 50, 150, -10, 51.5, 20.5, 12, 6, 5, 2.5]);
   const mg = H.dashboardMehr(zeilen, werte, heute, 24, abf).marge;
+  // Seit der Codex-Nachprüfung v39 gilt im Rohertrag derselbe Tagesstichtag wie beim Gewinn: Die Rechnung vom 12.11.
+  // („Zukunft“, 5 Flaschen, heute ist der 10.) zählt weder im Rohertrag noch im Restbestand
   assert.deepStrictEqual(mg.schichten, [{ name: '1. Abfüllung', monat: '2025-09', flaschen: 500, kosten: 1, verbraucht: 500, rest: 0 },
-    { name: '2. Abfüllung', monat: '2026-07', flaschen: 2000, kosten: 0.5, verbraucht: 825, rest: 1175 }]);
+    { name: '2. Abfüllung', monat: '2026-07', flaschen: 2000, kosten: 0.5, verbraucht: 820, rest: 1180 }]);
   assert.deepStrictEqual([mg.verluste, mg.nach], [null, null], 'Schnittstelle ohne Abgänge und Schwund: keine Aussage');
-  assert.deepStrictEqual(mg.flaschen, { abgefuellt: 2500, verkauft: 1325, abgaenge: 0, schwund: 0, luecke: 0, uebrig: 1175 });
+  assert.deepStrictEqual(mg.flaschen, { abgefuellt: 2500, verkauft: 1320, abgaenge: 0, schwund: 0, luecke: 0, uebrig: 1180 });
   // Je Abfüllung (v34), nur ihre verkauften Flaschen. Erste: 100 + 50 + 200 und 150 der 400 vom August, deren Umsatz
   // anteilig nach Flaschen (480 € × 150/400 = 180 €): 610 € Umsatz − 500 € = 110 € (18,0 %). Zweite: die übrigen 250
-  // vom August (300 €) und alles danach: 825 Flaschen, 1.575,09 € − 412,50 € = 1.162,59 € (73,8 %).
-  // Zusammen 2.185,09 € Umsatz, 912,50 € Kosten und 1.272,59 € Rohertrag wie `gesamt`.
+  // vom August (300 €) und alles bis heute: 820 Flaschen, 1.570,09 € − 410 € = 1.160,09 € (73,9 %).
+  // Zusammen 2.180,09 € Umsatz, 910 € Kosten und 1.270,09 € Rohertrag wie `gesamt`.
   const nichtsWeg = { weg: { flaschen: 0, kosten: 0 }, luecke: 0 };
   assert.deepStrictEqual(mg.abfuellungen, [
     Object.assign({ name: '1. Abfüllung', monat: '2025-09', abgefuellt: 500, rest: 0, flaschen: 500, umsatz: 610, kosten: 500, rohertrag: 110, marge: 18, aufschlag: 22,
       proFlasche: 0.22, kostenProFlasche: 1 }, nichtsWeg, { bleibt: 110 }),
-    Object.assign({ name: '2. Abfüllung', monat: '2026-07', abgefuellt: 2000, rest: 1175, flaschen: 825, umsatz: 1575.09, kosten: 412.5, rohertrag: 1162.59, marge: 73.8,
-      aufschlag: 281.8, proFlasche: 1.41, kostenProFlasche: 0.5 }, nichtsWeg, { bleibt: 1162.59 })]);
+    Object.assign({ name: '2. Abfüllung', monat: '2026-07', abgefuellt: 2000, rest: 1180, flaschen: 820, umsatz: 1570.09, kosten: 410, rohertrag: 1160.09, marge: 73.9,
+      aufschlag: 282.9, proFlasche: 1.41, kostenProFlasche: 0.5 }, nichtsWeg, { bleibt: 1160.09 })]);
   // Woher die Flaschen jeder Zeile kamen: der August aus beiden Abfüllungen, die Gutschrift zurück in die zweite
   assert.deepStrictEqual(H.fifoKosten(zeilen, schichten).teile.slice(2, 7), [[[0, 200]], [[0, 150], [1, 250]], [[1, 100]], [[1, 300]], [[1, -20]]]);
-  assert.deepStrictEqual([mg.aktuell, mg.ueber, mg.fehlt], [{ name: '2. Abfüllung', kosten: 0.5, rest: 1175, mehr: false }, 0, []]);
-  // 2026: 2.005,09 € Umsatz − 762,50 € Herstellkosten = 1.242,59 €; Marge vom Umsatz 62,0 %, Aufschlag auf die Kosten 163,0 %
-  assert.deepStrictEqual(mg.jahr, { flaschen: 1175, umsatz: 2005.09, kosten: 762.5, rohertrag: 1242.59, marge: 62, aufschlag: 163, proFlasche: 1.06, kostenProFlasche: 0.65 });
+  assert.deepStrictEqual([mg.aktuell, mg.ueber, mg.fehlt], [{ name: '2. Abfüllung', kosten: 0.5, rest: 1180, mehr: false }, 0, []]);
+  // 2026: 2.000,09 € Umsatz − 760 € Herstellkosten = 1.240,09 €; Marge vom Umsatz 62,0 %, Aufschlag auf die Kosten 163,2 %
+  assert.deepStrictEqual(mg.jahr, { flaschen: 1170, umsatz: 2000.09, kosten: 760, rohertrag: 1240.09, marge: 62, aufschlag: 163.2, proFlasche: 1.06, kostenProFlasche: 0.65 });
   assert.deepStrictEqual(mg.vorjahr, { flaschen: 150, umsatz: 180, kosten: 150, rohertrag: 30, marge: 16.7, aufschlag: 20, proFlasche: 0.2, kostenProFlasche: 1 });
-  assert.deepStrictEqual(mg.gesamt, { flaschen: 1325, umsatz: 2185.09, kosten: 912.5, rohertrag: 1272.59, marge: 58.2, aufschlag: 139.5, proFlasche: 0.96, kostenProFlasche: 0.69 });
-  // Auswerten (v35) rechnet mit denselben Herstellkosten je Zeile: Jahr, Vorjahr, alles zusammen und die Kanäle stimmen überein
-  assert.deepStrictEqual(mg.kostenJeZeile, H.fifoKosten(zeilen, schichten).kosten);
+  assert.deepStrictEqual(mg.gesamt, { flaschen: 1320, umsatz: 2180.09, kosten: 910, rohertrag: 1270.09, marge: 58.3, aufschlag: 139.6, proFlasche: 0.96, kostenProFlasche: 0.69 });
+  // Auswerten (v35) rechnet mit denselben Herstellkosten je Zeile: Jahr, Vorjahr, alles zusammen und die Kanäle stimmen
+  // überein. Die Zeile nach heute bekommt keine Kosten und zählt in Auswerten auch nicht mit.
+  assert.deepStrictEqual(mg.kostenJeZeile, H.fifoKosten(zeilen, schichten).kosten.slice(0, 12).concat([0]));
   const aw = (wahl) => H.auswerten(zeilen, mg.kostenJeZeile, heute, wahl);
   const kern = (x) => [x.flaschen, x.umsatz, x.kosten, x.rohertrag, x.marge];
   assert.deepStrictEqual([kern(aw({ jahr: 2026 }).summe), kern(aw({ jahr: 2025 }).summe), kern(aw({}).summe)], [kern(mg.jahr), kern(mg.vorjahr), kern(mg.gesamt)]);
   assert.deepStrictEqual(aw({ kennzahl: 'rohertrag', jahr: 2026, nach: 'kanal' }).gruppen.map((g) => [g.name, g.rohertrag, g.marge]).sort(),
     mg.kanaele.map((x) => [x.kanal, x.rohertrag, x.marge]).sort());
   assert.deepStrictEqual([aw({ jahr: 2026 }).summe.bestellungen, aw({ jahr: 2026 }).summe.kunden, aw({}).summe.bestellungen, aw({}).summe.kunden],
-    [m.jahre[0].bestellungen, m.jahre[0].kunden, m.gesamt.bestellungen, m.gesamt.kunden]);
+    [m.jahre[0].bestellungen - 1, m.jahre[0].kunden - 1, m.gesamt.bestellungen - 1, m.gesamt.kunden - 1], 'ohne „Zukunft“ (Rechnung nach heute)');
   assert.deepStrictEqual(mg.kanaele.map((x) => [x.kanal, x.kosten, x.rohertrag, x.marge, x.anteil]), [
-    ['Karlsruhe', 487, 498.09, 50.6, 40.1], ['Berlin', 202.5, 52.5, 20.6, 4.2], ['Ape', 50, 650, 92.9, 52.3], ['Heilbronn', 18, 27, 60, 2.2], ['Event', 5, 15, 75, 1.2]]);
+    ['Karlsruhe', 487, 498.09, 50.6, 40.2], ['Berlin', 200, 50, 20, 4], ['Ape', 50, 650, 92.9, 52.4], ['Heilbronn', 18, 27, 60, 2.2], ['Event', 5, 15, 75, 1.2]]);
   assert.strictEqual(Math.round(mg.kanaele.reduce((x, y) => x + y.rohertrag, 0) * 100) / 100, mg.jahr.rohertrag, 'Kanäle zusammen = Jahr');
   assert.deepStrictEqual(mg.monate.map((x) => [x.monat, x.kosten, x.rohertrag, x.marge, x.balken]).filter((x) => x[2] !== 0), [
     ['2026-10', 140, 196, 58.3, 30.2], ['2026-09', 50, 650, 92.9, 100], ['2026-08', 275, 205, 42.7, 31.5], ['2026-07', 200, 50, 20, 7.7], ['2025-11', 50, 10, 16.7, 1.5]]);
   assert.deepStrictEqual([mg.monate.length, mg.monate[4].marge, mg.monate[4].kosten], [12, null, 0], 'Monat ohne Verkäufe: keine Marge');
   // Kunden nach Rohertrag: „Fest“ (100 Flaschen zu 7 €) vor „Bar“ (680 Flaschen zu 1,20 €)
   assert.deepStrictEqual(mg.top.map((x) => [x.rang, x.kunde, x.flaschen, x.rohertrag, x.marge, x.anteil]), [
-    [1, 'Fest', 100, 650, 92.9, 52.3], [2, 'Bar', 680, 401, 49.1, 32.3], [3, 'Fachschaft', 144, 97.09, 57.4, 7.8], [4, 'Späti', 200, 50, 20, 4],
-    [5, 'Kiosk', 36, 27, 60, 2.2], [6, 'Messe', 10, 15, 75, 1.2], [7, 'Zukunft', 5, 2.5, 50, 0.2]]);
+    [1, 'Fest', 100, 650, 92.9, 52.4], [2, 'Bar', 680, 401, 49.1, 32.3], [3, 'Fachschaft', 144, 97.09, 57.4, 7.8], [4, 'Späti', 200, 50, 20, 4],
+    [5, 'Kiosk', 36, 27, 60, 2.2], [6, 'Messe', 10, 15, 75, 1.2]]);
   assert.deepStrictEqual(mg.unterKosten, { anzahl: 0, flaschen: 0, anteil: 0 });
-  // Zweite Abfüllung zu 1,30 €: vier Bestellungen daraus (300, 144, 36 und 5 von 1.195 Flaschen) decken ihre Kosten nicht
+  // Zweite Abfüllung zu 1,30 €: drei Bestellungen daraus (300, 144 und 36 von 1.195 Flaschen) decken ihre Kosten nicht
+  // (die 5 vom 12.11. zählen erst an ihrem Tag, auch nicht beim Anteil: 480 von 1.190 Flaschen)
   const teuer = H.dashboardMehr(zeilen, werte, heute, 24, [abf[1], Object.assign({}, abf[0], { kostenProFlasche: 1.3 })]).marge;
-  assert.deepStrictEqual(teuer.unterKosten, { anzahl: 4, flaschen: 485, anteil: 40.6 });
+  assert.deepStrictEqual(teuer.unterKosten, { anzahl: 3, flaschen: 480, anteil: 40.3 });
   // Kosten der zweiten Abfüllung fehlen: alles, was sie berührt, bleibt ohne Rohertrag; die erste rechnet weiter
   const offen = H.dashboardMehr(zeilen, werte, heute, 24, [abf[1], { abfuellung: '2. Abfüllung', monat: '2026-07', flaschen: 2000, kostenProFlasche: null }]).marge;
   assert.deepStrictEqual(offen.fehlt, ['2. Abfüllung']);
-  assert.deepStrictEqual([offen.jahr.flaschen, offen.jahr.umsatz, offen.jahr.kosten, offen.jahr.rohertrag, offen.jahr.marge], [1175, 2005.09, null, null, null]);
+  assert.deepStrictEqual([offen.jahr.flaschen, offen.jahr.umsatz, offen.jahr.kosten, offen.jahr.rohertrag, offen.jahr.marge], [1170, 2000.09, null, null, null]);
   assert.deepStrictEqual([offen.vorjahr.rohertrag, offen.gesamt.rohertrag], [30, null]);
   assert.deepStrictEqual(offen.monate.slice(0, 4).map((x) => [x.monat, x.rohertrag]), [['2026-10', null], ['2026-09', null], ['2026-08', null], ['2026-07', 50]]);
   assert.deepStrictEqual(offen.top.map((x) => [x.kunde, x.rohertrag]).slice(0, 2), [['Späti', 50], ['Bar', null]]);
   assert.deepStrictEqual(offen.unterKosten.anzahl, 0);
-  assert.deepStrictEqual(offen.abfuellungen.map((x) => [x.flaschen, x.umsatz, x.rohertrag, x.bleibt]), [[500, 610, 110, 110], [825, 1575.09, null, null]]);
+  assert.deepStrictEqual(offen.abfuellungen.map((x) => [x.flaschen, x.umsatz, x.rohertrag, x.bleibt]), [[500, 610, 110, 110], [820, 1570.09, null, null]]);
   // Mehr verkauft als abgefüllt: Der Überhang rechnet mit den Kosten der letzten Abfüllung
   const knapp = H.dashboardMehr(zeilen, werte, heute, 24, [{ abfuellung: '1. Abfüllung', monat: '2025-09', flaschen: 1000, kostenProFlasche: 1 }]).marge;
-  assert.deepStrictEqual([knapp.ueber, knapp.gesamt.kosten, knapp.schichten[0].rest, knapp.aktuell], [325, 1325, 0, null]);
-  assert.deepStrictEqual(knapp.abfuellungen.map((x) => [x.abgefuellt, x.flaschen, x.umsatz, x.kosten]), [[1000, 1325, 2185.09, 1325]], 'der Überhang zählt zur letzten Abfüllung');
+  assert.deepStrictEqual([knapp.ueber, knapp.gesamt.kosten, knapp.schichten[0].rest, knapp.aktuell], [320, 1320, 0, null]);
+  assert.deepStrictEqual(knapp.abfuellungen.map((x) => [x.abgefuellt, x.flaschen, x.umsatz, x.kosten]), [[1000, 1320, 2180.09, 1320]], 'der Überhang zählt zur letzten Abfüllung');
   // Storno einer Abfüllung („Storno N. Abfüllung“ mit negativen Flaschen) hebt ihre Schicht auf
   assert.deepStrictEqual(H.fifoSchichten(abf.concat([{ abfuellung: '3. Abfüllung', monat: '2026-09', flaschen: 800, kostenProFlasche: 9 },
     { abfuellung: 'Storno 3. Abfüllung', monat: '2026-09', flaschen: -800, kostenProFlasche: 9 }])), schichten);
@@ -776,81 +780,81 @@ test('Dashboard (v31, v32): mehr Zahlen – Vorjahresvergleiche, Quartale, Jahre
       Object.assign({ art: 'Schwund' }, null3)],
     luecke: null,
     monate: [{ monat: '2026-07', flaschen: 100, kosten: 100 }, { monat: '2025-10', flaschen: 60, kosten: 60 }] });
-  assert.deepStrictEqual([ma.mehr, ma.schichten[1].rest, ma.aktuell.name], [0, 1015, '2. Abfüllung']);
-  // Flaschen-Abgleich: 2.500 abgefüllt − 1.325 verkauft − 160 gebucht weg = 1.015 übrig (die Reste der Abfüllungen)
-  assert.deepStrictEqual(ma.flaschen, { abgefuellt: 2500, verkauft: 1325, abgaenge: 160, schwund: 0, luecke: 0, uebrig: 1015 });
+  assert.deepStrictEqual([ma.mehr, ma.schichten[1].rest, ma.aktuell.name], [0, 1020, '2. Abfüllung']);
+  // Flaschen-Abgleich: 2.500 abgefüllt − 1.320 verkauft bis heute − 160 gebucht weg = 1.020 übrig (die Reste der Abfüllungen)
+  assert.deepStrictEqual(ma.flaschen, { abgefuellt: 2500, verkauft: 1320, abgaenge: 160, schwund: 0, luecke: 0, uebrig: 1020 });
   // Je Abfüllung: Aus der ersten gingen 340 in den Verkauf (100 + 50 + 190 der 200 vom 3.7., Umsatz 250 € × 190/200 =
   // 237,50 €) und 160 ohne Verkauf weg: 417,50 € − 340 € = 77,50 € Rohertrag (18,6 %), nach 160 € Abgängen −82,50 €.
-  // Die Marge der ersten Abfüllung bleibt die ihrer verkauften Flaschen. Zweite: 985 verkauft, 1.767,59 € − 492,50 €.
-  // Zusammen 1.352,59 € Rohertrag, es bleiben 1.192,59 € wie in `nach.gesamt`.
+  // Die Marge der ersten Abfüllung bleibt die ihrer verkauften Flaschen. Zweite: 980 verkauft, 1.762,59 € − 490 €.
+  // Zusammen 1.350,09 € Rohertrag, es bleiben 1.190,09 € wie in `nach.gesamt`.
   assert.deepStrictEqual(ma.abfuellungen.map((x) => [x.abgefuellt, x.flaschen, x.weg, x.luecke, x.rest, x.umsatz, x.kosten, x.rohertrag, x.marge, x.bleibt]), [
     [500, 340, { flaschen: 160, kosten: 160 }, 0, 0, 417.5, 340, 77.5, 18.6, -82.5],
-    [2000, 985, { flaschen: 0, kosten: 0 }, 0, 1015, 1767.59, 492.5, 1275.09, 72.1, 1275.09]]);
-  // 2026: Herstellkosten der Verkäufe 682,50 € (statt 762,50 €), Rohertrag aus den Verkäufen 1.322,59 €
-  assert.deepStrictEqual(ma.jahr, { flaschen: 1175, umsatz: 2005.09, kosten: 682.5, rohertrag: 1322.59, marge: 66, aufschlag: 193.8, proFlasche: 1.13, kostenProFlasche: 0.58 });
+    [2000, 980, { flaschen: 0, kosten: 0 }, 0, 1020, 1762.59, 490, 1272.59, 72.2, 1272.59]]);
+  // 2026: Herstellkosten der Verkäufe 680 € (statt 760 €), Rohertrag aus den Verkäufen 1.320,09 €
+  assert.deepStrictEqual(ma.jahr, { flaschen: 1170, umsatz: 2000.09, kosten: 680, rohertrag: 1320.09, marge: 66, aufschlag: 194.1, proFlasche: 1.13, kostenProFlasche: 0.58 });
   assert.deepStrictEqual(ma.vorjahr.kosten, 150);
-  // Nach Abgängen, nur in Euro: 2026 1.322,59 € − 100 € Bruch = 1.222,59 € (100 € auf 1.175 verkaufte Flaschen = 9 Cent);
-  // 2025 30 € − 60 € Promo = −30 € (60 € auf 150 Flaschen); gesamt 1.352,59 € − 160 € = 1.192,59 €.
+  // Nach Abgängen, nur in Euro: 2026 1.320,09 € − 100 € Bruch = 1.220,09 € (100 € auf 1.170 verkaufte Flaschen = 9 Cent);
+  // 2025 30 € − 60 € Promo = −30 € (60 € auf 150 Flaschen); gesamt 1.350,09 € − 160 € = 1.190,09 €.
   // Kein Prozentwert: Die Marge bleibt die der verkauften Flaschen (66,0 % für 2026, siehe oben), Abgänge senken sie nicht.
-  assert.deepStrictEqual(ma.nach, { jahr: { rohertrag: 1322.59, abgaenge: 100, flaschen: 100, bleibt: 1222.59, proFlasche: 0.09 },
+  assert.deepStrictEqual(ma.nach, { jahr: { rohertrag: 1320.09, abgaenge: 100, flaschen: 100, bleibt: 1220.09, proFlasche: 0.09 },
     vorjahr: { rohertrag: 30, abgaenge: 60, flaschen: 60, bleibt: -30, proFlasche: 0.4 },
-    gesamt: { rohertrag: 1352.59, abgaenge: 160, flaschen: 160, bleibt: 1192.59, proFlasche: 0.12 } });
+    gesamt: { rohertrag: 1350.09, abgaenge: 160, flaschen: 160, bleibt: 1190.09, proFlasche: 0.12 } });
   // Die Schnittstelle kennt Abgänge, es gab aber keine: alles 0, nach Abgängen bleibt der Rohertrag
   const ohneAbgang = H.dashboardMehr(zeilen, werte, heute, 24, abf, { abgaenge: [], schwund: [] }).marge;
   assert.deepStrictEqual([ohneAbgang.verluste.anzahl, ohneAbgang.verluste.gesamt, ohneAbgang.verluste.monate, ohneAbgang.nach.jahr.bleibt, ohneAbgang.jahr.marge],
-    [0, { flaschen: 0, kosten: 0 }, [], 1242.59, 62]);
+    [0, { flaschen: 0, kosten: 0 }, [], 1240.09, 62]);
   // Schwund aus den Zählungen liefert die Schnittstelle fertig. Eine Nachzählung am 31.10.2026 mit 115 fehlenden
-  // Flaschen geht an ihrem Tag ab (115 × 0,50 € aus der zweiten Abfüllung = 57,50 € Verlust), die Reste sinken auf 900
+  // Flaschen geht an ihrem Tag ab (115 × 0,50 € aus der zweiten Abfüllung = 57,50 € Verlust), die Reste sinken auf 905
   const mitSchwund = (schwund) => H.dashboardMehr(zeilen, werte, heute, 24, abf, Object.assign({ schwund: schwund }, lager)).marge;
   const schwundArt = (x) => x.verluste.arten.find((y) => y.art === 'Schwund');
   const gezaehlt = mitSchwund([['2026-10-31', 115, 'Lager Süd']]);
   assert.deepStrictEqual([schwundArt(gezaehlt).jahr, gezaehlt.verluste.jahr, gezaehlt.verluste.gesamt, gezaehlt.verluste.anzahl],
     [{ flaschen: 115, kosten: 57.5 }, { flaschen: 215, kosten: 157.5 }, { flaschen: 275, kosten: 217.5 }, 3]);
-  assert.deepStrictEqual([gezaehlt.schichten.map((x) => x.rest), gezaehlt.mehr, gezaehlt.ueber], [[0, 900], 0, 0]);
-  assert.deepStrictEqual(gezaehlt.flaschen, { abgefuellt: 2500, verkauft: 1325, abgaenge: 160, schwund: 115, luecke: 0, uebrig: 900 });
-  assert.deepStrictEqual([gezaehlt.verluste.luecke, gezaehlt.abfuellungen[1].weg, gezaehlt.abfuellungen[1].bleibt], [null, { flaschen: 115, kosten: 57.5 }, 1217.59],
-    'Schwund nach einer Zählung geht zulasten seiner Abfüllung: 1.275,09 € − 57,50 €');
-  assert.deepStrictEqual(gezaehlt.jahr.kosten, 682.5, 'die Kosten der Verkäufe bleiben (alles schon in der zweiten Abfüllung)');
-  assert.deepStrictEqual([gezaehlt.nach.jahr.abgaenge, gezaehlt.nach.jahr.bleibt], [157.5, 1165.09], '1.322,59 € − 100 € Bruch − 57,50 € Schwund');
+  assert.deepStrictEqual([gezaehlt.schichten.map((x) => x.rest), gezaehlt.mehr, gezaehlt.ueber], [[0, 905], 0, 0]);
+  assert.deepStrictEqual(gezaehlt.flaschen, { abgefuellt: 2500, verkauft: 1320, abgaenge: 160, schwund: 115, luecke: 0, uebrig: 905 });
+  assert.deepStrictEqual([gezaehlt.verluste.luecke, gezaehlt.abfuellungen[1].weg, gezaehlt.abfuellungen[1].bleibt], [null, { flaschen: 115, kosten: 57.5 }, 1215.09],
+    'Schwund nach einer Zählung geht zulasten seiner Abfüllung: 1.272,59 € − 57,50 €');
+  assert.deepStrictEqual(gezaehlt.jahr.kosten, 680, 'die Kosten der Verkäufe bleiben (alles schon in der zweiten Abfüllung)');
+  assert.deepStrictEqual([gezaehlt.nach.jahr.abgaenge, gezaehlt.nach.jahr.bleibt], [157.5, 1162.59], '1.320,09 € − 100 € Bruch − 57,50 € Schwund');
   // Eine weitere Zählung ohne Abweichung (0) und Ereignisse nach heute oder ohne Datum ändern nichts
   assert.deepStrictEqual(mitSchwund([['2026-10-31', 115, 'Lager Süd'], ['2026-11-05', 0, 'Lager Süd'], ['2026-12-01', 30, 'X'], ['Quatsch', 5, '']]), gezaehlt);
   // Mehr gezählt als gerechnet (−85): die zuletzt ohne Verkauf abgegangenen Flaschen kommen zurück, das sind 85 der 100
   // Bruch-Flaschen vom 1.7. aus der ersten Abfüllung (85 € weniger Verlust). Der nächste Verkauf (103 Flaschen am 6.11.)
-  // nimmt erst sie (85 × 1 €), dann 18 aus der zweiten (9 €). Kosten der Verkäufe 2026 damit 725 € statt 682,50 €.
+  // nimmt erst sie (85 × 1 €), dann 18 aus der zweiten (9 €). Kosten der Verkäufe 2026 damit 722,50 € statt 680 €.
   const mehrDa = mitSchwund([['2026-10-31', -85, 'Lager Süd']]);
   assert.deepStrictEqual([schwundArt(mehrDa).jahr, mehrDa.verluste.jahr, mehrDa.schichten.map((x) => x.rest), mehrDa.jahr.kosten],
-    [{ flaschen: -85, kosten: -85 }, { flaschen: 15, kosten: 15 }, [0, 1100], 725]);
-  assert.deepStrictEqual(mehrDa.flaschen, { abgefuellt: 2500, verkauft: 1325, abgaenge: 160, schwund: -85, luecke: 0, uebrig: 1100 });
+    [{ flaschen: -85, kosten: -85 }, { flaschen: 15, kosten: 15 }, [0, 1105], 722.5]);
+  assert.deepStrictEqual(mehrDa.flaschen, { abgefuellt: 2500, verkauft: 1320, abgaenge: 160, schwund: -85, luecke: 0, uebrig: 1105 });
   // Alte Lücke (leerer Standort: 40 Flaschen fehlten schon, als am 1.1.2026 zum ersten Mal alle Lager gezählt waren)
-  // und später eine Nachzählung (10). Beide brauchen die Abfüllungen an ihrem Tag auf: Reste 2.500 − 1.325 − 160 − 40
-  // − 10 = 965. Schwund ist aber nur die Nachzählung (10 Flaschen, 5 €). Die alte Lücke (40 Flaschen aus der ersten
+  // und später eine Nachzählung (10). Beide brauchen die Abfüllungen an ihrem Tag auf: Reste 2.500 − 1.320 − 160 − 40
+  // − 10 = 970. Schwund ist aber nur die Nachzählung (10 Flaschen, 5 €). Die alte Lücke (40 Flaschen aus der ersten
   // Abfüllung, 40 €) steht für sich (v34): in keinem Jahr, keinem Monat und keiner Art, nur in „seit dem Start“.
   const beides = mitSchwund([['2026-01-01', 40, ''], ['2026-10-31', 10, 'Lager Nord']]);
   assert.deepStrictEqual([schwundArt(beides).jahr, schwundArt(beides).gesamt, beides.schichten.map((x) => x.rest), beides.jahr.kosten],
-    [{ flaschen: 10, kosten: 5 }, { flaschen: 10, kosten: 5 }, [0, 965], 662.5]);
+    [{ flaschen: 10, kosten: 5 }, { flaschen: 10, kosten: 5 }, [0, 970], 660]);
   assert.deepStrictEqual(beides.verluste.luecke, { datum: '2026-01-01', flaschen: 40, kosten: 40 });
   // 2026: 100 Bruch + 10 Schwund; 2025: 60 Promo; seit dem Start dazu die alte Lücke: 210 Flaschen, 205 €
   assert.deepStrictEqual([beides.verluste.jahr, beides.verluste.vorjahr, beides.verluste.gesamt, beides.verluste.anzahl],
     [{ flaschen: 110, kosten: 105 }, { flaschen: 60, kosten: 60 }, { flaschen: 210, kosten: 205 }, 4]);
-  assert.deepStrictEqual(beides.flaschen, { abgefuellt: 2500, verkauft: 1325, abgaenge: 160, schwund: 10, luecke: 40, uebrig: 965 });
+  assert.deepStrictEqual(beides.flaschen, { abgefuellt: 2500, verkauft: 1320, abgaenge: 160, schwund: 10, luecke: 40, uebrig: 970 });
   // Monate mit Abgängen, neuester zuerst: Nachzählung, Bruch, Promo (ohne die alte Lücke)
   assert.deepStrictEqual(beides.verluste.monate, [{ monat: '2026-10', flaschen: 10, kosten: 5 }, { monat: '2026-07', flaschen: 100, kosten: 100 },
     { monat: '2025-10', flaschen: 60, kosten: 60 }]);
-  // 2026: 1.342,59 € Rohertrag − 105 € (100 Bruch + 5 Schwund) = 1.237,59 €; die Marge der Verkäufe bleibt 67,0 % (1.342,59 von 2.005,09 €).
-  // Seit dem Start: 1.372,59 € Rohertrag − 205 € (mit der alten Lücke) = 1.167,59 €
-  assert.deepStrictEqual([beides.nach.jahr.rohertrag, beides.nach.jahr.abgaenge, beides.nach.jahr.bleibt, beides.jahr.marge], [1342.59, 105, 1237.59, 67]);
-  assert.deepStrictEqual(beides.nach.gesamt, { rohertrag: 1372.59, abgaenge: 205, flaschen: 210, bleibt: 1167.59, proFlasche: 0.15 });
+  // 2026: 1.340,09 € Rohertrag − 105 € (100 Bruch + 5 Schwund) = 1.235,09 €; die Marge der Verkäufe bleibt 67,0 % (1.340,09 von 2.000,09 €).
+  // Seit dem Start: 1.370,09 € Rohertrag − 205 € (mit der alten Lücke) = 1.165,09 €
+  assert.deepStrictEqual([beides.nach.jahr.rohertrag, beides.nach.jahr.abgaenge, beides.nach.jahr.bleibt, beides.jahr.marge], [1340.09, 105, 1235.09, 67]);
+  assert.deepStrictEqual(beides.nach.gesamt, { rohertrag: 1370.09, abgaenge: 205, flaschen: 210, bleibt: 1165.09, proFlasche: 0.16 });
   // Je Abfüllung: Die 40 Flaschen der Lücke gehen aus der ersten raus (500 = 300 verkauft + 160 weg + 40 Lücke), ihr
   // Geld aber nicht zu ihren Lasten: 367,50 € Umsatz (120 + 60 + 250 × 150/200) − 300 € = 67,50 €, minus 160 € = −92,50 €.
-  // Zweite: 1.025 verkauft, 1.817,59 € − 512,50 € = 1.305,09 €, minus 5 € Schwund. Zusammen 1.207,59 €, minus 40 € Lücke = 1.167,59 €.
+  // Zweite: 1.020 verkauft, 1.812,59 € − 510 € = 1.302,59 €, minus 5 € Schwund. Zusammen 1.205,09 €, minus 40 € Lücke = 1.165,09 €.
   assert.deepStrictEqual(beides.abfuellungen.map((x) => [x.flaschen, x.weg, x.luecke, x.rest, x.umsatz, x.rohertrag, x.bleibt]), [
-    [300, { flaschen: 160, kosten: 160 }, 40, 0, 367.5, 67.5, -92.5], [1025, { flaschen: 10, kosten: 5 }, 0, 965, 1817.59, 1305.09, 1300.09]]);
+    [300, { flaschen: 160, kosten: 160 }, 40, 0, 367.5, 67.5, -92.5], [1020, { flaschen: 10, kosten: 5 }, 0, 970, 1812.59, 1302.59, 1297.59]]);
   // Die spätere Nachzählung ändert nichts an den Kosten davor: bis September dieselben Monatswerte wie ohne sie
   const nurAnfang = mitSchwund([['2026-01-01', 40, '']]);
   assert.deepStrictEqual(beides.monate.slice(1).map((x) => x.kosten), nurAnfang.monate.slice(1).map((x) => x.kosten));
   // Abgang aus einer Abfüllung ohne Kosten: sein Wert ist unbekannt (auch was nach Abgängen bleibt), die Schichten rechnen trotzdem weiter
   const ohneKosten = H.dashboardMehr(zeilen, werte, heute, 24, [{ abfuellung: '1. Abfüllung', monat: '2025-09', flaschen: 500, kostenProFlasche: null }, abf[0]], lager).marge;
-  assert.deepStrictEqual([ohneKosten.verluste.gesamt, ohneKosten.nach.gesamt.bleibt, ohneKosten.schichten.map((x) => x.rest)], [{ flaschen: 160, kosten: null }, null, [0, 1015]]);
+  assert.deepStrictEqual([ohneKosten.verluste.gesamt, ohneKosten.nach.gesamt.bleibt, ohneKosten.schichten.map((x) => x.rest)], [{ flaschen: 160, kosten: null }, null, [0, 1020]]);
   // Eine Art, die die App nicht kennt, steht als „Sonstiges“ in der Statistik (nichts geht verloren)
   assert.deepStrictEqual(H.dashboardMehr(zeilen, werte, heute, 24, abf, { abgaenge: [['2026-03-01', 4, 'Geschenk']] }).marge.verluste.arten.map((x) => [x.art, x.jahr.flaschen]),
     [['Promo', 0], ['Eigenverbrauch', 0], ['Bruch', 0], ['Sonstiges', 4], ['Schwund', 0]]);
@@ -1350,13 +1354,14 @@ test('v39 Rohertrag: Gutschrift mit Bezug macht die Rechnung ganz rückgängig, 
 
 test('v39 Codex-Nachprüfung: Zukunftsrechnung nimmt keinem Altverkauf die Abfüllung, gleiche Nummer, Rundungsrest', () => {
   // A 10 Fl. zu 1 €, B 10 Fl. zu 2 €. Heute 15.11.: Altverkauf ohne Datum im November (10 Fl.) und eine Rechnung vom 20.11.
-  // (10 Fl.). Der Altverkauf ist schon passiert und bekommt A (10 €), die Zukunftsrechnung B; im Gewinn zählt nur er.
+  // (10 Fl.). Der Altverkauf ist schon passiert und bekommt A (10 €); die Zukunftsrechnung zählt seit der
+  // Codex-Nachprüfung v39 erst an ihrem Tag, auch im Rohertrag (Kosten 0, B bleibt voll); im Gewinn zählt nur er.
   const heute = '2026-11-15';
   const zeilen = H.verkaufZeilen({ zeilen: [['2026-11', '', 'Berlin', 'Alt', 10, 30, ''], ['2026-11', '2026-11-20', 'Berlin', 'Neu', 10, 30, 'R1']] }, heute);
   const marge = H.dashboardMehr(zeilen, H.monatsWerte({ zeilen: [] }, zeilen), heute, 24,
     [{ abfuellung: 'A', monat: '2026-01', flaschen: 10, kostenProFlasche: 1 }, { abfuellung: 'B', monat: '2026-02', flaschen: 10, kostenProFlasche: 2 }],
     { abgaenge: [], schwund: [] }).marge;
-  assert.deepStrictEqual(marge.kostenJeZeile, [10, 20]);
+  assert.deepStrictEqual([marge.kostenJeZeile, marge.schichten.map((x) => x.rest), marge.jahr.flaschen], [[10, 0], [0, 10], 10]);
   const g = H.gewinnRechnen(zeilen, marge, { zeilen: [], belege: 1, offen: 0, neuestes: '2026-11-02', aeltestes: '2026-01-02' }, [], heute, 2026);
   assert.deepStrictEqual([g.monate[10].umsatz, g.monate[10].wareneinsatz], [30, 10]);
   // Ohne `heute` bleibt es beim Monatsende (wie bisher)
@@ -1371,5 +1376,157 @@ test('v39 Codex-Nachprüfung: Zukunftsrechnung nimmt keinem Altverkauf die Abfü
   // Rundungsrest: sechs Verkäufe zu 10.000,01 Fl. und einer zu 0,01, Gutschrift über alles: kein künstlicher Mehrbestand
   const viel = [{ name: 'A', monat: '2025-01', flaschen: 100000, kosten: 1 }];
   const r = H.fifoKosten([1, 2, 3, 4, 5, 6].map((t) => vz('2025-03-0' + t, 10000.01, 'R' + t, 'x')).concat([vz('2025-03-07', 0.01, 'R7', 'x'), vz('2025-03-08', -60000.06, 'G1', 'x')]), viel);
-  assert.deepStrictEqual([r.mehr, r.uebrig, r.schichten[0].rest], [0, 99999.99, 99999.99]);
+  assert.deepStrictEqual([r.mehr, r.uebrig, r.schichten[0].rest, r.teile[7], r.unklar], [0, 99999.99, 99999.99, [[0, -60000.06]], []]);
+});
+
+// Codex-Nachprüfung v39 (zweite Runde) ------------------------------------------------------------------------------
+
+test('v39 Nachfix Gewinn: Zukunftsbeleg der alten Schnittstelle nimmt den laufenden Monat raus, neuestes nur bis heute', () => {
+  // Heute 20.11., die ältere Schnittstelle zählt einen Beleg vom 25.11. schon in die Novembersumme (und als neuesten)
+  const heute = '2026-11-20';
+  const d = gewinnDaten(heute);
+  const kosten = { zeilen: [['2026-01', 'Sonstiges', 'Werbung', 100], ['2026-10', 'Sonstiges', 'Miete', 300], ['2026-11', 'Sonstiges', 'Miete', 999]],
+    belege: 3, offen: 0, neuestes: '2026-11-25', aeltestes: '2026-01-05' };
+  const g = H.gewinnRechnen(d.zeilen, d.marge, kosten, d.abf, heute, 2026);
+  assert.deepStrictEqual([g.bis, g.offenAb, g.monate.length, g.summe.sonstige, g.neuestes], ['2026-10', '2026-11', 10, 400, null]);
+  // Ohne Zukunftsbeleg bleibt der November drin, `neuestes` kommt durch
+  const heuteOk = H.gewinnRechnen(d.zeilen, d.marge, Object.assign({}, kosten, { neuestes: '2026-11-18' }), d.abf, heute, 2026);
+  assert.deepStrictEqual([heuteOk.bis, heuteOk.offenAb, heuteOk.summe.sonstige, heuteOk.neuestes], ['2026-11', null, 1399, '2026-11-18']);
+  // Zukunftsbeleg im nächsten Monat: der laufende Monat ist trotzdem unsicher und fällt weg
+  assert.strictEqual(H.gewinnRechnen(d.zeilen, d.marge, Object.assign({}, kosten, { neuestes: '2026-12-02' }), d.abf, heute, 2026).bis, '2026-10');
+});
+
+test('v39 Nachfix First in, First out: Gutschrift mit Zuordnung vor der ohne, gleiche Nummer nur beim selben Kunden, Hinweis bei zu viel', () => {
+  const ab2 = [{ name: 'A', monat: '2025-01', flaschen: 10, kosten: 1 }, { name: 'B', monat: '2025-02', flaschen: 100, kosten: 2 }];
+  const vz = (datum, flaschen, rechnung, kunde, bezug) => ({ monat: datum.slice(0, 7), datum: datum, flaschen: flaschen, rechnung: rechnung, schluessel: kunde, bezug: bezug || '' });
+  const kauf = [vz('2025-03-01', 10, 'RE1', 'x'), vz('2025-03-02', 10, 'RE2', 'y')];
+  // Erst eine Gutschrift ohne Zuordnung (z, 10 Fl.), danach eine zu RE1 (x, 10 Fl.): Die erste lässt die Flaschen von RE1
+  // frei und nimmt die von Y (B, −20 €), die zweite holt genau RE1 zurück (A, −10 €). Vorher nahm die erste anteilig
+  // 5 aus A und 5 aus B, und die zweite buchte dann 5 aus B zurück.
+  const f = H.fifoKosten(kauf.concat([vz('2025-03-05', -10, 'GS1', 'z'), vz('2025-03-06', -10, 'GS2', 'x', 'RE1')]), ab2);
+  assert.deepStrictEqual([f.kosten, f.teile[2], f.teile[3], f.schichten.map((x) => x.rest), f.mehr, f.unklar], [[10, 20, -20, -10], [[1, -10]], [[0, -10]], [10, 100], 0, []]);
+  // Reicht das Freie nicht (10 aus A, 10 aus B, ohne Zuordnung 15), bleiben die vorgemerkten Flaschen trotzdem unberührt:
+  // 10 aus B, die übrigen 5 werden Mehrbestand (zur ersten Abfüllung, 1 €) mit Hinweis, und die spätere Gutschrift zu
+  // RE1 bekommt ihre 10 aus A zurück (Codex-Nachprüfung v39, dritte Runde; vorher nahm die erste 5 aus A)
+  const knapp = H.fifoKosten(kauf.concat([vz('2025-03-05', -15, 'GS1', 'z'), vz('2025-03-06', -10, 'GS2', 'x', 'RE1')]), ab2);
+  assert.deepStrictEqual([knapp.kosten, knapp.teile[2], knapp.teile[3], knapp.schichten.map((x) => x.rest), knapp.mehr, knapp.uebrig],
+    [[10, 20, -25, -10], [[1, -10], [-1, -5]], [[0, -10]], [10, 100], 5, 115]);
+  assert.deepStrictEqual(knapp.unklar, [{ zeile: 2, rechnung: 'GS1', flaschen: 5 }]);
+  // Ohne spätere Gutschrift mit Zuordnung nimmt sie wie bisher anteilig aus allem (7,5 aus A und B), ohne Hinweis
+  const frei = H.fifoKosten(kauf.concat([vz('2025-03-05', -15, 'GS1', 'z')]), ab2);
+  assert.deepStrictEqual([frei.kosten, frei.mehr, frei.unklar], [[10, 20, -22.5], 0, []]);
+  // Gutschrift größer als der Rest ihrer Rechnung: Rest zum Durchschnitt und als Hinweis
+  const zuviel = H.fifoKosten(kauf.concat([vz('2025-03-05', -15, 'GS1', 'x', 'RE1')]), ab2);
+  assert.deepStrictEqual([zuviel.kosten, zuviel.unklar], [[10, 20, -20], [{ zeile: 2, rechnung: 'RE1', flaschen: 5 }]]);
+  // Bezug auf eine Rechnung, die es (noch) nicht gibt: ebenfalls ein Hinweis; ohne Bezug und ohne passende Nummer keiner
+  assert.deepStrictEqual(H.fifoKosten(kauf.concat([vz('2025-03-05', -5, 'GS1', 'x', 'RE9')]), ab2).unklar, [{ zeile: 2, rechnung: 'RE9', flaschen: 5 }]);
+  assert.deepStrictEqual(H.fifoKosten(kauf.concat([vz('2025-03-05', -5, 'GS1', 'x')]), ab2).unklar, []);
+  // Gleiche Nummer in Spalte J ohne Bezug: nur beim selben Kunden. Y schreibt R1 gut, R1 gehört aber X: Durchschnitt (1,50 €)
+  const fremd = H.fifoKosten([vz('2025-03-01', 10, 'R1', 'x'), vz('2025-03-02', 10, 'R2', 'y'), vz('2025-03-05', -10, 'R1', 'y')], ab2);
+  assert.deepStrictEqual([fremd.kosten, fremd.unklar], [[10, 20, -15], []]);
+  // mit Bezug laut Kommentar auch kundenübergreifend
+  assert.deepStrictEqual(H.fifoKosten([vz('2025-03-01', 10, 'R1', 'x'), vz('2025-03-02', 10, 'R2', 'y'), vz('2025-03-05', -10, 'G1', 'y', 'R1')], ab2).kosten, [10, 20, -10]);
+  // Zwischen beiden Gutschriften kommt noch eine Position von RE1: Die spätere Gutschrift zu RE1 holt zuerst sie zurück
+  // (zuletzt genommene zuerst), also hält die frühere ohne Zuordnung die alte Position aus A nicht frei, sondern nimmt
+  // anteilig aus ihr und Y (5 aus A, 5 aus B). Die neue Position nimmt die 5 zurückgekommenen aus A und 5 aus B, genau
+  // die holt die Gutschrift zu RE1 zurück (Codex-Nachprüfung v39, zweite Runde; vorher −20 € für die erste)
+  const dazwischen = H.fifoKosten([vz('2025-03-01', 10, 'RE1', 'x'), vz('2025-03-02', 10, 'RE2', 'y'), vz('2025-03-05', -10, 'GS1', 'z'),
+    vz('2025-03-06', 10, 'RE1', 'x'), vz('2025-03-07', -10, 'GS2', 'x', 'RE1')], ab2);
+  assert.deepStrictEqual([dazwischen.kosten, dazwischen.teile[2], dazwischen.teile[3], dazwischen.teile[4], dazwischen.unklar],
+    [[10, 20, -15, 15, -15], [[0, -5], [1, -5]], [[0, 5], [1, 5]], [[1, -5], [0, -5]], []]);
+  // Im Rohertrag steht der Hinweis mit Kunde und Datum
+  const heute = '2026-11-15';
+  const abf = [{ abfuellung: 'A', monat: '2026-01', flaschen: 10, kostenProFlasche: 1 }, { abfuellung: 'B', monat: '2026-02', flaschen: 100, kostenProFlasche: 2 }];
+  const zeilen = H.verkaufZeilen({ zeilen: [['2026-03', '2026-03-01', 'Berlin', 'X', 10, 30, 'RE1'], ['2026-03', '2026-03-05', 'Berlin', 'X', -12, -36, 'GS1', 'RE1']] }, heute);
+  const mg = H.dashboardMehr(zeilen, H.monatsWerte({ zeilen: [] }, zeilen), heute, 24, abf).marge;
+  assert.deepStrictEqual(mg.unklar, [{ rechnung: 'RE1', kunde: 'X', datum: '2026-03-05', flaschen: 2 }]);
+});
+
+test('v39 Nachfix Rohertrag: Rechnungen nach heute zählen weder im Rohertrag noch im Restbestand noch in Auswerten', () => {
+  const heute = '2026-11-15';
+  const zeilen = H.verkaufZeilen({ zeilen: [['2026-11', '2026-11-03', 'Berlin', 'A', 10, 30, 'R1'], ['2026-11', '2026-11-20', 'Berlin', 'B', 5, 50, 'R2'],
+    ['2026-11', '', 'Berlin', 'C', 1, 3, '']] }, heute);
+  const mg = H.dashboardMehr(zeilen, H.monatsWerte({ zeilen: [] }, zeilen), heute, 24,
+    [{ abfuellung: '1. Abfüllung', monat: '2026-01', flaschen: 100, kostenProFlasche: 1 }], { abgaenge: [], schwund: [] }).marge;
+  // R1 und die Altzeile ohne Datum (11 Fl., 33 €) zählen, R2 vom 20.11. nicht
+  assert.deepStrictEqual([mg.jahr.flaschen, mg.jahr.umsatz, mg.jahr.kosten, mg.jahr.rohertrag, mg.schichten[0].rest, mg.flaschen.verkauft, mg.flaschen.uebrig],
+    [11, 33, 11, 22, 89, 11, 89]);
+  const a = H.auswerten(zeilen, mg.kostenJeZeile, heute, { kennzahl: 'rohertrag', jahr: 2026 });
+  assert.deepStrictEqual([a.summe.flaschen, a.summe.umsatz, a.summe.rohertrag], [11, 33, 22]);
+  const g = H.gewinnRechnen(zeilen, mg, { zeilen: [], belege: 1, offen: 0, neuestes: '2026-11-02', aeltestes: '2026-01-02' }, [], heute, 2026);
+  assert.deepStrictEqual([g.summe.umsatz, g.summe.wareneinsatz, g.summe.umsatz - g.summe.wareneinsatz], [33, 11, mg.jahr.rohertrag]);
+});
+
+test('v39 Nachfix unter Herstellkosten: nur Zeilen bis heute, auch unter derselben Rechnungsnummer', () => {
+  const heute = '2026-11-15';
+  const abf = [{ abfuellung: 'A', monat: '2026-01', flaschen: 1000, kostenProFlasche: 2 }];
+  const mit = (nr) => {
+    const zeilen = H.verkaufZeilen({ zeilen: [['2026-11', '2026-11-03', 'Berlin', 'X', 10, 10, 'R1'], ['2026-11', '2026-11-20', 'Berlin', 'X', 90, 900, nr]] }, heute);
+    return H.dashboardMehr(zeilen, H.monatsWerte({ zeilen: [] }, zeilen), heute, 24, abf, { abgaenge: [], schwund: [] }).marge.unterKosten;
+  };
+  // 10 Flaschen für 10 € bei 20 € Kosten; die 90 vom 20.11. zählen weder beim Anteil noch decken sie die Kosten
+  assert.deepStrictEqual(mit('R2'), { anzahl: 1, flaschen: 10, anteil: 100 });
+  assert.deepStrictEqual(mit('R1 #2'), { anzahl: 1, flaschen: 10, anteil: 100 });
+});
+
+// Codex-Nachprüfung v39 (dritte Runde) ------------------------------------------------------------------------------
+
+test('v39 Nachfix 3 unter Herstellkosten: eine genullte Zukunftszeile legt den Monat der Bestellung nicht fest, beide Reihenfolgen', () => {
+  // Heute 10.01.2027. R1 vom 28.12. (Vorjahr) mit einer zweiten Zeile „R1 #2“ vom 20.01. (nach heute); R5 vom 05.01. liegt
+  // unter den Kosten. Steht die Zukunftszeile im Sheet zuerst, machte sie R1 vorher zu einer Januar-Bestellung.
+  const heute = '2027-01-10';
+  const abf = [{ abfuellung: 'A', monat: '2026-01', flaschen: 1000, kostenProFlasche: 2 }];
+  const r1 = ['2026-12', '2026-12-28', 'Berlin', 'X', 10, 10, 'R1'];
+  const r1b = ['2027-01', '2027-01-20', 'Berlin', 'X', 90, 900, 'R1 #2'];
+  const r5 = ['2027-01', '2027-01-05', 'Berlin', 'Y', 10, 10, 'R5'];
+  const mit = (reihen) => {
+    const zeilen = H.verkaufZeilen({ zeilen: reihen }, heute);
+    return H.dashboardMehr(zeilen, H.monatsWerte({ zeilen: [] }, zeilen), heute, 24, abf, { abgaenge: [], schwund: [] }).marge.unterKosten;
+  };
+  assert.deepStrictEqual(mit([r1b, r1, r5]), { anzahl: 1, flaschen: 10, anteil: 100 });
+  assert.deepStrictEqual(mit([r1, r1b, r5]), { anzahl: 1, flaschen: 10, anteil: 100 });
+  // Gegenprobe: dieselbe Rechnung ganz im Januar (vor heute) zählt, auch wenn die Zukunftszeile zuerst steht
+  const r1jan = ['2027-01', '2027-01-02', 'Berlin', 'X', 10, 10, 'R1'];
+  assert.deepStrictEqual(mit([r1b, r1jan, r5]), { anzahl: 2, flaschen: 20, anteil: 100 });
+});
+
+test('v39 Nachfix 3 Gewinn: Zukunftsbeleg der alten Schnittstelle, Vormonat nur über den ältesten Beleg abgedeckt', () => {
+  // Heute 10.01.2027. Im Dezember heben sich Rechnung und Gutschrift auf (keine Zeile), der Januar enthält einen Beleg
+  // vom 20.01. (alte Schnittstelle). Der laufende Monat fällt weg, der Dezember bleibt als letzter sicherer Monat.
+  const heute = '2027-01-10';
+  const abf = [{ abfuellung: 'A', monat: '2026-01', flaschen: 1000, kostenProFlasche: 1 }];
+  const zeilen = H.verkaufZeilen({ zeilen: [['2026-12', '2026-12-10', 'Berlin', 'X', 10, 30, 'R1']] }, heute);
+  const mg = H.dashboardMehr(zeilen, H.monatsWerte({ zeilen: [] }, zeilen), heute, 24, abf, { abgaenge: [], schwund: [] }).marge;
+  const kosten = { zeilen: [['2027-01', 'Sonstiges', 'Miete', 500]], belege: 3, offen: 0, neuestes: '2027-01-20', aeltestes: '2026-12-03' };
+  const g = H.gewinnRechnen(zeilen, mg, kosten, abf, heute, 2026);
+  assert.ok(!g.hinweis, 'Gewinn bleibt da');
+  assert.deepStrictEqual([g.jahre, g.jahr, g.bis, g.offenAb, g.summe.umsatz, g.summe.wareneinsatz, g.summe.sonstige, g.summe.gewinn, g.neuestes],
+    [[2026], 2026, '2026-12', null, 30, 10, 0, 20, null]);
+  // Ohne gültiges `aeltestes` bleibt es bei „keine Belege“ (kein sicherer Monat bekannt)
+  assert.strictEqual(H.gewinnRechnen(zeilen, mg, Object.assign({}, kosten, { aeltestes: '' }), abf, heute, 2026).grund, 'belege');
+});
+
+test('v39 Nachfix 3 Rundung: centVerteilen summiert erst dezimalgenau, NaN und Infinity zählen als 0', () => {
+  assert.deepStrictEqual(H.centVerteilen([2.005, -2]), { cent: [201, -200], summe: 1 });
+  assert.deepStrictEqual(H.centVerteilen([-2.005, 2]), { cent: [-201, 200], summe: -1 });
+  assert.deepStrictEqual(H.centVerteilen([0.1, 0.2, -0.3]), { cent: [10, 20, -30], summe: 0 });
+  assert.deepStrictEqual(H.centVerteilen([1.5, NaN, Infinity, -Infinity]), { cent: [150, 0, 0, 0], summe: 150 });
+  assert.deepStrictEqual(H.centVerteilen([]), { cent: [], summe: 0 });
+});
+
+test('v39 Nachfix Rundung: halbe Cent kaufmännisch und robust gegen Gleitkomma, Monate gehen weiter mit dem Rohertrag auf', () => {
+  assert.deepStrictEqual(H.centVerteilen([1.005]), { cent: [101], summe: 101 });
+  assert.deepStrictEqual(H.centVerteilen([-1.005]), { cent: [-101], summe: -101 });
+  assert.deepStrictEqual(H.centVerteilen([1.005, -1.005]), { cent: [101, -101], summe: 0 });
+  assert.deepStrictEqual(H.centVerteilen([0.005, 0.005]), { cent: [1, 0], summe: 1 });
+  assert.deepStrictEqual(H.centVerteilen([-0.005, -0.005]), { cent: [0, -1], summe: -1 });
+  assert.deepStrictEqual(H.centVerteilen([2.675, 1.115]), { cent: [268, 111], summe: 379 });
+  // Jahr im Gewinn (Umsatz − Wareneinsatz) = Rohertrag, auch mit halben Cent: 1,005 € Umsatz, eine Flasche zu 0,5 €
+  const heute = '2026-11-15';
+  const zeilen = H.verkaufZeilen({ zeilen: [['2026-02', '2026-02-02', 'Berlin', 'A', 1, 1.005, 'R1'], ['2026-03', '2026-03-02', 'Berlin', 'A', 1, 1.005, 'R2']] }, heute);
+  const mg = H.dashboardMehr(zeilen, H.monatsWerte({ zeilen: [] }, zeilen), heute, 24,
+    [{ abfuellung: '1. Abfüllung', monat: '2026-01', flaschen: 10, kostenProFlasche: 0.5 }], { abgaenge: [], schwund: [] }).marge;
+  const g = H.gewinnRechnen(zeilen, mg, { zeilen: [], belege: 1, offen: 0, neuestes: '2026-11-02', aeltestes: '2026-01-02' }, [], heute, 2026);
+  assert.deepStrictEqual([mg.jahr.umsatz, mg.jahr.rohertrag, g.summe.umsatz, Math.round((g.summe.umsatz - g.summe.wareneinsatz) * 100) / 100], [2.01, 1.01, 2.01, 1.01]);
+  assert.deepStrictEqual(g.monate.slice(1, 3).map((m) => m.umsatz), [1.01, 1]);
 });

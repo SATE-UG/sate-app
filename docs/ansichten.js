@@ -760,6 +760,11 @@
         mg.abweichung !== 0 ? h('p', { class: 'dash-fuss dash-fehlt', text: 'Im Tab Abfüllungen passt eine Minus-Zeile zu keiner Abfüllung (' + fl(Math.abs(mg.abweichung)) +
           ' Flaschen). Die Zuordnung der Kosten ist deshalb unsicher.' }) : null,
         mg.ueber > 0 ? h('p', { class: 'dash-fuss dash-fehlt', text: 'Weggegangen sind ' + fl(mg.ueber) + ' Flaschen mehr, als im Tab Abfüllungen stehen. Für sie gelten die Kosten der letzten Abfüllung.' }) : null,
+        // Codex-Nachprüfung v39: Gutschrift größer als der Rest ihrer Rechnung (oder Rechnung nicht gefunden), ohne
+        // Zuordnung größer als das frei Verkaufte
+        mg.unklar && mg.unklar.length ? h('p', { class: 'dash-fuss dash-fehlt', text: (mg.unklar.length === 1 ? 'Eine Gutschrift passt' : mg.unklar.length + ' Gutschriften passen') +
+          ' nicht eindeutig zu einer Rechnung (' + mg.unklar.map((u) => (u.rechnung ? u.rechnung + ': ' : '') + fl(u.flaschen) + ' Fl.').join(', ') +
+          '). Diese Flaschen zählen zu den Durchschnittskosten des bis dahin Verkauften, ist davon nichts mehr übrig, als Mehrbestand.' }) : null,
         dashFakten([
           mg.aktuell ? ['Verkauft wird gerade aus', mg.aktuell.mehr ? 'zurückgekommenen Flaschen' : mg.aktuell.name,
             cent(mg.aktuell.kosten) + ' pro Flasche, noch ' + fl(mg.aktuell.rest) + ' Fl.'] : null,

@@ -647,7 +647,13 @@
     return { max: Math.round(oben * 1e6) / 1e6, schritt: schritt, striche: striche };
   }
 
-  function runde(z) { return Math.round(z * 100) / 100; }
+  // Auf den Cent, kaufmännisch (halbe Cent von der Null weg) und robust gegen Gleitkomma: 1,005 € sind 1,01 €, nicht
+  // 1,00 € (1,005 · 100 ergibt 100,49999…; toPrecision(15) glättet das, Codex-Nachprüfung v39)
+  function runde(z) {
+    if (!Number.isFinite(z)) return Math.round(z * 100) / 100;
+    const c = Math.round(Number((Math.abs(z) * 100).toPrecision(15)));
+    return (z < 0 ? -c : c) / 100;
+  }
 
   /**
    * Achse für Werte, die auch negativ sein können (Gutschriften): Schrittweite wie achse() aus der Spanne, Striche von
@@ -1392,7 +1398,13 @@
    *   teile: je Verkaufszeile, aus welchen Abfüllungen ihre Flaschen kamen, als [[Schicht, Flaschen], …] (Schicht −1 =
    *   Mehrbestand vor der ersten, n = Überhang nach der letzten; Flaschen mit Minus, wenn sie zurückkamen; eine Zeile
    *   ohne Flaschen bekommt [[Schicht, 0]] mit der Abfüllung, die an ihrem Tag dran war), abgangTeile: je Abgang
-   *   dasselbe (ohne gültiges Datum leer) }. Immer gilt: uebrig = abgefüllt − verkauft − Abgänge.
+   *   dasselbe (ohne gültiges Datum leer), unklar: Gutschriften, deren Menge nicht eindeutig zu ihrer Rechnung passt (mehr
+   *   als deren Rest, oder Bezug ohne passende Rechnung) oder ohne Zuordnung mehr, als frei verkauft ist, je { zeile,
+   *   rechnung, flaschen (der Rest zum Durchschnitt bzw. als Mehrbestand) } }.
+   *   Immer gilt: uebrig = abgefüllt − verkauft − Abgänge.
+   * Seit der Codex-Nachprüfung v39: Dieselbe Nummer in Spalte J ohne Bezug zählt nur beim selben Kunden. Eine
+   * Gutschrift ohne Zuordnung lässt die Flaschen frei, die eine spätere Gutschrift mit Zuordnung von ihrer Rechnung
+   * zurückholt, damit diese die richtige Abfüllung trifft, auch wenn das Freie nicht reicht (der Rest wird Mehrbestand).
    * Mit `heute` (`JJJJ-MM-TT`, seit v39) zählt ein Verkauf ohne Datum im laufenden Monat heute statt am Monatsende: Eine
    * Rechnung mit Datum nach heute kann ihm dann keine Abfüllung vorweg nehmen (Codex v39).
    */
@@ -1458,9 +1470,43 @@
       if (q > KLEIN) { mehr = glatt(mehr + q); teile.push([-1, -q]); k += wert(-1, q, merker); }
       return merker.offen ? null : k;
     };
+    // Zu welcher Rechnung eine Gutschrift gehört (Schlüssel für `proRechnung`, in dieser Reihenfolge): Mit Bezug laut
+    // Kommentar erst die Zeilen dieser Nummer beim selben Kunden, dann die übrigen Zeilen der Nummer (Codex v39). Ohne
+    // Bezug zählt dieselbe Nummer in Spalte J nur beim selben Kunden (Codex-Nachprüfung v39).
+    const schluesselVon = (z) => {
+      const kunde = '\n' + ((z && z.schluessel) || '');
+      if (z && typeof z.bezug === 'string' && z.bezug) return [z.bezug + kunde, z.bezug];
+      return z && typeof z.rechnung === 'string' && z.rechnung ? [z.rechnung + kunde] : [];
+    };
+    // Gutschriften mit Zuordnung, die noch kommen (Zeilennummern in zeitlicher Reihenfolge, gefüllt unten): Ihre
+    // Flaschen hält eine frühere Gutschrift ohne Zuordnung frei, sonst nähme sie anteilig Flaschen dieser Rechnungen
+    // und die spätere Gutschrift buchte eine falsche Abfüllung zurück (Codex-Nachprüfung v39)
+    // Positionen, die bis zu einer solchen Gutschrift noch dazukommen, holt sie zuerst zurück (zuletzt genommene zuerst):
+    // Sie stehen vorn in ihrer Reihe, als Platzhalter je Ereignis (`spaeter`, Ereignisnummer und Flaschen; Codex v39).
+    let kommend = [];
+    const spaeter = Object.create(null); // Schlüssel → [[Ereignisnummer, Flaschen], …] in zeitlicher Reihenfolge
+    let jetztNr = -1;
+    const vorbehalten = () => {
+      const res = new Map();
+      const frei = (e, menge) => glatt(menge - (res.get(e) || 0));
+      kommend.forEach((x) => {
+        let q = -liste[x.nr].flaschen;
+        schluesselVon(liste[x.nr]).forEach((s) => {
+          const neu = (spaeter[s] || []).filter((v) => v[0] > jetztNr && v[0] < x.pos);
+          const reihe = (proRechnung[s] || []).map((e) => [e, e[1]]).concat(neu.map((v) => [v, v[1]]));
+          for (let j = reihe.length - 1; j >= 0 && q > KLEIN; j--) {
+            const m = Math.min(q, frei(reihe[j][0], reihe[j][1]));
+            if (m > KLEIN) { res.set(reihe[j][0], glatt((res.get(reihe[j][0]) || 0) + m)); q = glatt(q - m); }
+          }
+        });
+      });
+      return res;
+    };
+    const unklar = [];
     // Gutschrift über q > 0 Flaschen (seit v39): erst die Flaschen ihrer Rechnung, dann anteilig aus allem Verkauften,
-    // was noch nicht zurück ist (Durchschnittskosten), der Rest wird Mehrbestand
-    const gutschrift = (q, z, stapel, teile) => {
+    // was noch nicht zurück ist und keine spätere Gutschrift mit Zuordnung braucht (Durchschnittskosten), der Rest wird
+    // Mehrbestand. Passt die Menge nicht zu ihrer Rechnung oder bleibt ohne Zuordnung ein Rest, steht sie in `unklar`.
+    const gutschrift = (q, z, nr, stapel, teile) => {
       const merker = { offen: false };
       let k = 0;
       const jeSchicht = Object.create(null);
@@ -1475,26 +1521,43 @@
         k += wert(i, m, merker);
         q = glatt(q - m);
       };
-      const nr = typeof z.bezug === 'string' && z.bezug ? z.bezug : typeof z.rechnung === 'string' ? z.rechnung : '';
-      // erst die Zeilen dieser Nummer beim selben Kunden, dann die übrigen Zeilen der Nummer (Codex v39)
-      [nr ? proRechnung[nr + '\n' + (z.schluessel || '')] : null, nr ? proRechnung[nr] : null].forEach((eigene) => {
+      const schluessel = schluesselVon(z);
+      const mitBezug = typeof z.bezug === 'string' && !!z.bezug;
+      let gefunden = false;
+      schluessel.forEach((s) => {
+        const eigene = proRechnung[s];
+        if (eigene && eigene.length) gefunden = true;
         for (let j = (eigene || []).length - 1; j >= 0 && q > KLEIN; j--) zurueckAus(eigene[j], Math.min(q, eigene[j][1]));
       });
+      if ((mitBezug || gefunden) && q > KLEIN) unklar.push({ zeile: nr, rechnung: mitBezug ? z.bezug : z.rechnung, flaschen: runde(q) });
       // Aufgebrauchte Einträge aus dem Stapel räumen
-      let w = 0;
-      stapel.forEach((e) => { if (e[1] > KLEIN) stapel[w++] = e; });
-      stapel.length = w;
-      const da = stapel.reduce((x, e) => x + e[1], 0);
-      if (q > KLEIN && da > KLEIN) {
-        const anteil = Math.min(1, q / da);
-        stapel.slice().forEach((e, j, alle) => zurueckAus(e, j === alle.length - 1 ? Math.min(e[1], q) : Math.min(e[1], q, glatt(e[1] * anteil))));
-        // Rundungsrest (Millionstel) aus Einträgen, die noch etwas haben, statt künstlichem Mehrbestand (Codex v39)
-        stapel.forEach((e) => { if (q > KLEIN) zurueckAus(e, Math.min(e[1], q)); });
-        w = 0;
+      const raeumen = () => {
+        let w = 0;
         stapel.forEach((e) => { if (e[1] > KLEIN) stapel[w++] = e; });
         stapel.length = w;
+      };
+      raeumen();
+      // anteilig nach dem, was je Eintrag frei ist
+      const anteilig = (frei) => {
+        const da = stapel.reduce((x, e) => x + frei(e), 0);
+        if (!(q > KLEIN && da > KLEIN)) return;
+        const anteil = Math.min(1, q / da);
+        stapel.slice().forEach((e, j, alle) => {
+          const f = frei(e);
+          zurueckAus(e, j === alle.length - 1 ? Math.min(f, q) : Math.min(f, q, glatt(f * anteil)));
+        });
+        // Rundungsrest (Millionstel) aus Einträgen, die noch etwas haben, statt künstlichem Mehrbestand (Codex v39)
+        stapel.forEach((e) => { if (q > KLEIN) zurueckAus(e, Math.min(frei(e), q)); });
+        raeumen();
+      };
+      // Flaschen, die eine spätere Gutschrift mit Zuordnung zurückholt, bleiben auch dann unberührt, wenn das Freie
+      // nicht reicht (Codex-Nachprüfung v39, dritte Runde): Der ungedeckte Rest wird Mehrbestand, mit Hinweis
+      if (q > KLEIN) {
+        const res = vorbehalten();
+        anteilig((e) => Math.max(0, glatt(e[1] - (res.get(e) || 0))));
       }
       if (q > KLEIN) {
+        if (!mitBezug && !gefunden) unklar.push({ zeile: nr, rechnung: typeof z.rechnung === 'string' ? z.rechnung : '', flaschen: runde(q) });
         mehr = glatt(mehr + q);
         if (!(-1 in jeSchicht)) { jeSchicht[-1] = 0; reihe.push(-1); }
         jeSchicht[-1] = glatt(jeSchicht[-1] + q);
@@ -1523,7 +1586,21 @@
     const abgang = ab.map(() => 0);
     const teile = [liste.map(() => []), ab.map(() => [])]; // Verkäufe, Abgänge: woher die Flaschen jedes Ereignisses kamen
     const stapel = [[], []]; // Verkäufe, Abgänge
-    ereignisse.forEach((x) => {
+    kommend = [];
+    ereignisse.forEach((x, pos) => {
+      if (x.art || !n || !istZahl(x.menge) || x.menge === 0) return;
+      const z = liste[x.nr];
+      if (x.menge < 0) {
+        if (schluesselVon(z).length) kommend.push({ nr: x.nr, pos: pos });
+      } else if (z && typeof z.rechnung === 'string' && z.rechnung) {
+        // derselbe Platzhalter unter beiden Schlüsseln, wie bei `merken`
+        const v = [pos, x.menge];
+        [z.rechnung, z.rechnung + '\n' + (z.schluessel || '')].forEach((s) => { (spaeter[s] = spaeter[s] || []).push(v); });
+      }
+    });
+    ereignisse.forEach((x, pos) => {
+      jetztNr = pos;
+      if (!x.art && kommend.length && kommend[0].nr === x.nr) kommend.shift();
       const q = x.menge;
       if (!istZahl(q) || q === 0 || !n) {
         if (!n && istZahl(q) && q !== 0) (x.art ? abgang : kosten)[x.nr] = null;
@@ -1532,14 +1609,14 @@
         return;
       }
       const k = q > 0 ? nehmen(q, stapel[x.art], teile[x.art][x.nr], x.art ? null : liste[x.nr])
-        : x.art ? zurueck(-q, stapel[1], teile[1][x.nr]) : gutschrift(-q, liste[x.nr] || {}, stapel[0], teile[0][x.nr]);
+        : x.art ? zurueck(-q, stapel[1], teile[1][x.nr]) : gutschrift(-q, liste[x.nr] || {}, x.nr, stapel[0], teile[0][x.nr]);
       (x.art ? abgang : kosten)[x.nr] = k === null ? null : q > 0 ? k : -k;
     });
     return {
       kosten: kosten, abgang: abgang, teile: teile[0], abgangTeile: teile[1],
       schichten: schichten.map((x, i) => ({ name: x.name, monat: x.monat, flaschen: x.flaschen, kosten: x.kosten,
         verbraucht: runde(x.flaschen - rest[i]), rest: runde(rest[i]) })),
-      ueber: runde(ueber), mehr: runde(mehr), fehlt: Object.keys(fehlt),
+      ueber: runde(ueber), mehr: runde(mehr), fehlt: Object.keys(fehlt), unklar: unklar,
       // was noch da ist, einmal gerundet (nicht die Summe gerundeter Reste)
       uebrig: runde(rest.reduce((x, y) => x + y, 0) + mehr - ueber),
     };
@@ -1816,8 +1893,10 @@
       // „Sonstiges“ nur, wenn die Schnittstelle eine Art schickt, die die App nicht kennt
       const VERLUST_ARTEN = GEBUCHT.concat(ereignisse.some((e) => e.art === 'Sonstiges') ? ['Sonstiges'] : [], ['Schwund']);
       // Zeilen nach dem laufenden Monat zählen nirgends mit (die App lässt sie schon in verkaufZeilen weg): auch
-      // nicht in der Warteschlange, sonst gingen Abfüllungen und Abgleich nicht auf
-      const zaehltMit = (z) => !(z.monat > jetzt);
+      // nicht in der Warteschlange, sonst gingen Abfüllungen und Abgleich nicht auf. Seit der Codex-Nachprüfung v39 gilt
+      // derselbe Tagesstichtag wie beim Gewinn: Eine Rechnung mit Datum nach heute zählt erst an ihrem Tag, weder im
+      // Rohertrag noch im Restbestand. Altzeilen ohne Datum nach ihrem Monat.
+      const zaehltMit = (z) => !(z.monat > jetzt) && !(datumGueltig(z.datum) && z.datum > heute);
       const fifo = fifoKosten(zeilen.map((z) => (zaehltMit(z) ? z : Object.assign({}, z, { flaschen: 0 }))), schichten, ereignisse, heute);
       const vLeer = () => ({ flaschen: 0, kosten: 0, offen: false });
       const vDazu = (x, e, k) => { x.flaschen += e.flaschen; if (k === null) x.offen = true; else x.kosten += k; };
@@ -1887,7 +1966,7 @@
         teilDazu(schS[i][e.art === 'Lücke' ? 'luecke' : 'weg'], i, t[1]);
       }));
       zeilen.forEach((z, i) => {
-        if (z.monat > jetzt) return;
+        if (!zaehltMit(z)) return;
         // Umsatz einer Zeile aus zwei Abfüllungen: anteilig nach Flaschen, ungerundet (gerundet wird erst die Summe je
         // Abfüllung, siehe `aufCent`; so kann kein Teil einer Zeile das Vorzeichen wechseln)
         fifo.teile[i].forEach((t) => {
@@ -1915,8 +1994,19 @@
       const mMonate = vorjahrMonate.map((m) => Object.assign({ monat: m.monat, balken: 0 }, roh(monS[m.monat] || leer())));
       const mHoch = Math.max.apply(null, mMonate.map((m) => (m.rohertrag > 0 ? m.rohertrag : 0)).concat([0]));
       if (mHoch > 0) mMonate.forEach((m) => { m.balken = m.rohertrag > 0 ? zehntel((m.rohertrag / mHoch) * 100) : 0; });
-      // Bestellungen des Jahres, deren Umsatz ihre Herstellkosten nicht deckt (auf den Cent, Gleichstand zählt nicht)
-      const unter = bj.filter((b) => {
+      // Bestellungen des Jahres, deren Umsatz ihre Herstellkosten nicht deckt (auf den Cent, Gleichstand zählt nicht).
+      // Nur aus Zeilen bis heute, wie Rohertrag und Kosten (Codex-Nachprüfung v39): Eine Rechnung nach heute, auch unter
+      // derselben Nummer, deckt keine heutigen Kosten und zählt auch beim Anteil nicht mit.
+      // Zukunftszeilen fallen schon vor dem Gruppieren weg, sonst legte eine genullte Zeile nach heute (z. B. die erste
+      // Zeile derselben Rechnung im Sheet) den Monat der Bestellung fest. `zeilenNr` und `reihe` zeigen danach wieder auf
+      // die Originalzeilen, wie `fifo.kosten` sie zählt (Codex-Nachprüfung v39).
+      const heuteNr = [];
+      zeilen.forEach((z, i) => { if (zaehltMit(z)) heuteNr.push(i); });
+      const bjHeute = bestellListe(heuteNr.map((i) => zeilen[i]))
+        .map((b) => Object.assign(b, { reihe: heuteNr[b.reihe], zeilenNr: b.zeilenNr.map((j) => heuteNr[j]) }))
+        .filter((b) => b.flaschen > 0 && b.monat >= anfang && b.monat <= jetzt);
+      const flHeute = bjHeute.reduce((x, b) => x + b.flaschen, 0);
+      const unter = bjHeute.filter((b) => {
         const k = b.zeilenNr.reduce((x, i) => (x === null || fifo.kosten[i] === null ? null : x + fifo.kosten[i]), 0);
         return k !== null && b.umsatz < runde(k);
       });
@@ -1949,7 +2039,7 @@
       // die größten Reste. Jeder Betrag weicht höchstens einen Cent von seinem genauen Wert ab. Passt die Summe nicht
       // zum Ziel (nur bei kaputten Eingaben), null: Dann rundet jeder Betrag für sich.
       const aufCent = (werte, ziel) => {
-        const genau = werte.map((x) => x * 100);
+        const genau = werte.map((x) => Number((x * 100).toPrecision(15))); // wie centVerteilen
         const cent = genau.map((x) => Math.floor(x + 1e-6));
         const fehlen = Math.round(ziel * 100) - cent.reduce((x, y) => x + y, 0);
         if (fehlen < 0 || fehlen > cent.length) return null;
@@ -1971,6 +2061,8 @@
           bleibt: r.rohertrag === null || weg.kosten === null ? null : runde(r.rohertrag - weg.kosten) });
       });
       aus.marge = { schichten: fifo.schichten, abfuellungen: jeAbfuellung, aktuell: aktuell, ueber: fifo.ueber, fehlt: fifo.fehlt, abweichung: abweichung,
+        // Gutschriften, deren Menge nicht eindeutig zu ihrer Rechnung passt (Rest zum Durchschnitt, Codex-Nachprüfung v39)
+        unklar: fifo.unklar.map((u) => ({ rechnung: u.rechnung, kunde: zeilen[u.zeile].kunde, datum: zeilen[u.zeile].datum, flaschen: u.flaschen })),
         verluste: verluste, mehr: fifo.mehr, flaschen: flaschen, kostenJeZeile: fifo.kosten,
         // Seit v38 für den Gewinn: was ohne Verkauf wegging, je Monat über alle Monate (ohne die alte Lücke), alt zuerst.
         // Kosten ungerundet, damit die Jahressumme im Gewinn auf den Cent die aus „Ohne Verkauf weg“ ist (Codex v38)
@@ -1980,7 +2072,7 @@
         kanaele: mitAnteil(zj.kanaele.map((x) => Object.assign({ kanal: x.kanal }, roh(kanS[x.kanal] || leer()))).filter(zeigt)),
         top: mitAnteil(zj.kunden.map((x) => Object.assign({ kunde: x.kunde }, roh(kunS[x.schluessel] || leer()))).filter(zeigt)).sort(nachErtrag)
           .slice(0, 10).map((x, i) => Object.assign({ rang: i + 1 }, x)),
-        unterKosten: { anzahl: unter.length, flaschen: runde(unterFl), anteil: flSumme > 0 ? zehntel((unterFl / flSumme) * 100) : 0 } };
+        unterKosten: { anzahl: unter.length, flaschen: runde(unterFl), anteil: flHeute > 0 ? zehntel((unterFl / flHeute) * 100) : 0 } };
       // Was nach den Abgängen bleibt, nur in Euro: Rohertrag aus den Verkäufen minus Herstellkosten der Flaschen, die
       // ohne Verkauf weg sind. Marge und Rohertrag selbst beziehen sich weiter nur auf verkaufte Flaschen (Mark,
       // 2026-11-10: „die Marge soll dadurch nicht runtergehen“), deshalb hier bewusst kein Prozentwert.
@@ -2006,8 +2098,12 @@
    * neben seinem genauen Wert; geht auch mit Beträgen im Minus. Rückgabe { cent: [ganze Cent], summe: ganze Cent }.
    */
   function centVerteilen(werte) {
-    const summe = Math.round(runde(werte.reduce((x, y) => x + y, 0)) * 100);
-    const genau = werte.map((x) => x * 100);
+    // NaN und ±Infinity zählen als 0; 1,005 € sind 100,5 Cent, nicht 100,4999…
+    const genau = werte.map((x) => (Number.isFinite(x) ? Number((x * 100).toPrecision(15)) : 0));
+    // Erst dezimalgenau summieren (ganze Millionstel Cent), dann kaufmännisch auf den Cent: 2,005 € − 2 € ist 1 Cent,
+    // nicht 0,4999… Cent (Codex-Nachprüfung v39, dritte Runde)
+    const millionstel = genau.reduce((x, y) => x + Math.round(y * 1e6), 0);
+    const summe = (millionstel < 0 ? -1 : 1) * Math.round(Math.abs(millionstel) / 1e6) || 0;
     const cent = genau.map((x) => Math.floor(x + 1e-6));
     const fehlen = summe - cent.reduce((x, y) => x + y, 0);
     if (fehlen >= 0 && fehlen <= cent.length) {
@@ -2070,9 +2166,15 @@
     const kMonate = kz.map((x) => x[0]).sort();
     const aeltester = datumGueltig(kosten.aeltestes) ? kosten.aeltestes.slice(0, 7) : kMonate.length ? kMonate[0] : datumGueltig(kosten.neuestes) ? kosten.neuestes.slice(0, 7) : '';
     // Ein neuester Beleg nach heute (nur von der älteren Schnittstelle, die Zukunftsbelege noch mitzählt) sagt nichts
-    // darüber, bis wann es Belege gibt: dann der letzte Monat der Zeilen (Codex v39)
-    const neu = datumGueltig(kosten.neuestes) && kosten.neuestes <= heute ? kosten.neuestes.slice(0, 7) : '';
-    const stand = neu || (kMonate.length ? kMonate[kMonate.length - 1] : '');
+    // darüber, bis wann es Belege gibt: dann der letzte Monat der Zeilen (Codex v39). Der laufende Monat fällt dann weg,
+    // denn seine Summe kann den Zukunftsbeleg enthalten (Codex-Nachprüfung v39); `offenAb` zeigt den kürzeren Stand.
+    const zukunft = datumGueltig(kosten.neuestes) && kosten.neuestes > heute;
+    const neu = datumGueltig(kosten.neuestes) && !zukunft ? kosten.neuestes.slice(0, 7) : '';
+    // Als letzter sicherer Monat zählt dann auch der des ältesten Belegs, wenn er vor dem laufenden liegt: Heben sich die
+    // Belege eines Monats auf, fehlt er in den Zeilen, abgedeckt ist er trotzdem (Codex-Nachprüfung v39, dritte Runde)
+    const alt = datumGueltig(kosten.aeltestes) && kosten.aeltestes.slice(0, 7) < jetzt ? [kosten.aeltestes.slice(0, 7)] : [];
+    const sicher = zukunft ? kMonate.filter((m) => m < jetzt).concat(alt).sort() : kMonate;
+    const stand = neu || (sicher.length ? sicher[sicher.length - 1] : '');
     if (!aeltester || !stand) return keineBelege;
     const startJahr = Math.max(KOSTEN_START_JAHR, Number(aeltester.slice(0, 4)));
     if (stand < startJahr + '-01') return { hinweis: 'Noch keine Belege aus Lexware ab ' + startJahr + '.', grund: 'belege' };
@@ -2157,7 +2259,7 @@
       bis: bis, offenAb: bis < ende ? monatPlus(bis, 1) : null,
       kategorien: kategorien, wareLexware: cent(ware), abgefuellt: abgefuellt, ohneArt: cent(ohneArt),
       belege: istZahl(kosten.belege) ? kosten.belege : null, offen: istZahl(kosten.offen) ? kosten.offen : 0,
-      neuestes: datumGueltig(kosten.neuestes) ? kosten.neuestes : null, fehler: istZahl(kosten.fehler) && kosten.fehler > 0 ? kosten.fehler : 0 };
+      neuestes: datumGueltig(kosten.neuestes) && kosten.neuestes <= heute ? kosten.neuestes : null, fehler: istZahl(kosten.fehler) && kosten.fehler > 0 ? kosten.fehler : 0 };
   }
 
   /**
@@ -2220,7 +2322,9 @@
     const lfm = monatPlus(jetzt, -1);
     const mitKosten = Array.isArray(kosten);
     const alle = zeilen.map((z, i) => ({ z: z, k: mitKosten ? kosten[i] : null }))
-      .filter((x) => x.z && typeof x.z.monat === 'string' && MONAT_MUSTER.test(x.z.monat) && x.z.monat <= jetzt && istZahl(x.z.flaschen));
+      .filter((x) => x.z && typeof x.z.monat === 'string' && MONAT_MUSTER.test(x.z.monat) && x.z.monat <= jetzt && istZahl(x.z.flaschen) &&
+        // eine Rechnung mit Datum nach heute zählt erst an ihrem Tag, wie im Rohertrag (Codex-Nachprüfung v39)
+        !(datumGueltig(x.z.datum) && x.z.datum > heute));
     const jahrVon = (x) => Number(x.z.monat.slice(0, 4));
     const nachName = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
 
