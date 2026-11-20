@@ -275,6 +275,88 @@ test('uebersichtBauen: Lexware-Kosten mit falscher Kopfzeile oder nur Kopf (v38)
     { zeilen: [], belege: 0, offen: 0, neuestes: null, aeltestes: null, fehler: 0, lieferanten: [] });
 });
 
+/** Tab Lexware-Rechnungen wie vom Belege-Skript (erfundene Belege): Kopf A–L, Daten als Datumszellen, Gutschriften negativ. */
+const rechnungenKopf = () => ['Belegnr.', 'Typ', 'Datum', 'Fällig am', 'Kunde', 'brutto (€)', 'offen (€)', 'Status', 'Währung', 'Lexware-ID', 'geändert', 'Kunden-ID'];
+const beleg = (nr, datum, faellig, kunde, offen, status, kid, waehrung) => [nr, offen < 0 ? 'Gutschrift' : 'Rechnung', datum, faellig, kunde,
+  offen, offen, status, waehrung === undefined ? 'EUR' : waehrung, 'id-' + nr, '2026-11-01T10:00:00.000+01:00', kid || ''];
+/** Verkäufe mit eigenen Rechnungsnummern (Mark hat in Spalte E Namen vereinheitlicht). */
+const vkZeile = (j, m, t, kunde, nr) => [D.zelle(j, m, 1), D.zelle(j, m, t), 'Lexware', 'Karlsruhe', kunde, 24, 1, 0.08, 50, nr, '', ''];
+
+test('uebersichtBauen: ohne Tab Lexware-Rechnungen ist forderungen null (v41)', () => {
+  const r = rohdaten();
+  assert.strictEqual(roh(k.uebersichtBauen(r, D.berlin, new Date('2026-11-08T15:00:00Z'))).forderungen, null);
+  r.lexwareRechnungen = null;
+  assert.strictEqual(roh(k.uebersichtBauen(r, D.berlin, new Date('2026-11-08T15:00:00Z'))).forderungen, null);
+});
+
+test('uebersichtBauen: offene Rechnungen je Kunde, Zuordnung über Nummer, Kunden-ID und Name (v41)', () => {
+  const r = rohdaten();
+  r.verkaeufe = [D.verkaufKopf(),
+    vkZeile(2026, 6, 1, 'Hochkant Festival', 'RE100'), // in Lexware „kultursphäre“, Mark hat den Namen vereinheitlicht
+    vkZeile(2026, 7, 1, 'Bar Eins', 'RE200 #2'), // zweite Zeile derselben Rechnung
+    vkZeile(2026, 7, 2, 'Späti Zwei', ''),
+    vkZeile(2026, 8, 1, 'Doppel A', 'RE900'), vkZeile(2026, 8, 2, 'Doppel B', 'RE900')]; // Nummer mehrdeutig
+  r.lexwareRechnungen = [rechnungenKopf(),
+    beleg('RE100', D.zelle(2026, 6, 1), D.zelle(2026, 6, 15), 'kultursphäre', 0, 'paid', 'k1'), // bezahlt: zählt nicht, verknüpft aber k1
+    beleg('RE101', D.zelle(2026, 10, 1), D.zelle(2026, 10, 15), 'kultursphäre', 1190, 'overdue', 'k1'), // über die Kunden-ID
+    beleg('RE102', D.zelle(2026, 11, 1), D.zelle(2026, 11, 15), 'kultursphäre', 500.5, 'open', 'k1'), // noch nicht fällig
+    beleg(' re 200 ', D.zelle(2026, 7, 1), D.zelle(2026, 7, 15), 'Bar Eins GmbH', 300, 'open', 'k2'), // Status open, aber fällig: überfällig
+    beleg('GS1', D.zelle(2026, 10, 20), '', 'Bar Eins GmbH', -50, 'open', 'k2'), // offene Gutschrift mindert, nie überfällig
+    beleg('RE300', D.zelle(2026, 10, 2), D.zelle(2026, 10, 30), 'Späti Zwei e.K.', 80, 'overdue', 'k3'), // nur über den Namen
+    beleg('RE400', D.zelle(2026, 9, 1), D.zelle(2026, 9, 10), 'Neuer Laden', 99.99, 'overdue', 'k4'), // passt zu niemandem
+    beleg('RE901', D.zelle(2026, 10, 3), D.zelle(2026, 11, 20), 'Doppel', 10, 'open', ''), // RE900 mehrdeutig, Name passt nicht
+    beleg('RE500', D.zelle(2026, 5, 1), D.zelle(2026, 5, 10), 'Alt', 70, 'voided', 'k5'), // storniert
+    beleg('RE501', D.zelle(2026, 5, 1), D.zelle(2026, 5, 10), 'Alt', 0, 'paidoff', 'k5'),
+    beleg('RE502', D.zelle(2026, 5, 1), D.zelle(2026, 5, 10), 'Alt', 'kaputt', 'open', 'k5'), // unlesbar: Hinweis
+    beleg('RE503', D.zelle(2026, 5, 1), D.zelle(2026, 5, 10), 'Alt', 20, 'open', 'k5', 'CHF'), // fremde Währung: Hinweis
+    ['', '', '', '', '', '', '', '', '', '', '', ''], []]; // leere Zeilen über alten Resten
+  const u = roh(k.uebersichtBauen(r, D.berlin, new Date('2026-11-08T15:00:00Z')));
+  const f = u.forderungen;
+  assert.deepStrictEqual([f.offen, f.ueberfaellig, f.anzahl], [2130.49, 1669.99, 7]);
+  assert.deepStrictEqual(f.kunden.map((x) => [x.kunde, x.lexware, x.offen, x.ueberfaellig]), [
+    ['Hochkant Festival', 'kultursphäre', 1690.5, 1190],
+    ['Bar Eins', 'Bar Eins GmbH', 250, 300],
+    ['', 'Neuer Laden', 99.99, 99.99],
+    ['Späti Zwei', 'Späti Zwei e.K.', 80, 80],
+    ['', 'Doppel', 10, 0]]);
+  // Belege nach Fälligkeit: [Nr., Datum, fällig, offen, Status, Tage seit Fälligkeit]
+  assert.deepStrictEqual(f.kunden[0].belege, [['RE101', '2026-10-01', '2026-10-15', 1190, 'overdue', 24], ['RE102', '2026-11-01', '2026-11-15', 500.5, 'open', -7]]);
+  assert.deepStrictEqual(f.kunden[1].belege, [['re 200', '2026-07-01', '2026-07-15', 300, 'overdue', 116], ['GS1', '2026-10-20', '', -50, 'open', null]]);
+  assert.ok(u.hinweise.includes('Tab Lexware-Rechnungen: 1 offene Rechnung ohne lesbaren Betrag, zählt nicht.'), JSON.stringify(u.hinweise));
+  assert.ok(u.hinweise.includes('Tab Lexware-Rechnungen: 1 offene Rechnung nicht in Euro, zählt nicht.'));
+});
+
+test('uebersichtBauen: Lexware-Rechnungen mit falscher Kopfzeile, nur Kopf, Kunden-ID mit zwei Kunden (v41)', () => {
+  const r = rohdaten();
+  r.lexwareRechnungen = [rechnungenKopf().map((x, i) => (i === 6 ? 'offen' : x))];
+  const u = roh(k.uebersichtBauen(r, D.berlin, new Date('2026-11-08T15:00:00Z')));
+  assert.strictEqual(u.forderungen, null);
+  assert.ok(u.hinweise.includes('Tab Lexware-Rechnungen: Kopfzeile passt nicht, offene Rechnungen fehlen in der App.'));
+  r.lexwareRechnungen = [rechnungenKopf()];
+  assert.deepStrictEqual(roh(k.uebersichtBauen(r, D.berlin, new Date('2026-11-08T15:00:00Z')).forderungen),
+    { offen: 0, ueberfaellig: 0, anzahl: 0, kunden: [] });
+  // Eine Lexware-Kunden-ID, deren Rechnungen in Verkäufe zu zwei Kunden gehören: keine Zuordnung über die ID
+  r.verkaeufe = [D.verkaufKopf(), vkZeile(2026, 6, 1, 'Laden Nord', 'RE1'), vkZeile(2026, 6, 2, 'Laden Süd', 'RE2')];
+  r.lexwareRechnungen = [rechnungenKopf(),
+    beleg('RE1', D.zelle(2026, 6, 1), D.zelle(2026, 6, 15), 'Laden GmbH', 0, 'paid', 'k1'),
+    beleg('RE2', D.zelle(2026, 6, 2), D.zelle(2026, 6, 15), 'Laden GmbH', 0, 'paid', 'k1'),
+    beleg('RE3', D.zelle(2026, 10, 2), D.zelle(2026, 12, 1), 'Laden GmbH', 40, 'open', 'k1')];
+  const f = roh(k.uebersichtBauen(r, D.berlin, new Date('2026-11-08T15:00:00Z')).forderungen);
+  assert.deepStrictEqual(f.kunden.map((x) => [x.kunde, x.lexware, x.offen]), [['', 'Laden GmbH', 40]]);
+  // Codex v41: Eine Nummer der Kunden-ID ist in Verkäufe mehrdeutig (zwei Kunden): auch dann keine Zuordnung über die ID
+  r.verkaeufe = [D.verkaufKopf(), vkZeile(2026, 6, 1, 'Laden Nord', 'RE1'), vkZeile(2026, 6, 2, 'Laden Nord', 'RE2'), vkZeile(2026, 6, 3, 'Laden Süd', 'RE2')];
+  const f2 = roh(k.uebersichtBauen(r, D.berlin, new Date('2026-11-08T15:00:00Z')).forderungen);
+  assert.deepStrictEqual(f2.kunden.map((x) => x.kunde), ['']);
+  // Codex v41: Namensabgleich nimmt nur die Rechtsform am Ende weg, „und“ bleibt („Café und Bar GmbH“ ≠ „Café Bar“)
+  assert.strictEqual(k.kundeVergleich_('Café und Bar GmbH'), 'cafe und bar');
+  assert.strictEqual(k.kundeVergleich_('Müller GmbH & Co. KG'), 'muller');
+  assert.strictEqual(k.kundeVergleich_('Späti Zwei e.K.'), 'spati zwei');
+  assert.strictEqual(k.kundeVergleich_('AG'), 'ag');
+  r.verkaeufe = [D.verkaufKopf(), vkZeile(2026, 6, 1, 'Café Bar', '')];
+  r.lexwareRechnungen = [rechnungenKopf(), beleg('RE7', D.zelle(2026, 10, 2), D.zelle(2026, 12, 1), 'Café und Bar GmbH', 40, 'open', 'k7')];
+  assert.strictEqual(roh(k.uebersichtBauen(r, D.berlin, new Date('2026-11-08T15:00:00Z')).forderungen).kunden[0].kunde, '');
+});
+
 test('Vergleichsmonate: die 12 Monate vor dem Diagramm-Zeitraum', () => {
   const v = [{ monat: '2024-11', kanal: 'Karlsruhe', kunde: 'A', flaschen: 7, umsatz: 7 },
     { monat: '2025-10', kanal: 'Karlsruhe', kunde: 'A', flaschen: 9, umsatz: 9 }];

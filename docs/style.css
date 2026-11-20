@@ -386,6 +386,24 @@ h3.gruppe { font-size: 13px; font-weight: 600; color: var(--leise); margin: 22px
 .blatt-zahlen.zwei { grid-template-columns: repeat(2, 1fr); }
 .blatt-knoepfe { display: grid; gap: 10px; margin: 18px 0 4px; }
 
+/* Offene Rechnungen aus Lexware (seit v41): ruhige Zeile „Offen“ auf dem Start, Überfälliges in Rot (Zustand, nicht
+   antippbar), im Blatt und im Kunden-Blatt Zeilen wie die Kundenliste; in der Kundenliste ein kleines rotes „überfällig“ */
+.offen-karte { width: 100%; display: flex; align-items: center; gap: 12px; padding: 14px 16px; border: 0; color: var(--text); font: inherit;
+  text-align: left; cursor: pointer; -webkit-appearance: none; appearance: none; }
+.offen-karte.gedrueckt { transform: scale(0.98); background: var(--karte-druck); }
+.offen-karte:focus-visible { outline: 2px solid var(--akzent); outline-offset: 2px; }
+.offen-text { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.offen-wert { margin-top: 4px; font-size: 22px; font-weight: 700; line-height: 1.15; font-variant-numeric: tabular-nums; }
+.offen-unter { margin-top: 2px; font-size: 13px; color: var(--leise); font-variant-numeric: tabular-nums; }
+.offen-unter.offen-ueber, .blatt-wert.beleg-ueber, .rang-umsatz.beleg-ueber { color: var(--rot); }
+.badge.badge-ueber { background: var(--rot-weich); color: var(--rot); }
+.zeilen-knopf.beleg-still { cursor: default; }
+/* Zeilen ohne Pfeil (Kunde nicht in der App) halten die Beträge in einer Flucht mit den Zeilen mit Pfeil */
+.mit-pfeil .zeilen-knopf.beleg-still { padding-right: 37px; }
+.liste > li.beleg-summe { padding: 12px 0; font-size: 15px; color: var(--leise); }
+.hinweis.offen-fuss { margin: 10px 0 0; font-size: 13px; }
+.liste > li.beleg-summe .zeile-wert { color: var(--text); }
+
 /* Hinweis-Karte (z. B. Jahresinventur): Rahmen in der Akzentfarbe, Symbol, Text, Pfeil */
 .hinweis-karte { width: 100%; display: flex; align-items: center; gap: 12px; border: 0; color: var(--text); font: inherit; text-align: left;
   cursor: pointer; -webkit-appearance: none; appearance: none; box-shadow: inset 0 0 0 1.5px var(--akzent-weich); }

@@ -256,6 +256,8 @@ function tabellenLesen_(ss) {
   const tab = (name) => tabHolen_(ss, name);
   // Lexware-Kosten (seit v38) sind freiwillig: Fehlt der Tab, ist es null und alles andere läuft wie vorher
   const kosten = ss.getSheetByName(LEXWARE_KOSTEN_TAB);
+  // Lexware-Rechnungen (seit v41) ebenso: Fehlt der Tab, ist es null und die App zeigt keine offenen Rechnungen
+  const rechnungen = ss.getSheetByName(LEXWARE_RECHNUNGEN_TAB);
   return {
     verkaeufe: tab(VERKAEUFE_TAB).getDataRange().getValues(),
     lagerLog: tab(LAGER_LOG_TAB).getDataRange().getValues(),
@@ -263,6 +265,7 @@ function tabellenLesen_(ss) {
     abfuellungen: tab(ABFUELLUNGEN_TAB).getDataRange().getValues(),
     uebersicht: tab(UEBERSICHT_TAB).getRange(BEREICH_UEBERSICHT).getValues(),
     lexwareKosten: kosten ? kosten.getDataRange().getValues() : null,
+    lexwareRechnungen: rechnungen ? rechnungen.getDataRange().getValues() : null,
   };
 }
 

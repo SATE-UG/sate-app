@@ -304,7 +304,8 @@
    * (Flaschen, Vergleich, Bestellungen, neue Kunden), laufender Monat bisher, dann Jahr, Bestand und Bestelltermin.
    * `u` = Antwort `uebersicht`, `jv` = jahresVergleich, `heute` = `JJJJ-MM-TT`, `prognose` = bestellPrognose (sonst
    * die einfache Rechnung aus `u.bestellung`), `mehr` (optional) = { zeilen (verkaufZeilen), jvVorjahr (für den
-   * Dezember im Januar und das abgelaufene Jahr) }. Nur Zahlen, keine Kundennamen.
+   * Dezember im Januar und das abgelaufene Jahr) }. Seit v41 mit der Summe offener Rechnungen aus Lexware, wenn es sie
+   * gibt. Nur Zahlen, keine Kundennamen.
    */
   function standText(u, jv, heute, prognose, mehr) {
     const fl = (n) => zahlFormat(n, 0) + (Math.abs(n) === 1 ? ' Flasche' : ' Flaschen');
@@ -357,6 +358,11 @@
       const t = tageZwischen(heute, b.spaetestensBestellen);
       lage.push(t > 0 ? '🛒 Abfüllung bestellen bis ' + datumText(b.spaetestensBestellen)
         : t === 0 ? '⚠️ Abfüllung heute bestellen' : '⚠️ Abfüllung bestellen: überfällig seit ' + datumText(b.spaetestensBestellen));
+    }
+    // Offene Rechnungen aus Lexware (seit v41): nur die Summen, keine Kundennamen
+    const fd = forderungenDaten(u && u.forderungen);
+    if (fd && (fd.offen > 0 || fd.ueberfaellig > 0)) {
+      lage.push('🧾 Offene Rechnungen: ' + summeFormat(fd.offen) + (fd.ueberfaellig > 0 ? ', davon ' + summeFormat(fd.ueberfaellig) + ' überfällig' : ''));
     }
     if (lage.length) bloecke.push(lage);
     bloecke.push(['Trink SATE! 🤍']);
@@ -1236,6 +1242,76 @@
     if (tage < 14) return tage === 1 ? 'gestern' : 'vor ' + tage + ' Tagen';
     if (tage < 60) return 'vor ' + Math.round(tage / 7) + ' Wochen';
     return 'vor ' + Math.round(tage / (365.25 / 12)) + ' Monaten';
+  }
+
+  // Offene Rechnungen aus Lexware (seit v41) ----------------------------------------------------------------
+
+  /**
+   * `forderungen` der Schnittstelle (seit v41) → { offen, ueberfaellig, anzahl, kunden, jeKunde } für Start und Kunden,
+   * oder null (ältere Schnittstelle, Tab fehlt, nichts offen, unlesbar). `kunden` = [{ kunde ('' = in der App keiner),
+   * lexware, name (zum Zeigen), schluessel (wie kundeSchluessel, '' ohne Kunden), offen, ueberfaellig, belege }],
+   * `belege` = [{ nr, datum, faellig, offen, ueber, tage, gutschrift }]. `jeKunde[schluessel]` = der Kunde in der App
+   * (stehen zwei Einträge für denselben, zusammengefasst). Unlesbare Belege fallen weg.
+   */
+  function forderungenDaten(f) {
+    if (!f || typeof f !== 'object' || !Array.isArray(f.kunden) || !istZahl(f.offen) || !istZahl(f.ueberfaellig)) return null;
+    const jeKunde = Object.create(null);
+    const kunden = [];
+    f.kunden.forEach((k) => {
+      if (!k || typeof k !== 'object' || !Array.isArray(k.belege)) return;
+      const belege = k.belege.filter((b) => Array.isArray(b) && istZahl(b[3]) && b[3] !== 0).map((b) => ({
+        nr: String(b[0] === undefined || b[0] === null ? '' : b[0]), datum: datumGueltig(b[1]) ? b[1] : '', faellig: datumGueltig(b[2]) ? b[2] : '',
+        offen: b[3], ueber: b[4] === 'overdue', tage: istZahl(b[5]) ? b[5] : null, gutschrift: b[3] < 0,
+      }));
+      if (!belege.length) return;
+      const kunde = typeof k.kunde === 'string' ? k.kunde.trim() : '';
+      const lexware = typeof k.lexware === 'string' ? k.lexware.trim() : '';
+      const x = { kunde: kunde, lexware: lexware, name: kunde || lexware || 'Ohne Namen', schluessel: kunde ? kundeSchluessel(kunde) : '',
+        offen: istZahl(k.offen) ? k.offen : 0, ueberfaellig: istZahl(k.ueberfaellig) ? k.ueberfaellig : 0, belege: belege };
+      kunden.push(x);
+      if (!x.schluessel) return;
+      const da = jeKunde[x.schluessel];
+      jeKunde[x.schluessel] = da ? Object.assign({}, da, { offen: aufCent(da.offen + x.offen), ueberfaellig: aufCent(da.ueberfaellig + x.ueberfaellig),
+        belege: da.belege.concat(x.belege).sort(belegVorher) }) : x;
+    });
+    if (!kunden.length) return null;
+    return { offen: f.offen, ueberfaellig: f.ueberfaellig, anzahl: kunden.reduce((n, k) => n + k.belege.length, 0), kunden: kunden, jeKunde: jeKunde };
+  }
+  function aufCent(z) { return Math.round(z * 100) / 100; }
+  /** Reihenfolge offener Belege: Überfälliges zuerst, dann nach Fälligkeit, ohne Fälligkeit (Gutschriften) nach Datum ans Ende. */
+  function belegVorher(a, b) {
+    if (a.ueber !== b.ueber) return a.ueber ? -1 : 1;
+    if (!a.faellig !== !b.faellig) return a.faellig ? -1 : 1;
+    if (a.faellig !== b.faellig) return a.faellig < b.faellig ? -1 : 1;
+    return a.datum < b.datum ? -1 : a.datum > b.datum ? 1 : 0;
+  }
+
+  /** Alle offenen Belege aus forderungenDaten flach, je mit `kunde` (dem Eintrag aus `kunden`), Überfälliges oben. */
+  function offeneBelege(fd) {
+    if (!fd) return [];
+    return fd.kunden.reduce((alle, k) => alle.concat(k.belege.map((b) => Object.assign({ kunde: k }, b))), []).sort(belegVorher);
+  }
+
+  /** Fälligkeit in Worten: „24 Tage überfällig“, „heute fällig“, „in 7 Tagen fällig“, „Gutschrift“. */
+  function faelligText(b) {
+    if (!b) return '';
+    if (b.gutschrift) return 'Gutschrift';
+    const t = b.tage;
+    if (b.ueber) return istZahl(t) && t > 0 ? (t === 1 ? '1 Tag' : zahlFormat(t, 0) + ' Tage') + ' überfällig' : 'überfällig';
+    if (!istZahl(t)) return 'offen';
+    if (t === 0) return 'heute fällig';
+    if (t === -1) return 'morgen fällig';
+    return t < 0 ? 'in ' + zahlFormat(-t, 0) + ' Tagen fällig' : 'seit ' + zahlFormat(t, 0) + (t === 1 ? ' Tag' : ' Tagen') + ' fällig';
+  }
+
+  /** Betrag mit Cent: 1.190,50 €. */
+  function centFormat(z) {
+    return istZahl(z) ? zahlFormat(z, 2) + ' €' : '–';
+  }
+
+  /** Summe offener Rechnungen: ab 100 € ohne Cent (12.345 €), darunter mit Cent, damit 0,49 € nicht als 0 € erscheint. */
+  function summeFormat(z) {
+    return istZahl(z) && Math.abs(z) < 100 ? centFormat(z) : euroFormat(z);
   }
 
   function zehntel(z) { return Math.round(z * 10) / 10; }
@@ -2607,6 +2683,7 @@
     bestellungenZaehlen, wannText, abstandText, monatName, wochentagText, dauerText, datumAbkuerzungen, buchungVorschau, standText, frageTeilen, inventurAm, jahresStichtag, prognoseSaison, aktivitaet, monatsTage, letzteBestellungen,
     datumMonatePlus, ersterVerkaufsmonat, bekannteRechnungen, bestellPrognose, dashboardDaten, dashboardMehr, bestellListe, fifoSchichten, fifoKosten, kostenAusEingabe, MAX_KOSTEN_PRO_FLASCHE,
     auswerten, AUSWERTEN_KENNZAHLEN, AUSWERTEN_NACH, spaltenTeilen, gewinnRechnen, centVerteilen, kostenRechnen, TOP_LIEFERANTEN,
+    forderungenDaten, offeneBelege, faelligText, centFormat, summeFormat,
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = hilfen;
   else wurzel.SATE_HILFEN = hilfen;

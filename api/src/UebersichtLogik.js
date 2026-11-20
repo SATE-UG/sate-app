@@ -104,12 +104,125 @@ function lexwareKostenLesen(zeilen, formatieren, hinweise, heute) {
   return aus;
 }
 
+/** Kundenname zum Abgleich mit Lexware: klein, ohne Akzente und Satzzeichen, ohne Rechtsform am Ende („Kultursphäre GmbH“ → „kultursphare“). */
+function kundeVergleich_(name) {
+  const t = String(name === undefined || name === null ? '' : name).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .replace(/ß/g, 'ss').replace(/\./g, '').replace(/[^a-z0-9]+/g, ' ').trim();
+  // Nur Rechtsformen am Ende fallen weg („Müller GmbH & Co. KG“ → „muller“), der übrige Name bleibt, wie er ist
+  const w = t.split(' ').filter(Boolean);
+  while (w.length > 1 && KUNDE_RECHTSFORMEN.indexOf(w[w.length - 1]) >= 0) w.pop();
+  return w.join(' ');
+}
+
+/** Rechnungsnummer zum Abgleich: ohne Positions-Zusatz („#2“), ohne Leerzeichen, groß. */
+function rechnungVergleich_(nr) {
+  return rechnungOhnePosition(nr).replace(/\s+/g, '').toUpperCase();
+}
+
+/**
+ * Tab Lexware-Rechnungen (seit v41, getValues, erste Zeile Kopf) → offene Forderungen für die App:
+ * { offen, ueberfaellig, anzahl, kunden: [{ kunde, lexware, offen, ueberfaellig, belege }] }. Es zählen nur Belege mit
+ * Status `open` oder `overdue` und einem offenen Betrag ≠ 0 (offene Gutschriften negativ, sie mindern `offen`).
+ * Überfällig ist ein Beleg mit Status `overdue` oder mit „Fällig am“ vor `heute` (falls Lexware den Status nicht selbst
+ * setzt), Gutschriften nie. `belege` = [[Belegnr., Datum, Fällig am ('' ohne), offen, `overdue`/`open`, Tage seit
+ * Fälligkeit (negativ: noch nicht fällig, null ohne Fälligkeit)]], nach Fälligkeit. `kunde` = Name des Kunden wie im Tab
+ * Verkäufe ('' = keiner passt, dann steht `lexware` da). Zuordnung ohne Raten, in dieser Reihenfolge: dieselbe
+ * Rechnungsnummer steht in Verkäufe; eine andere Rechnung derselben Lexware-Kunden-ID steht dort (nur wenn alle zum
+ * selben Kunden führen und keine ihrer Nummern mehrdeutig ist); der Name passt bis auf Groß/klein, Akzente, Satzzeichen
+ * und Rechtsform am Ende (nur eindeutig).
+ * Kunden mit Überfälligem zuerst. Fehlt der Tab: null. Passt die Kopfzeile nicht: null mit Hinweis.
+ */
+function forderungenLesen(zeilen, verkaeufe, formatieren, hinweise, heute) {
+  if (!Array.isArray(zeilen)) return null;
+  const kopf = zeilen[0] || [];
+  if (Object.keys(LR_KOPF).some((i) => String(kopf[i] || '').trim() !== LR_KOPF[i])) {
+    hinweise.push('Tab ' + LEXWARE_RECHNUNGEN_TAB + ': Kopfzeile passt nicht, offene Rechnungen fehlen in der App.');
+    return null;
+  }
+  const text = (w) => String(w === undefined || w === null ? '' : w).trim();
+  // Kunde je Rechnungsnummer und je Name aus Verkäufe; führen zwei Zeilen zu verschiedenen Kunden: mehrdeutig (false)
+  const merken = (karte, k, v) => {
+    if (!k) return;
+    const s = kundeSchluessel(v.kunde);
+    if (karte[k] === undefined) karte[k] = { kunde: v.kunde, schluessel: s };
+    else if (karte[k] && karte[k].schluessel !== s) karte[k] = false;
+    else if (karte[k]) karte[k].kunde = v.kunde; // gleicher Kunde: der jüngste Name
+  };
+  const nachNr = Object.create(null);
+  const nachName = Object.create(null);
+  (verkaeufe || []).forEach((v) => {
+    if (!v.kunde) return;
+    if (v.rechnung) merken(nachNr, rechnungVergleich_(v.rechnung), v);
+    merken(nachName, kundeVergleich_(v.kunde), v);
+  });
+  const treffer = (karte, k) => (k && karte[k] ? karte[k] : null);
+  // Kunden-ID → Kunde über alle Belege des Tabs (auch bezahlte), deren Nummer in Verkäufe steht
+  const nachId = Object.create(null);
+  const belege = [];
+  let kaputt = 0;
+  let fremd = 0;
+  for (let i = 1; i < zeilen.length; i++) {
+    const z = zeilen[i] || [];
+    const nr = text(z[LR.NR]);
+    const status = text(z[LR.STATUS]);
+    if (!nr && !status && text(z[LR.OFFEN]) === '' && !text(z[LR.KUNDE])) continue; // leere Zeile über alten Resten
+    const kid = text(z[LR.KUNDE_ID]);
+    const nrSchluessel = rechnungVergleich_(nr);
+    const t = treffer(nachNr, nrSchluessel);
+    if (kid && t) merken(nachId, kid, t);
+    else if (kid && nrSchluessel && nachNr[nrSchluessel] === false) nachId[kid] = false; // Nummer mehrdeutig: ID nicht sicher
+    if (!RECHNUNG_STATUS_OFFEN.test(status)) continue;
+    const offen = betragLesen(z[LR.OFFEN]);
+    if (offen === null) { kaputt++; continue; }
+    if (runde_(offen, 2) === 0) continue;
+    const waehrung = text(z[LR.WAEHRUNG]).toUpperCase();
+    if (waehrung && waehrung !== 'EUR') { fremd++; continue; }
+    const faellig = zelleDatum(z[LR.FAELLIG], formatieren) || '';
+    const tage = faellig && heute ? tageZwischen(faellig, heute) : null;
+    belege.push({
+      nr: nr, datum: zelleDatum(z[LR.DATUM], formatieren) || '', faellig: faellig, offen: runde_(offen, 2), tage: tage,
+      ueber: offen > 0 && (RECHNUNG_STATUS_UEBERFAELLIG.test(status) || (tage !== null && tage > 0)),
+      lexware: text(z[LR.KUNDE]), kid: kid, treffer: t,
+    });
+  }
+  if (kaputt) hinweise.push('Tab ' + LEXWARE_RECHNUNGEN_TAB + ': ' + kaputt + (kaputt === 1 ? ' offene Rechnung' : ' offene Rechnungen') + ' ohne lesbaren Betrag, zählt nicht.');
+  if (fremd) hinweise.push('Tab ' + LEXWARE_RECHNUNGEN_TAB + ': ' + fremd + (fremd === 1 ? ' offene Rechnung' : ' offene Rechnungen') + ' nicht in Euro, zählt nicht.');
+  const gruppen = Object.create(null);
+  const reihe = [];
+  belege.forEach((b) => {
+    const k = b.treffer || treffer(nachId, b.kid) || treffer(nachName, kundeVergleich_(b.lexware));
+    const schluessel = k ? 'k:' + k.schluessel : b.kid ? 'id:' + b.kid : 'n:' + kundeSchluessel(b.lexware);
+    let g = gruppen[schluessel];
+    if (!g) {
+      g = gruppen[schluessel] = { kunde: k ? k.kunde : '', lexware: b.lexware, offen: 0, ueberfaellig: 0, belege: [] };
+      reihe.push(g);
+    }
+    if (!g.lexware) g.lexware = b.lexware;
+    g.offen += b.offen;
+    if (b.ueber) g.ueberfaellig += b.offen;
+    g.belege.push(b);
+  });
+  // Nach Fälligkeit (ohne Fälligkeit, z. B. Gutschriften, nach dem Belegdatum ans Ende)
+  const vorher = (a, b) => (!a.faellig !== !b.faellig ? (a.faellig ? -1 : 1)
+    : a.faellig !== b.faellig ? (a.faellig < b.faellig ? -1 : 1) : a.datum < b.datum ? -1 : a.datum > b.datum ? 1 : 0);
+  const kunden = reihe.map((g) => ({
+    kunde: g.kunde, lexware: g.lexware, offen: runde_(g.offen, 2), ueberfaellig: runde_(g.ueberfaellig, 2),
+    belege: g.belege.sort(vorher).map((b) => [b.nr, b.datum, b.faellig, b.offen, b.ueber ? 'overdue' : 'open', b.tage]),
+  })).sort((a, b) => b.ueberfaellig - a.ueberfaellig || b.offen - a.offen || ((a.kunde || a.lexware) < (b.kunde || b.lexware) ? -1 : 1));
+  return {
+    offen: runde_(belege.reduce((x, b) => x + b.offen, 0), 2),
+    ueberfaellig: runde_(belege.reduce((x, b) => x + (b.ueber ? b.offen : 0), 0), 2),
+    anzahl: belege.length,
+    kunden: kunden,
+  };
+}
+
 /**
  * `roh`: { verkaeufe, lagerLog, einstellungen, abfuellungen } (2D-Arrays ganzer Tabs), `uebersicht`
- * (Übersicht!B8:B13 als 6×1) und `lexwareKosten` (ganzer Tab oder null, wenn es ihn nicht gibt).
+ * (Übersicht!B8:B13 als 6×1), `lexwareKosten` und `lexwareRechnungen` (ganzer Tab oder null, wenn es ihn nicht gibt).
  * `formatieren(date)` → `JJJJ-MM-TT` in Europe/Berlin, `jetzt` = Date.
  * Antwort ohne ok/name: { stand, heute, kennzahlen, bestellung, lager, verkaeufe, abfuellungen, abgaenge, schwund, kosten,
- * verkaufListe, hinweise }.
+ * forderungen, verkaufListe, hinweise }.
  */
 function uebersichtBauen(roh, formatieren, jetzt) {
   const heute = formatieren(jetzt);
@@ -125,6 +238,7 @@ function uebersichtBauen(roh, formatieren, jetzt) {
 
   const hinweise = [].concat(e.hinweise, vk.hinweise, log.hinweise, lager.hinweise);
   const kosten = lexwareKostenLesen(roh.lexwareKosten, formatieren, hinweise, heute);
+  const forderungen = forderungenLesen(roh.lexwareRechnungen, vk.verkaeufe, formatieren, hinweise, heute);
   if (gesamt.quelle === 'rechnerisch') {
     hinweise.unshift(gesamt.fehlen.length === lager.standorte.length
       ? 'Noch keine Inventur: Gesamtbestand ist der rechnerische aus der Übersicht (ohne Promo, Eigenverbrauch, Bruch).'
@@ -178,6 +292,8 @@ function uebersichtBauen(roh, formatieren, jetzt) {
     schwund: schwund,
     // Kosten aus Lexware (seit v38) für den vorläufigen Gewinn; null, solange es den Tab nicht gibt
     kosten: kosten,
+    // Offene Rechnungen aus Lexware (seit v41); null, solange es den Tab nicht gibt
+    forderungen: forderungen,
     verkaufListe: verkaufListeBauen(vk.verkaeufe, e, heute),
     hinweise: hinweise.length > MAX_HINWEISE
       ? hinweise.slice(0, MAX_HINWEISE - 1).concat(['… und ' + (hinweise.length - MAX_HINWEISE + 1) + ' weitere Hinweise.'])

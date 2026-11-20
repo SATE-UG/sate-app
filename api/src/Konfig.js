@@ -177,6 +177,25 @@ const KOSTEN_ARTEN = ['Ware', 'Sonstiges'];
 const KOSTEN_STATUS_ZAEHLT_NICHT = /^voided$/i;
 const KOSTEN_STATUS_OFFEN = /^(blank|unchecked)$/i;
 
+/**
+ * Tab „Lexware-Rechnungen“ (seit v41, nur lesen): schreibt das Belege-Skript (sate-belege, docs/lexware-api.md
+ * Abschnitt 6) täglich neu, eine Zeile pro Ausgangsrechnung bzw. Gutschrift ab 2025, Gutschriften negativ. Fehlt der
+ * Tab, liefert die Übersicht `forderungen: null` und die App zeigt nichts dazu. Spalten A Belegnr., B Typ, C Datum,
+ * D Fällig am, E Kunde, F brutto (€), G offen (€), H Status, I Währung, J Lexware-ID, K geändert, L Kunden-ID; gelesen
+ * werden A, C, D, E, G, H, I, L.
+ */
+const LEXWARE_RECHNUNGEN_TAB = 'Lexware-Rechnungen';
+const LR = { NR: 0, DATUM: 2, FAELLIG: 3, KUNDE: 4, OFFEN: 6, STATUS: 7, WAEHRUNG: 8, KUNDE_ID: 11 };
+const LR_KOPF = { 0: 'Belegnr.', 2: 'Datum', 3: 'Fällig am', 4: 'Kunde', 6: 'offen (€)', 7: 'Status', 8: 'Währung', 11: 'Kunden-ID' };
+/** Nur diese Status zählen als offene Forderung (`paid`, `paidoff`, `voided` und Entwürfe nicht). */
+const RECHNUNG_STATUS_OFFEN = /^(open|overdue)$/i;
+const RECHNUNG_STATUS_UEBERFAELLIG = /^overdue$/i;
+/**
+ * Rechtsformen, die beim Abgleich Lexware-Kunde → Kunde in der App am Namensende nicht zählen („Kultursphäre GmbH“
+ * passt zu „Kultursphäre“). Nur ganze Wörter nach dem Entfernen von Satzzeichen, nur am Ende.
+ */
+const KUNDE_RECHTSFORMEN = ['gmbh', 'mbh', 'ug', 'haftungsbeschrankt', 'ag', 'kg', 'ohg', 'gbr', 'ek', 'ev', 'co', 'ltd', 'inc', 'se'];
+
 /** Herstellkosten pro Flasche beim Eintragen: über 0 bis so viele Euro. */
 const MAX_KOSTEN_PRO_FLASCHE = 100;
 

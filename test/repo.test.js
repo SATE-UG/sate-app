@@ -355,8 +355,9 @@ test('PWA: Mehr Zahlen (früher Dashboard, v30 bis v35) – dichte Tabellen und 
 test('PWA: Start mit dem Jahr in Euro (v37) – Umsatz groß, Monate als kleine Balken, Rohertrag, Marge und Flaschen als Kacheln', () => {
   const css = lies('docs/style.css');
   const ansichten = lies('docs/ansichten.js');
-  // Reihenfolge: Bestell-Karte zuerst (Mark: gut so), dann im Dezember/Januar die Jahresinventur, das Jahr, Bestand und Kunden
-  assert.match(ansichten, /S\.fuellen\(ziel,\s*bestellKarte\(u, a\),\s*inventurHinweis\(u, a\.heute\),\s*jahrStart\(a\),\s*kennzahlen\(u, a\),\s*h\('div', \{ id: 'aktivitaet-inhalt' \}\),/);
+  // Reihenfolge: Bestell-Karte zuerst (Mark: gut so), dann im Dezember/Januar die Jahresinventur, das Jahr, Bestand und
+  // Kunden, seit v41 die Zeile „Offen“ (offene Rechnungen aus Lexware)
+  assert.match(ansichten, /S\.fuellen\(ziel,\s*bestellKarte\(u, a\),\s*inventurHinweis\(u, a\.heute\),\s*jahrStart\(a\),\s*kennzahlen\(u, a\),\s*offenStart\(\),\s*h\('div', \{ id: 'aktivitaet-inhalt' \}\),/);
   // Das Jahr: Kopf als Knopf (Umsatz groß, zum Vorjahr über die vollen Monate, laufender Monat), öffnet die Verkäufe mit Umsatz
   assert.match(ansichten, /class: 'jahr-start-kopf', onclick: \(\) => oeffnen\('umsatz'\),/);
   assert.match(ansichten, /const oeffnen = \(kennzahlWahl\) => zuVerkaeufen\(null, kennzahlWahl, jv\.jahr\);/);
@@ -447,7 +448,7 @@ test('PWA: App im Ganzen geordnet (v36) – Wahl oben in den Verkäufen, je Them
   // Blätter mit vielen Zahlen sind auf breiten Bildschirmen breit (zwei Spalten als Raster, verteilt in hilfen.js);
   // keine feste Höhe mehr, keine CSS-Spalten (zerrissen in Safari die Tabellen), kein :has (ältere iPhones)
   assert.match(kern, /S\.blattZeigen = function \(titel, inhalt, zurueck, gross\) \{[\s\S]{0,500}b\.classList\.toggle\('gross', gross === true\);/);
-  assert.strictEqual((ansichten.match(/S\.blattZeigen\(/g) || []).length, 3, 'Zahlen, Kunde, Lager');
+  assert.strictEqual((ansichten.match(/S\.blattZeigen\(/g) || []).length, 4, 'Zahlen, Kunde, Lager, offene Rechnungen (v41)');
   assert.strictEqual((ansichten.match(/S\.blattZeigen\([^;]*, true\);/g) || []).length, 1, 'nur die Zahlen-Blätter sind groß');
   assert.match(ansichten, /H\.spaltenTeilen\(bloecke\.map\(/);
   assert.match(dash, /@media \(min-width: 900px\) \{\s*\.blatt\.gross \{ max-width: 1040px; \}\s*\.dash-spalten \{ display: grid; grid-template-columns: repeat\(2, minmax\(0, 1fr\)\);/);
@@ -488,6 +489,32 @@ test('PWA: Gewinn vorläufig (v38) – Kachel auf dem Start, Thema „Gewinn und
   assert.match(api, /const kosten = ss\.getSheetByName\(LEXWARE_KOSTEN_TAB\);/);
   assert.match(api, /lexwareKosten: kosten \? kosten\.getDataRange\(\)\.getValues\(\) : null,/);
   assert.match(lies('api/src/Konfig.js'), /const LEXWARE_KOSTEN_TAB = 'Lexware-Kosten';/);
+});
+
+test('PWA: offene Rechnungen aus Lexware (v41) – Zeile auf dem Start, Blatt, Kunden-Blatt, Hinweis in der Kundenliste', () => {
+  const css = lies('docs/style.css');
+  const ansichten = lies('docs/ansichten.js');
+  const hilfen = lies('docs/hilfen.js');
+  // Start: nur wenn etwas offen ist; antippen öffnet das Blatt, danach zurück auf die Zeile
+  assert.match(ansichten, /if \(!fd \|\| !\(fd\.offen > 0 \|\| fd\.ueberfaellig > 0\)\) return null;/);
+  assert.match(ansichten, /'data-start': 'offen', onclick: \(\) => S\.offeneZeigen\(\)/);
+  assert.match(ansichten, /S\.blattZeigen\('Offene Rechnungen', \[/);
+  assert.match(ansichten, /\], \(\) => document\.querySelector\('#app \[data-start="offen"\]'\)\);/);
+  // Kunden: Abschnitt im Kunden-Blatt vor den letzten Bestellungen, rotes „überfällig“ in der Liste
+  assert.match(ansichten, /offenKunde\(schluessel\),\s*h\('p', \{ class: 'blatt-titel-klein', text: 'Letzte Bestellungen' \}\),/);
+  assert.match(ansichten, /ueber \? h\('span', \{ class: 'badge badge-ueber', text: 'überfällig' \}\) : null/);
+  assert.match(css, /\.badge\.badge-ueber \{ background: var\(--rot-weich\); color: var\(--rot\); \}/);
+  // Gerechnet in hilfen.js, keine Trennpunkte zwischen Wörtern (Mark)
+  const neu = ansichten.slice(ansichten.indexOf('// Offene Rechnungen aus Lexware (seit v41)'), ansichten.indexOf('/** Eine Zeile „Zuletzt passiert“'));
+  assert.ok(neu.length > 1000);
+  const neuH = hilfen.slice(hilfen.indexOf('// Offene Rechnungen aus Lexware (seit v41) ---'), hilfen.indexOf('function zehntel('));
+  assert.ok(neuH.length > 1000);
+  assert.doesNotMatch(neu + neuH, /[·•]/);
+  // Schnittstelle: Tab nur lesen, fehlt er, ist es null
+  const api = lies('api/src/Api.js');
+  assert.match(api, /const rechnungen = ss\.getSheetByName\(LEXWARE_RECHNUNGEN_TAB\);/);
+  assert.match(api, /lexwareRechnungen: rechnungen \? rechnungen\.getDataRange\(\)\.getValues\(\) : null,/);
+  assert.match(lies('api/src/Konfig.js'), /const LEXWARE_RECHNUNGEN_TAB = 'Lexware-Rechnungen';/);
 });
 
 test('PWA: Gewinn und Kosten als Dashboard (v40) – Monatsbild, Fixkosten und Break-even, Ring, Lieferanten, Wareneinkauf, eingebettet', () => {

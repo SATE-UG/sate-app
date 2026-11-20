@@ -1648,3 +1648,58 @@ test('v40 Kosten, Codex: Vergleich in Cent, letzter Belegmonat über den Jahresw
   const kb = H.kostenRechnen(H.gewinnRechnen(z, mg, kk, abf, '2026-04-10', 2026), z, kk, '2026-04-10');
   assert.deepStrictEqual([kb.fix.proMonat, kb.breakEven.rohertragProFlasche, kb.breakEven.flaschen], [1, 0.01, 101]);
 });
+
+// Offene Rechnungen aus Lexware (v41, Lexware-API Task 17) ------------------------------------------------------------
+
+/** `forderungen` wie von der Schnittstelle (erfunden). */
+const forderungenBeispiel = () => ({
+  offen: 1940.5, ueberfaellig: 1490, anzahl: 5,
+  kunden: [
+    { kunde: 'Hochkant Festival', lexware: 'kultursphäre', offen: 1690.5, ueberfaellig: 1190,
+      belege: [['RE101', '2026-10-01', '2026-10-15', 1190, 'overdue', 24], ['RE102', '2026-11-01', '2026-11-15', 500.5, 'open', -7]] },
+    { kunde: 'Bar Eins', lexware: 'Bar Eins GmbH', offen: 250, ueberfaellig: 300,
+      belege: [['RE200', '2026-07-01', '2026-07-15', 300, 'overdue', 116], ['GS1', '2026-10-20', '', -50, 'open', null]] },
+    { kunde: '', lexware: 'Neuer Laden', offen: 0, ueberfaellig: 0, belege: [['RE9', '2026-11-01', '2026-11-09', 'kaputt', 'open', 1]] },
+  ],
+});
+
+test('v41 offene Rechnungen: Daten für Start und Kunden, Reihenfolge, Texte', () => {
+  const fd = H.forderungenDaten(forderungenBeispiel());
+  // Kunde ohne lesbaren Beleg fällt weg; je Kunde in der App über den Schlüssel wie in der Kundenliste
+  assert.deepStrictEqual(fd.kunden.map((k) => [k.name, k.schluessel, k.belege.length]), [['Hochkant Festival', 'hochkant festival', 2], ['Bar Eins', 'bar eins', 2]]);
+  assert.strictEqual(fd.anzahl, 4);
+  assert.strictEqual(fd.jeKunde['hochkant festival'].lexware, 'kultursphäre');
+  // Flach: Überfälliges zuerst (nach Fälligkeit), dann noch nicht fällig, Gutschrift ohne Fälligkeit ans Ende
+  assert.deepStrictEqual(H.offeneBelege(fd).map((b) => [b.nr, b.kunde.name]), [['RE200', 'Bar Eins'], ['RE101', 'Hochkant Festival'], ['RE102', 'Hochkant Festival'], ['GS1', 'Bar Eins']]);
+  const b = H.offeneBelege(fd);
+  assert.deepStrictEqual(b.map(H.faelligText), ['116 Tage überfällig', '24 Tage überfällig', 'in 7 Tagen fällig', 'Gutschrift']);
+  assert.strictEqual(H.faelligText({ ueber: true, tage: 1 }), '1 Tag überfällig');
+  assert.strictEqual(H.faelligText({ ueber: true, tage: null }), 'überfällig');
+  assert.strictEqual(H.faelligText({ ueber: false, tage: 0 }), 'heute fällig');
+  assert.strictEqual(H.faelligText({ ueber: false, tage: -1 }), 'morgen fällig');
+  assert.strictEqual(H.centFormat(1190.5), '1.190,50 €');
+  // Ohne lesbares Feld (ältere Schnittstelle, Tab fehlt) oder ohne offene Belege: null, die App bleibt wie vorher
+  [undefined, null, {}, { offen: 0, ueberfaellig: 0, anzahl: 0, kunden: [] }, { offen: 'x', ueberfaellig: 0, kunden: [] }]
+    .forEach((f) => assert.strictEqual(H.forderungenDaten(f), null, JSON.stringify(f)));
+  // Zwei Einträge für denselben Kunden in der App: zusammengefasst
+  const zwei = forderungenBeispiel();
+  zwei.kunden.push({ kunde: 'bar eins', lexware: 'Bar Eins Süd', offen: 20, ueberfaellig: 0, belege: [['RE300', '2026-11-02', '2026-12-01', 20, 'open', -23]] });
+  const k = H.forderungenDaten(zwei).jeKunde['bar eins'];
+  assert.deepStrictEqual([k.offen, k.ueberfaellig, k.belege.map((x) => x.nr)], [270, 300, ['RE200', 'RE300', 'GS1']]);
+});
+
+test('v41 offene Rechnungen im Teilen-Text: nur die Summen, keine Namen, ohne Offenes keine Zeile', () => {
+  const u = { kennzahlen: { gesamtbestand: 100, gesamtQuelle: 'inventur' }, forderungen: forderungenBeispiel() };
+  const t = H.standText(u, null, '2026-11-08');
+  assert.match(t, /📦 Bestand: 100 Flaschen \(gezählt\)\n🧾 Offene Rechnungen: 1\.941 €, davon 1\.490 € überfällig\n\nTrink SATE!/);
+  assert.doesNotMatch(t, /Hochkant|Bar Eins|kultursph/);
+  const ohneUeber = Object.assign(forderungenBeispiel(), { ueberfaellig: 0 });
+  assert.match(H.standText({ forderungen: ohneUeber }, null, '2026-11-08'), /🧾 Offene Rechnungen: 1\.941 €\n/);
+  assert.doesNotMatch(H.standText({ kennzahlen: {} }, null, '2026-11-08'), /Offene Rechnungen/);
+  // Codex v41: Gutschriften drücken die Summe auf 0, überfällig bleibt etwas: die Zeile steht trotzdem da; kleine Summen mit Cent
+  const null0 = { offen: 0, ueberfaellig: 100, anzahl: 2, kunden: [{ kunde: 'A', lexware: 'A', offen: 100, ueberfaellig: 100, belege: [['RE1', '2026-10-01', '2026-10-15', 100, 'overdue', 24]] },
+    { kunde: 'B', lexware: 'B', offen: -100, ueberfaellig: 0, belege: [['GS1', '2026-10-20', '', -100, 'open', null]] }] };
+  assert.match(H.standText({ forderungen: null0 }, null, '2026-11-08'), /🧾 Offene Rechnungen: 0,00 €, davon 100 € überfällig\n/);
+  assert.strictEqual(H.summeFormat(0.49), '0,49 €');
+  assert.strictEqual(H.summeFormat(1234.5), '1.235 €');
+});

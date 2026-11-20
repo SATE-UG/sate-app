@@ -423,6 +423,80 @@
       h('span', { class: 'chevron', 'aria-hidden': 'true' }));
   }
 
+  // Offene Rechnungen aus Lexware (seit v41) -------------------------------------------------------------------
+  // Mark, 2026-11-20: offene und überfällige Forderungen ganzheitlich in die Reiter, kein eigener Einstieg. Auf dem
+  // Start eine kleine Zeile „Offen“ unter Bestand und Kunden (nur wenn etwas offen ist), sie öffnet ein Blatt mit allen
+  // offenen Rechnungen; bei den Kunden ein Abschnitt im Kunden-Blatt und ein dezenter Hinweis in der Liste. Ohne den Tab
+  // Lexware-Rechnungen (`forderungen` null) bleibt alles wie vorher.
+
+  /** Offene Rechnungen des gezeigten Stands (H.forderungenDaten), einmal pro Antwort gerechnet; ohne null. */
+  let forderungenMemo = { daten: null, wert: null };
+  function forderungen() {
+    const u = Z.daten;
+    if (!u) return null;
+    if (forderungenMemo.daten !== u) forderungenMemo = { daten: u, wert: H.forderungenDaten(u.forderungen) };
+    return forderungenMemo.wert;
+  }
+  S.forderungen = forderungen;
+
+  /** Zeile „Offen“ auf dem Start: Summe offen, darunter rot „davon überfällig“. Nur wenn etwas offen oder überfällig ist. */
+  function offenStart() {
+    const fd = forderungen();
+    if (!fd || !(fd.offen > 0 || fd.ueberfaellig > 0)) return null;
+    const ueber = fd.ueberfaellig > 0;
+    const anzahl = fd.anzahl + (fd.anzahl === 1 ? ' Rechnung' : ' Rechnungen');
+    return h('button', { type: 'button', class: 'karte offen-karte', 'data-start': 'offen', onclick: () => S.offeneZeigen(),
+      'aria-label': 'Offen ' + H.summeFormat(fd.offen) + (ueber ? ', davon überfällig ' + H.summeFormat(fd.ueberfaellig) : ', ' + anzahl) + '. Offene Rechnungen öffnen' },
+    h('span', { class: 'offen-text' },
+      h('span', { class: 'kachel-label' }, S.icon('rechnung', 'kachel-icon'), 'Offen'),
+      h('span', { class: 'offen-wert', text: H.summeFormat(fd.offen) }),
+      h('span', { class: ueber ? 'offen-unter offen-ueber' : 'offen-unter', text: ueber ? 'davon überfällig ' + H.summeFormat(fd.ueberfaellig) : anzahl })),
+    h('span', { class: 'chevron', 'aria-hidden': 'true' }));
+  }
+
+  /** Eine offene Rechnung als Zeile: links Name bzw. Nummer, darunter Nummer und Fälligkeit, rechts Betrag und Tage. */
+  function belegZeile(b, mitKunde) {
+    const titel = mitKunde ? b.kunde.name : b.nr || 'Ohne Nummer';
+    // Datum kurz („17. Sep“), aus einem anderen Jahr mit Jahr, damit die Zeile am Handy nicht umbricht
+    const a = auswertung();
+    const tag = (t) => (a && t.slice(0, 4) === a.heute.slice(0, 4) ? H.datumKurz(t) : H.datumText(t));
+    const unter = [mitKunde ? b.nr : '', b.faellig ? 'fällig ' + tag(b.faellig) : b.datum ? 'vom ' + tag(b.datum) : ''].filter(Boolean).join(', ');
+    const status = H.faelligText(b);
+    const inhalt = [
+      h('span', { class: 'rang-name' }, h('span', { class: 'rang-titel', text: titel }), unter ? h('span', { class: 'rang-unter', text: unter }) : null),
+      h('span', { class: 'rang-zahlen' }, h('span', { class: 'rang-flaschen', text: H.centFormat(b.offen) }),
+        h('span', { class: 'rang-umsatz' + (b.ueber ? ' beleg-ueber' : ''), text: status })),
+    ];
+    const vorlesen = titel + (unter ? ', ' + unter : '') + ', ' + H.centFormat(b.offen) + ', ' + status;
+    // Im Blatt „Offene Rechnungen“ öffnet ein Tipp den Kunden, wenn es ihn in der App gibt
+    const da = mitKunde && b.kunde.schluessel && a && a.zeilen && a.zeilen.some((z) => z.schluessel === b.kunde.schluessel);
+    return h('li', { class: 'kunde-zeile beleg-zeile' }, da
+      ? h('button', { type: 'button', class: 'zeilen-knopf', onclick: () => S.kundeZeigen(b.kunde.schluessel), 'aria-label': vorlesen + '. Kunde öffnen' },
+        inhalt, h('span', { class: 'chevron klein', 'aria-hidden': 'true' }))
+      : h('div', { class: 'zeilen-knopf beleg-still', 'aria-label': vorlesen, role: 'group' }, inhalt));
+  }
+
+  /** Blatt „Offene Rechnungen“ (vom Start): Summen, dann überfällige und die übrigen offenen Belege nach Fälligkeit. */
+  S.offeneZeigen = function () {
+    const fd = forderungen();
+    if (!fd) return;
+    const liste = H.offeneBelege(fd);
+    const ueber = liste.filter((b) => b.ueber);
+    const rest = liste.filter((b) => !b.ueber);
+    const zahl = (label, wert, unter, klasse) => h('div', { class: 'blatt-zahl' }, h('p', { class: 'kachel-label', text: label }),
+      h('p', { class: 'blatt-wert' + (klasse ? ' ' + klasse : ''), text: H.summeFormat(wert) }), h('p', { class: 'kachel-zusatz', text: unter }));
+    const anzahl = (n) => n + (n === 1 ? ' Rechnung' : ' Rechnungen');
+    const gruppe = (titel, belege) => (belege.length ? [h('p', { class: 'blatt-titel-klein', text: titel }),
+      h('ul', { class: 'liste blatt-liste mit-pfeil', role: 'list' }, belege.map((b) => belegZeile(b, true)))] : null);
+    S.blattZeigen('Offene Rechnungen', [
+      h('div', { class: 'blatt-zahlen zwei' }, zahl('Offen', fd.offen, anzahl(fd.anzahl)),
+        zahl('Überfällig', fd.ueberfaellig, anzahl(ueber.length), fd.ueberfaellig > 0 ? 'beleg-ueber' : '')),
+      gruppe('Überfällig', ueber),
+      gruppe('Noch offen', rest),
+      h('p', { class: 'hinweis offen-fuss', text: 'Aus Lexware, einmal am Tag aktualisiert. Offene Gutschriften sind abgezogen.' }),
+    ], () => document.querySelector('#app [data-start="offen"]'));
+  };
+
   /** Eine Zeile „Zuletzt passiert“: Rechnung (Kunde, Flaschen) oder Buchung (Art, Lager, wer). */
   function aktivitaetZeile(x) {
     if (x.typ === 'rechnung') {
@@ -477,6 +551,7 @@
       inventurHinweis(u, a.heute),
       jahrStart(a),
       kennzahlen(u, a),
+      offenStart(),
       h('div', { id: 'aktivitaet-inhalt' }),
       // Übrige Hinweise aus dem Sheet (z. B. unlesbare Zeilen) klein und dezent am Ende
       hw.andere.length
@@ -1979,6 +2054,7 @@
       liste = liste.slice().sort((x, y) => x.kunde.localeCompare(y.kunde, 'de'));
     }
     const summe = liste.reduce((x, k) => x + k.flaschen, 0);
+    const fd = forderungen();
     const alle = !!Z.alleKunden || !!suche;
     const zeigen = alle ? liste : liste.slice(0, KUNDEN_ANFANG);
     S.fuellen(ziel,
@@ -1988,14 +2064,18 @@
           const l = d.letzte[k.schluessel];
           const neu = d.neuAb && k.erster >= d.neuAb;
           const p = d.vorher && d.vorher[k.schluessel] > 0 ? H.veraenderung(d.jetzt[k.schluessel] || 0, d.vorher[k.schluessel]) : null;
+          // Seit v41: Rechnung aus Lexware überfällig → kleines rotes „überfällig“ neben dem Kanal
+          const ueber = fd && fd.jeKunde[k.schluessel] && fd.jeKunde[k.schluessel].ueberfaellig > 0;
           return h('li', { class: 'rang-zeile kunde-zeile' },
             h('button', { type: 'button', class: 'zeilen-knopf', 'data-kunde': k.schluessel, onclick: () => S.kundeZeigen(k.schluessel),
               'aria-label': k.kunde + ', ' + flaschen(k.flaschen) + ', ' + H.euroFormat(k.umsatz) + (l ? ', zuletzt ' + H.wannText(l) : '')
-                + (p !== null && Z.kundenSortierung !== 'zuletzt' ? ', ' + H.prozentText(p) + ' zum Jahr davor' : '') + '. Details' },
+                + (p !== null && Z.kundenSortierung !== 'zuletzt' ? ', ' + H.prozentText(p) + ' zum Jahr davor' : '')
+                + (ueber ? ', Rechnung überfällig' : '') + '. Details' },
             Z.kundenSortierung === 'menge' && !suche
               ? h('span', { class: 'rang-nr' + (rang[k.schluessel] <= 3 ? ' vorne' : ''), text: String(rang[k.schluessel]), 'aria-hidden': 'true' }) : null,
             h('span', { class: 'rang-name' }, h('span', { class: 'rang-titel kunde-name', text: k.kunde }),
-              h('span', { class: 'rang-unter' }, k.kanal || '', neu ? h('span', { class: 'badge badge-neu', text: 'neu' }) : null)),
+              h('span', { class: 'rang-unter' }, k.kanal || '', neu ? h('span', { class: 'badge badge-neu', text: 'neu' }) : null,
+                ueber ? h('span', { class: 'badge badge-ueber', text: 'überfällig' }) : null)),
             // Rechts unter der Menge: sortiert nach „zuletzt“ der Abstand, sonst die Veränderung (ohne Vergleich der Umsatz)
             h('span', { class: 'rang-zahlen' }, h('span', { class: 'rang-flaschen', text: flaschen(k.flaschen) }),
               Z.kundenSortierung === 'zuletzt' && l ? h('span', { class: 'rang-umsatz', text: H.abstandText(l.tage) })
@@ -2100,6 +2180,24 @@
     return svg;
   }
 
+  /**
+   * Abschnitt „Offene Rechnungen“ im Kunden-Blatt (seit v41), nur wenn Lexware für diesen Kunden etwas offen hat.
+   * Heißt der Kunde in Lexware anders (z. B. Rechnungsempfänger), steht der Name dabei.
+   */
+  function offenKunde(schluessel) {
+    const fd = forderungen();
+    const k = fd ? fd.jeKunde[schluessel] : null;
+    if (!k) return null;
+    const anders = k.lexware && H.kundeSchluessel(k.lexware) !== schluessel;
+    return [
+      h('p', { class: 'blatt-titel-klein', text: 'Offene Rechnungen' }),
+      h('ul', { class: 'liste blatt-liste', role: 'list' }, k.belege.map((b) => belegZeile(b, false)),
+        k.belege.length > 1 ? h('li', { class: 'zeile beleg-summe' }, h('span', { text: 'Zusammen' }),
+          h('span', { class: 'zeile-wert', text: H.centFormat(k.offen) })) : null),
+      anders ? h('p', { class: 'hinweis offen-fuss', text: 'In Lexware: ' + k.lexware }) : null,
+    ];
+  }
+
   S.kundeZeigen = function (schluessel) {
     const a = auswertung();
     const d = a && a.zeilen ? H.kundeDetails(a.zeilen, schluessel, a.heute) : null;
@@ -2123,6 +2221,7 @@
       miniDiagramm(d.monate),
       h('dl', { class: 'fakten' }, fakten.map(([k, w, unter]) => h('div', { class: 'fakt' }, h('dt', { text: k }),
         h('dd', {}, w, unter ? h('span', { class: 'fakt-unter', text: unter }) : null)))),
+      offenKunde(schluessel),
       h('p', { class: 'blatt-titel-klein', text: 'Letzte Bestellungen' }),
       h('ul', { class: 'liste blatt-liste', role: 'list' }, d.liste.map((x) => h('li', { class: 'zeile' },
         h('span', { text: H.wannText(x) }),
