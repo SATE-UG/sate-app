@@ -7,7 +7,8 @@
   const H = S.H;
   const Z = S.zustand;
   const K = S.SCHLUESSEL;
-  // Reihenfolge wie die Reiter (seit v23: Start, Verkäufe, + Eintragen in der Mitte, Kunden, Lager)
+  // Reihenfolge wie die Reiter (seit v23: Start, Verkäufe, + Eintragen in der Mitte, Kunden, Lager; seit v43 heißt
+  // der Reiter „Verkäufe“ sichtbar „Zahlen“, weil er auch Gewinn und Kosten zeigt, intern bleibt er `verkaeufe`)
   const ANSICHTEN = ['uebersicht', 'verkaeufe', 'eintragen', 'kunden', 'lager'];
 
   const el = S.el;
@@ -110,11 +111,26 @@
   S.renderAlle = function () {
     Object.keys(S.ansichten).forEach((n) => S.ansichten[n]());
     if (typeof S.zahlenAuffrischen === 'function') S.zahlenAuffrischen(); // ein offenes Zahlen-Blatt zeigt den neuen Stand
+    if (typeof S.aufgabenAuffrischen === 'function') S.aufgabenAuffrischen(); // ebenso ein offenes Blatt mit Aufgaben
     standZeigen();
     S.offlineZeigen();
   };
 
   S.ANSICHTEN = ANSICHTEN;
+
+  /**
+   * Frische Aufgabenliste aus einer Aufgaben-Aktion übernehmen (seit v43): Die Übersicht bleibt dieselbe (ihre
+   * Zwischenergebnisse gelten weiter), nur das Feld `aufgaben` ist neu. Gezeichnet werden der Start und ein offenes
+   * Blatt mit Aufgaben. Ohne geladene Übersicht false.
+   */
+  S.aufgabenSetzen = function (aufgaben) {
+    if (!Z.daten) return false;
+    Z.daten.aufgaben = aufgaben;
+    S.speicher.schreiben(K.daten, JSON.stringify({ name: Z.name, daten: Z.daten }));
+    S.ansichten.uebersicht();
+    if (typeof S.aufgabenAuffrischen === 'function') S.aufgabenAuffrischen();
+    return true;
+  };
 
   // Reiter und Ansichten ---------------------------------------------------------------------------------------
   // Die vier Ansichten liegen nebeneinander in #ansichten (natives waagerechtes Scrollen mit Einrasten). Wischen macht
@@ -396,7 +412,9 @@
     verlaufNr++;
     Object.assign(Z, { code: '', name: '', daten: null, frisch: false, laedt: false, verlauf: null, verlaufLaedt: false,
       verlaufFehler: '', verlaufVeraltet: true, diagramm: 'flaschen', zeitraum: 'jahr', monatWahl: null, alleKunden: false, kundenZeitraum: 'jahr', kundenSuche: '', kundenKanal: '', kundenSortierung: 'menge', alleNachfassen: false, verlaufAlle: false, zuordnenOffen: false, offline: false, ladenNachholen: false,
-      verkaufJahr: undefined, verkaufKanal: '', verkaufNach: 'kanal', verkaufAlle: false, sitzung: Z.sitzung + 1 });
+      verkaufJahr: undefined, verkaufKanal: '', verkaufNach: 'kanal', verkaufAlle: false, aufgabenPerson: null, sitzung: Z.sitzung + 1 });
+    S.bewegungNeu(); // die nächste Person sieht wieder alles einblenden
+    if (typeof S.aufgabenVergessen === 'function') S.aufgabenVergessen();
     meldung('');
     S.frageSchliessen();
     S.blattSchliessen(true);

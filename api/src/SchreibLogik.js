@@ -58,18 +58,22 @@ function zeileSetzen_(zeilen, nr, werte) {
   zeilen[nr - 1] = werte.slice();
 }
 
-/** ID für das Lager-Log: „L“ + Zeitstempel (Basis 36) + 4 Zufallszeichen, z. B. „LMH6ZK3QW-7F2A“. */
-function idErzeugen(ms, zufall) {
+/**
+ * ID für das Lager-Log: „L“ + Zeitstempel (Basis 36) + 4 Zufallszeichen, z. B. „LMH6ZK3QW-7F2A“. Mit `praefix` statt
+ * „L“ auch für andere Tabs (Aufgaben: „A“).
+ */
+function idErzeugen(ms, zufall, praefix) {
   const z = String(zufall || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase();
-  return 'L' + ms.toString(36).toUpperCase() + '-' + (z + '0000').slice(0, 4);
+  return (praefix || 'L') + ms.toString(36).toUpperCase() + '-' + (z + '0000').slice(0, 4);
 }
 
 /**
  * Feste ID aus einer anfrageId (Doppelklick-Schutz ohne Cache): `hex` = SHA-256 (Hex) über Aktion, Name und
- * anfrageId, z. B. „LA-3F9C0A…“ (20 Hex-Zeichen). Dieselbe Anfrage ergibt immer dieselbe ID.
+ * anfrageId, z. B. „LA-3F9C0A…“ (20 Hex-Zeichen). Dieselbe Anfrage ergibt immer dieselbe ID. Mit `praefix` statt
+ * „LA-“ auch für andere Tabs (Aufgaben: „AA-“).
  */
-function idAusAnfrage(hex) {
-  return ANFRAGE_ID_PRAEFIX + String(hex).slice(0, ANFRAGE_ID_HEX).toUpperCase();
+function idAusAnfrage(hex, praefix) {
+  return (praefix || ANFRAGE_ID_PRAEFIX) + String(hex).slice(0, ANFRAGE_ID_HEX).toUpperCase();
 }
 
 /** Zeile (0-basiert) im Lager-Log mit genau dieser ID (Spalte I), sonst -1. */

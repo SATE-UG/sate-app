@@ -304,10 +304,11 @@ function jahresendeBauen(euro, inventuren) {
 
 /**
  * `roh`: { verkaeufe, lagerLog, einstellungen, abfuellungen } (2D-Arrays ganzer Tabs), `uebersicht`
- * (Übersicht!B8:B13 als 6×1), `lexwareKosten`, `lexwareRechnungen` und `lexwareGuv` (ganzer Tab oder null, wenn es ihn nicht gibt).
+ * (Übersicht!B8:B13 als 6×1), `lexwareKosten`, `lexwareRechnungen` und `lexwareGuv` (ganzer Tab oder null, wenn es ihn nicht gibt),
+ * dazu `aufgaben` (ganzer Tab Aufgaben oder null) und `team` (Namen der nicht gesperrten Zugangscodes, teamNamen).
  * `formatieren(date)` → `JJJJ-MM-TT` in Europe/Berlin, `jetzt` = Date.
  * Antwort ohne ok/name: { stand, heute, kennzahlen, bestellung, lager, verkaeufe, abfuellungen, abgaenge, schwund, kosten,
- * forderungen, jahresende, einnahmen, guv, verkaufListe, hinweise }.
+ * forderungen, jahresende, einnahmen, guv, aufgaben, verkaufListe, hinweise }.
  */
 function uebersichtBauen(roh, formatieren, jetzt) {
   const heute = formatieren(jetzt);
@@ -326,6 +327,7 @@ function uebersichtBauen(roh, formatieren, jetzt) {
   const forderungen = forderungenLesen(roh.lexwareRechnungen, vk.verkaeufe, formatieren, hinweise, heute);
   const einnahmen = einnahmenLesen(roh.lexwareRechnungen, formatieren, hinweise, heute);
   const guv = lexwareGuvLesen(roh.lexwareGuv, formatieren, hinweise);
+  const aufgaben = aufgabenLesen(roh.aufgaben, roh.team, formatieren, hinweise, heute);
   if (gesamt.quelle === 'rechnerisch') {
     hinweise.unshift(gesamt.fehlen.length === lager.standorte.length
       ? 'Noch keine Inventur: Gesamtbestand ist der rechnerische aus der Übersicht (ohne Promo, Eigenverbrauch, Bruch).'
@@ -388,6 +390,8 @@ function uebersichtBauen(roh, formatieren, jetzt) {
     einnahmen: einnahmen,
     // GuV laut Lexware je Jahr (seit v42, Tab Lexware-GuV); null ohne den Tab
     guv: guv,
+    // Aufgaben fürs Team als { team, liste, fehler }; null ohne den Tab Aufgaben, dann zeigt die App die Funktion nicht
+    aufgaben: aufgaben,
     verkaufListe: verkaufListeBauen(vk.verkaeufe, e, heute),
     hinweise: hinweise.length > MAX_HINWEISE
       ? hinweise.slice(0, MAX_HINWEISE - 1).concat(['… und ' + (hinweise.length - MAX_HINWEISE + 1) + ' weitere Hinweise.'])

@@ -8,8 +8,10 @@
  *   codesAnzeigen()     Namen und Status (keine Codes, keine Hashes)
  *   lagerTabSchreiben() Bestand pro Standort nach Lager!B2:F… (bis zur Zeile „Summe“)
  *   triggerEinrichten() täglicher Trigger für taeglich() (7–8 Uhr), braucht den Scope script.scriptapp
+ *   aufgabenTabAnlegen() einmal, legt den Tab „Aufgaben“ mit Kopfzeile an (nur wenn es ihn noch nicht gibt)
  * Die Web-App schreibt (Task 5) nur über schreibAktion() (SchreibLogik.js): Zeilen ans Lager-Log und an Abfüllungen
- * anhängen, Verkäufe Spalte L, danach Lager!B2:F… .
+ * anhängen, Verkäufe Spalte L, danach Lager!B2:F… . Dazu über aufgabenAktion() (AufgabenLogik.js) im Tab Aufgaben:
+ * neue Zeile A–L anhängen bzw. einzelne Zellen einer Aufgabe ändern.
  * Codes nie loggen (außer einmal beim Anlegen), nie in URLs.
  */
 
@@ -88,6 +90,36 @@ function triggerEinrichten() {
   });
   Logger.log('Trigger für ' + TRIGGER_FUNKTION + '() täglich ' + TRIGGER_STUNDE + '–' + (TRIGGER_STUNDE + 1) + ' Uhr angelegt' +
     (geloescht ? ', ' + geloescht + ' alte gelöscht.' : '.'));
+}
+
+/**
+ * Einmal im Editor ausführen (Aufgaben fürs Team): legt den Tab „Aufgaben“ ganz hinten an, mit der Kopfzeile A–L (fett,
+ * erste Zeile fixiert) und der Spalte Uhrzeit als Text. Gibt es den Tab schon, bleibt er unberührt (auch mit falscher
+ * Kopfzeile, das steht dann im Log). Loggt, was passiert ist.
+ */
+function aufgabenTabAnlegen() {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    const ss = blatt_();
+    const da = ss.getSheetByName(AUFGABEN_TAB);
+    if (da) {
+      const passt = aufgabenKopfPasst(da.getDataRange().getValues());
+      Logger.log('Tab „' + AUFGABEN_TAB + '“ gibt es schon, nichts geändert.' + (passt ? ' Die Kopfzeile passt.'
+        : ' Achtung: Die Kopfzeile passt nicht, die App zeigt die Aufgaben so nicht. Erwartet in A1 bis L1: ' + AUFGABEN_KOPF.join(', ')));
+      return;
+    }
+    const tab = ss.insertSheet(AUFGABEN_TAB, ss.getNumSheets());
+    const kopf = tab.getRange(1, 1, 1, AUFGABEN_KOPF.length);
+    kopf.setValues([AUFGABEN_KOPF]);
+    kopf.setFontWeight('bold');
+    tab.setFrozenRows(1);
+    // Uhrzeit als Text, auch für Zeilen von Hand: Sheets macht sonst aus „9:30“ eine Zeitzelle
+    tab.getRange(1, AU.UHRZEIT + 1, tab.getMaxRows(), 1).setNumberFormat(AU_FORMATE[AU.UHRZEIT + 1]);
+    Logger.log('Tab „' + AUFGABEN_TAB + '“ angelegt. Kopfzeile A1 bis L1: ' + AUFGABEN_KOPF.join(', '));
+  } finally {
+    lock.releaseLock();
+  }
 }
 
 /**
@@ -171,8 +203,14 @@ function umgebung_() {
       return { bestand: w[0][0], reichweite: w[3][0] };
     },
     jetzt: () => new Date(),
-    tabellen: () => tabellenLesen_(holenBlatt()),
+    // Mit dem Team (Namen der nicht gesperrten Codes) für die Aufgaben: Die Übersicht selbst kennt keine Skripteigenschaften
+    tabellen: () => Object.assign(tabellenLesen_(holenBlatt()), { team: teamNamen(eintraegeLesen(holen())) }),
     tabWerte: (name) => tabHolen_(holenBlatt(), name).getDataRange().getValues(),
+    // Freiwilliger Tab (Aufgaben): fehlt er, null statt Fehler
+    tabWerteFreiwillig: (name) => {
+      const t = holenBlatt().getSheetByName(name);
+      return t ? t.getDataRange().getValues() : null;
+    },
     datumText: (d) => datumTextFunktion_(holenBlatt())(d),
     // Schreiben (Task 5), nur aus schreibAktion() unter der Sperre
     mitSperre: (fn) => {
@@ -194,6 +232,10 @@ function umgebung_() {
     zufall: () => Utilities.getUuid(),
     zeileSchreiben: (name, nr, zellen, formate) => zeileSchreiben_(holenBlatt(), name, nr, zellen, formate),
     zelleSchreiben: (name, nr, spalte, wert) => tabHolen_(holenBlatt(), name).getRange(nr, spalte).setValue(wert),
+    // Aufgaben: Zellen nebeneinander in einer bestehenden Zeile, nur aus aufgabenAktion() unter der Sperre
+    zellenSchreiben: (name, nr, spalte, zellen, formate) => zellenSchreiben_(holenBlatt(), name, nr, spalte, zellen, formate),
+    // Alles Geschriebene ins Sheet bringen, bevor die Sperre frei wird (sonst liest die nächste Anfrage den alten Stand)
+    schreibenAbschliessen: () => SpreadsheetApp.flush(),
     lagerTabSchreiben: (u, jetzt) => lagerTabAusUebersicht_(holenBlatt(), u, jetzt),
   };
   function holenBlatt() { return (blatt = blatt || blatt_()); }
@@ -251,6 +293,18 @@ function zeileSchreiben_(ss, name, nr, zellen, formate) {
   ziel.setValues([zellen]);
 }
 
+/**
+ * Zellen nebeneinander in Zeile `nr` ab Spalte `spalte` (beide 1-basiert) mit einem setValues überschreiben (bestehende
+ * Zeile ändern, z. B. den Status einer Aufgabe). Vorher die Zahlenformate einzelner Spalten (`formate`: {Spalte
+ * 1-basiert: Muster}), damit setValues der letzte Schritt ist. Die Kopfzeile wird nie überschrieben.
+ */
+function zellenSchreiben_(ss, name, nr, spalte, zellen, formate) {
+  if (!(nr >= 2) || !(spalte >= 1) || !zellen.length) throw new Error('Zellen ' + name + '!' + nr + ' nicht schreibbar');
+  const tab = tabHolen_(ss, name);
+  Object.keys(formate || {}).forEach((sp) => tab.getRange(nr, Number(sp)).setNumberFormat(formate[sp]));
+  tab.getRange(nr, spalte, 1, zellen.length).setValues([zellen]);
+}
+
 /** Alle Tabs für uebersichtBauen(), je ein getValues() pro Tab. */
 function tabellenLesen_(ss) {
   const tab = (name) => tabHolen_(ss, name);
@@ -260,6 +314,8 @@ function tabellenLesen_(ss) {
   const rechnungen = ss.getSheetByName(LEXWARE_RECHNUNGEN_TAB);
   // Lexware-GuV (seit v42) ebenso freiwillig: Fehlt der Tab, rechnet die App den Jahresgewinn nur aus den Belegen
   const guv = ss.getSheetByName(LEXWARE_GUV_TAB);
+  // Aufgaben fürs Team ebenso freiwillig: Fehlt der Tab, ist es null und die App zeigt die Funktion nicht
+  const aufgaben = ss.getSheetByName(AUFGABEN_TAB);
   return {
     verkaeufe: tab(VERKAEUFE_TAB).getDataRange().getValues(),
     lagerLog: tab(LAGER_LOG_TAB).getDataRange().getValues(),
@@ -269,6 +325,7 @@ function tabellenLesen_(ss) {
     lexwareKosten: kosten ? kosten.getDataRange().getValues() : null,
     lexwareRechnungen: rechnungen ? rechnungen.getDataRange().getValues() : null,
     lexwareGuv: guv ? guv.getDataRange().getValues() : null,
+    aufgaben: aufgaben ? aufgaben.getDataRange().getValues() : null,
   };
 }
 

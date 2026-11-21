@@ -29,7 +29,7 @@
       verlaufLaedt: false,
       verlaufFehler: '',
       verlaufVeraltet: true,
-      diagramm: 'flaschen', // Verkäufe: Kennzahl 'flaschen' | 'umsatz' | 'rohertrag' (gilt für den ganzen Reiter)
+      diagramm: 'flaschen', // Zahlen: Kennzahl 'flaschen' | 'umsatz' | 'rohertrag' | 'gewinn' (gilt für den ganzen Reiter)
       zeitraum: 'jahr',
       monatWahl: null,   // Verkäufe: gewählter Monat (`JJJJ-MM`, auch im Vorjahr), null = letzter voller Monat
       alleKunden: false, // Kunden: alle statt der ersten 20
@@ -45,6 +45,7 @@
       verkaufKanal: '',     // Verkäufe: nur dieser Kanal ('' = alle)
       verkaufNach: 'kanal', // Verkäufe: Aufteilung nach 'kanal' | 'kunde' (mit gewähltem Kanal immer Kunden)
       verkaufAlle: false,   // Verkäufe: alle Zeilen der Aufteilung statt der ersten zwölf
+      aufgabenPerson: null, // Blatt „Aufgaben“: gewählte Person, null = alle
     },
     ansichten: {},
   };
@@ -99,6 +100,11 @@
     ok: [['circle', { cx: 12, cy: 12, r: 9 }], ['path', { d: 'M8 12.3l2.7 2.7L16 9.6' }]],
     fehler: [['circle', { cx: 12, cy: 12, r: 9 }], ['path', { d: 'M12 7.5v5.5' }], ['path', { d: 'M12 16.4v.1' }]],
     ertrag: [['path', { d: 'M4 16.5l5-5 4 3.5 7-8' }], ['path', { d: 'M15.5 7H20v4.5' }]],
+    euro: [['circle', { cx: 12, cy: 12, r: 8.5 }], ['path', { d: 'M14.8 9.2a3.6 3.6 0 1 0 0 5.6' }], ['path', { d: 'M7.8 11h4.6M7.8 13h3.8' }]],
+    prozent: [['path', { d: 'M18 6 6 18' }], ['circle', { cx: 7.5, cy: 7.5, r: 2.5 }], ['circle', { cx: 16.5, cy: 16.5, r: 2.5 }]],
+    haken: [['path', { d: 'M5.5 12.5l4.3 4.3L18.5 7.5' }]],
+    plus: [['path', { d: 'M12 5.5v13M5.5 12h13' }]],
+    aufgabe: [['circle', { cx: 12, cy: 12, r: 8.5 }], ['path', { d: 'M8.3 12.3l2.6 2.6 4.9-5.2' }]],
     info: [['circle', { cx: 12, cy: 12, r: 9 }], ['path', { d: 'M12 11v5.5' }], ['path', { d: 'M12 7.6v.1' }]],
     flasche: [['path', { d: FLASCHE }]],
     lupe: [['circle', { cx: 10.5, cy: 10.5, r: 6.5 }], ['path', { d: 'M15.4 15.4 20 20' }]],
@@ -179,7 +185,7 @@
   };
 
   /**
-   * Schreib-Aktion (buchen, stornieren, verkaufStandort) mit anfrageId. Will der Server ein „trotzdem“, kommt die
+   * Schreib-Aktion (buchen, stornieren, verkaufStandort, seit v43 aufgabeAnlegen und aufgabeAendern) mit anfrageId. Will der Server ein „trotzdem“, kommt die
    * Rückfrage mit seiner Warnung; bei Ja dieselbe Anfrage mit bestaetigt: true. Die frische Übersicht aus der Antwort
    * wird übernommen. Rückgabe wie antwortDeuten, dazu { art: 'abgebrochen' } (Rückfrage mit Nein beantwortet).
    */
@@ -202,7 +208,11 @@
         if (!gleicheSitzung()) return { art: 'abgebrochen' };
         if (e.art === 'bestaetigen') e = { art: 'fehler', meldung: e.warnung };
       }
-      if (e.art === 'ok') {
+      if (e.art === 'ok' && e.daten.uebersicht === undefined && e.daten.aufgaben !== undefined) {
+        // Aufgaben-Aktionen (seit v43) bringen nur die frische Aufgabenliste mit, am Lager ändert sich nichts. Das ist
+        // keine frische Übersicht: Ein Neuladen, das während des Schreibens verworfen wurde, wird unten nachgeholt (Codex v43)
+        S.aufgabenSetzen(e.daten.aufgaben);
+      } else if (e.art === 'ok') {
         Z.verlaufVeraltet = true;
         frisch = S.datenSetzen(e.daten.uebersicht, e.daten.name);
         if (!frisch) S.laden(); // Übersicht fehlte: neu holen
@@ -411,6 +421,9 @@
     blattVon = null;
     blattZurueck = null;
     if ((!v || !document.contains(v)) && ersatz) v = ersatz();
+    // Die auslösende Zeile gibt es nach einem Neuladen nicht mehr (z. B. Rechnung inzwischen bezahlt) oder sie liegt
+    // in einer anderen, stillgelegten Ansicht: Dann geht der Fokus auf den Reiter der gezeigten Ansicht (Codex v43)
+    if (!v || !document.contains(v) || (typeof v.closest === 'function' && v.closest('[inert]'))) v = S.el('reiter-' + S.zustand.ansicht);
     if (v && document.contains(v) && typeof v.focus === 'function') v.focus({ preventScroll: true });
   });
 
@@ -439,4 +452,124 @@
   };
   S.meldenSchliessen = function () { clearTimeout(toastUhr); S.el('toast').hidden = true; };
   S.el('toast').addEventListener('click', S.meldenSchliessen);
+
+  // Bewegung beim Scrollen (seit v43) -----------------------------------------------------------------------------
+  // Mark, 2026-11-21: weg von den Kacheln, „eher wie auf so einer coolen Website, wo man so runterscrollt und dann
+  // auch so Zahlen und so aufploppen“. Die Abschnitte einer Ansicht (die direkten Kinder ihres Inhalts) blenden ein,
+  // sobald sie zum ersten Mal ins Bild kommen; Zahlen mit `data-zaehl` zählen dabei hoch, Diagramme darin wachsen
+  // (Klasse `rein-anim`, style.css). Jeder Abschnitt nur einmal je Anmeldung: Zeichnet die App neu (frische Daten,
+  // andere Wahl), steht er sofort da; eine Zahl mit Schlüssel (`data-zk`), die sich dabei ändert, läuft vom alten zum
+  // neuen Wert. „Bewegung reduzieren“ schaltet alles ab, ebenso ein Browser ohne IntersectionObserver.
+  const bewegt = typeof window.IntersectionObserver === 'function';
+  if (bewegt) document.documentElement.classList.add('bewegt');
+  const gesehen = new Map(); // Schlüssel eines Abschnitts → Zeitpunkt (performance.now), zu dem sein Einblenden begann
+  const zahlStand = new Map(); // Schlüssel einer Zahl → zuletzt gezeigter Wert
+  const EIN_MS = 700; // so lange läuft das Einblenden eines Abschnitts
+  const ZAEHL_MS = 900; // so lange zählt eine Zahl hoch
+  let pruefUhr = null;
+
+  /**
+   * Zahl von `von` nach `bis` laufen lassen (wird zum Ende hin langsamer); am Ende steht genau der Zielwert da.
+   * `seit` = Zeitpunkt, zu dem das Laufen begann (performance.now), ohne Angabe jetzt.
+   */
+  function zahlLaufen(el, von, bis, dauer, seit) {
+    const stellen = Number(el.dataset.stellen) || 0;
+    const start = typeof seit === 'number' ? seit : window.performance.now();
+    const schritt = (jetzt) => {
+      if (!el.isConnected) return;
+      const t = Math.min(1, Math.max(0, (jetzt - start) / dauer));
+      el.textContent = H.zahlFormat(t === 1 ? bis : von + (bis - von) * (1 - Math.pow(1 - t, 3)), stellen);
+      if (t < 1) window.requestAnimationFrame(schritt);
+    };
+    window.requestAnimationFrame(schritt);
+  }
+  /** `vonNull`: von 0 hochzählen (ab `seit`); sonst nur, wenn sich eine Zahl mit Schlüssel geändert hat, vom alten zum neuen Wert. */
+  function zahlZeigen(el, vonNull, seit) {
+    const bis = Number(el.dataset.zaehl);
+    const k = el.dataset.zk || '';
+    const alt = k && zahlStand.has(k) ? zahlStand.get(k) : null;
+    if (k) zahlStand.set(k, bis);
+    if (!isFinite(bis) || ruhig()) return;
+    if (vonNull) zahlLaufen(el, 0, bis, ZAEHL_MS, seit);
+    else if (alt !== null && alt !== bis) zahlLaufen(el, alt, bis, 450);
+  }
+  /**
+   * Abschnitt zeigen. `mitBewegung`: gerade ins Bild gekommen (`verzug` ms nach den Abschnitten vor ihm), sonst steht
+   * er sofort da. Wird ein Abschnitt neu gezeichnet, während er noch einblendet (kurz nach dem Start kommt der
+   * frische Stand), läuft die Bewegung am neuen Knoten dort weiter, wo sie war (Klasse `weiter`, `--seit` für die
+   * Diagramme in style.css), statt abzubrechen.
+   */
+  function abschnittZeigen(el, mitBewegung, verzug) {
+    const k = el.dataset.aufk;
+    const jetzt = window.performance.now();
+    const neu = mitBewegung && !gesehen.has(k);
+    if (neu) gesehen.set(k, jetzt + (verzug || 0));
+    else if (!gesehen.has(k)) gesehen.set(k, -Infinity); // ohne Bewegung gezeigt: gilt als längst gesehen
+    const start = gesehen.get(k);
+    const laeuft = !neu && bewegt && !ruhig() && jetzt - start < Math.max(EIN_MS, ZAEHL_MS);
+    el.classList.add('da');
+    el.classList.toggle('gleich', !neu);
+    el.classList.toggle('weiter', laeuft);
+    if (neu) el.style.transitionDelay = (verzug || 0) + 'ms';
+    if (laeuft) {
+      el.style.setProperty('--seit', Math.round(start - jetzt) + 'ms');
+      if (typeof el.animate === 'function') {
+        el.animate([{ opacity: 0, transform: 'translate3d(0, 22px, 0)' }, { opacity: 1, transform: 'none' }],
+          { duration: EIN_MS, delay: start - jetzt, easing: 'cubic-bezier(0.32, 0.72, 0, 1)', fill: 'backwards' });
+      }
+    }
+    el.querySelectorAll('[data-zaehl]').forEach((z) => zahlZeigen(z, neu || laeuft, start));
+    if (neu || laeuft) el.querySelectorAll('svg.diagramm').forEach((d) => d.classList.add('rein-anim'));
+  }
+  const waechter = bewegt ? new window.IntersectionObserver((eintraege) => {
+    let n = 0;
+    eintraege.forEach((e) => {
+      if (!e.isIntersecting) return;
+      waechter.unobserve(e.target);
+      abschnittZeigen(e.target, true, n++ * 70);
+    });
+  }, { rootMargin: '0px 0px -6% 0px' }) : null;
+  /** Sicherheitsnetz, falls der Beobachter sich nicht meldet (z. B. Seite war im Hintergrund): was im Bild steht, zeigen. */
+  function nachsehen() {
+    const b = window.innerWidth;
+    const hoch = window.innerHeight;
+    document.querySelectorAll('.auf:not(.da)').forEach((el) => {
+      const r = el.getBoundingClientRect();
+      if (r.width > 0 && r.bottom > 0 && r.top < hoch * 0.94 && r.right > 0 && r.left < b) {
+        if (waechter) waechter.unobserve(el);
+        abschnittZeigen(el, true, 0);
+      }
+    });
+  }
+  /**
+   * Nach dem Zeichnen einer Ansicht: die direkten Kinder von `wurzel` sind ihre Abschnitte. Schon gesehene stehen
+   * sofort da, die anderen warten, bis sie ins Bild kommen.
+   */
+  S.bewegung = function (wurzel) {
+    if (!wurzel) return;
+    const an = bewegt && !ruhig();
+    Array.from(wurzel.children).forEach((el, i) => {
+      el.classList.add('auf');
+      el.dataset.aufk = (wurzel.id || 'x') + ':' + i;
+      if (!an || gesehen.has(el.dataset.aufk)) abschnittZeigen(el, false);
+    });
+    if (!an) return;
+    // Beobachtet wird, was im Dokument steht und noch wartet (ersetzte Knoten fallen damit von selbst weg)
+    waechter.disconnect();
+    document.querySelectorAll('.auf:not(.da)').forEach((el) => waechter.observe(el));
+    clearTimeout(pruefUhr);
+    pruefUhr = setTimeout(nachsehen, 700);
+  };
+  // Zweites Sicherheitsnetz: Beim Scrollen (senkrecht in einer Ansicht oder waagerecht zwischen den Ansichten) kurz
+  // danach nachsehen, ob etwas im Bild steht und noch wartet. Meldet sich der Beobachter wie üblich, ist dann nichts
+  // mehr zu tun; meldet er sich nie, bleibt trotzdem kein Abschnitt unsichtbar.
+  if (bewegt) {
+    let rollUhr = null;
+    document.addEventListener('scroll', () => {
+      if (rollUhr) return;
+      rollUhr = setTimeout(() => { rollUhr = null; if (document.querySelector('.auf:not(.da)')) nachsehen(); }, 200);
+    }, { capture: true, passive: true });
+  }
+  /** Beim Abmelden: Die nächste Person sieht wieder alles einblenden. */
+  S.bewegungNeu = function () { gesehen.clear(); zahlStand.clear(); };
 })();

@@ -41,4 +41,19 @@ function rechnungszeile(j, m, t, kanal, kunde, flaschen, umsatz, standort) {
   return [zelle(j, m, 1), zelle(j, m, t), 'Lexware', kanal, kunde, flaschen, 1, 0.08, umsatz, 'RE1', '', standort || ''];
 }
 
-module.exports = { berlin, serie, zelle, verkaufKopf, lagerKopf, einstellungen, altzeile, rechnungszeile };
+/** Kopfzeile des Tabs Aufgaben (A–L). */
+const aufgabenKopf = () => ['ID', 'Erstellt', 'Von', 'Für', 'Aufgabe', 'Fällig', 'Uhrzeit', 'Notiz', 'Status', 'Erledigt am', 'Erledigt von',
+  'Geändert'];
+
+/**
+ * Aufgaben-Zeile wie von getValues(): `a` = { id, titel, fuer, von, faellig, uhrzeit, notiz, status, erstellt,
+ * erledigtAm, erledigtVon }. Datumsfelder als `JJJJ-MM-TT` (werden Datumszellen), die Uhrzeit als Text `HH:MM`,
+ * fehlende Felder leer, Status ohne Angabe „offen“.
+ */
+function aufgabenZeile(a) {
+  const tag = (t) => (t ? zelle(Number(t.slice(0, 4)), Number(t.slice(5, 7)), Number(t.slice(8, 10))) : '');
+  return [a.id || '', tag(a.erstellt), a.von || '', a.fuer || '', a.titel || '', tag(a.faellig), a.uhrzeit || '', a.notiz || '',
+    a.status === undefined ? 'offen' : a.status, tag(a.erledigtAm), a.erledigtVon || '', ''];
+}
+
+module.exports = { berlin, serie, zelle, verkaufKopf, lagerKopf, einstellungen, altzeile, rechnungszeile, aufgabenKopf, aufgabenZeile };

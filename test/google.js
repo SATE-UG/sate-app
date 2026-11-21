@@ -2,10 +2,18 @@
 
 // Attrappen für die Google-Dienste (PropertiesService, SpreadsheetApp, Utilities, ContentService, LockService,
 // CacheService, Logger, console, ScriptApp), damit Api.js unter Node läuft. Alles liegt im Speicher (`welt`).
-// Geschrieben werden darf nur Lager!B2:F5, eine Zeile A–J im Lager-Log, A–D in Abfüllungen und einzelne Zellen in
-// Verkäufe Spalte L (siehe erlaubt()); jeder andere schreibende Aufruf wirft. Alle Schreibversuche landen in
-// `welt.sheetSchreiben`, die geschriebenen Werte in `welt.schreibLog`. Die Tabs (`welt.tabs`) sind 2D-Arrays wie von
-// getValues(); Übersicht ist nur lesbar (`welt.zellen`). Dazu LockService (tryLock) und CacheService.
+// Geschrieben werden darf nur Lager!B2:F5, eine Zeile A–J im Lager-Log, A–D in Abfüllungen, einzelne Zellen in
+// Verkäufe Spalte L und im Tab Aufgaben Zellen einer Zeile in A–L ab Zeile 2 (siehe erlaubt()); jeder andere
+// schreibende Aufruf wirft. Alle Schreibversuche landen in `welt.sheetSchreiben`, die geschriebenen Werte in
+// `welt.schreibLog`. Die Tabs (`welt.tabs`) sind 2D-Arrays wie von getValues(); Übersicht ist nur lesbar
+// (`welt.zellen`). Dazu LockService (tryLock) und CacheService. Neue Tabs legt nur insertSheet() an (`welt.neueTabs`):
+// Solange so ein Tab leer ist, darf seine Kopfzeile geschrieben, fett gesetzt und fixiert werden.
+//
+// Tab Aufgaben mit Beispielzeilen (z. B. für einen lokalen Testserver), Helfer in test/daten.js:
+//   welt.tabs['Aufgaben'] = [D.aufgabenKopf(),
+//     D.aufgabenZeile({ id: 'A1', von: 'Jonas', fuer: 'Nina', titel: 'Kühlschrank auffüllen', faellig: '2026-11-25', uhrzeit: '09:30' }),
+//     D.aufgabenZeile({ id: 'A2', von: 'Nina', fuer: 'Jonas', titel: 'Pfand wegbringen', status: 'erledigt', erledigtAm: '2026-11-20', erledigtVon: 'Jonas' })];
+// Das Team sind die nicht gesperrten Zugangscodes: je Person einmal codeAnlegen('Name') aufrufen.
 
 const crypto = require('node:crypto');
 
@@ -41,6 +49,12 @@ function neueWelt() {
     cache: {},
     cacheZeiten: [],
     cacheKaputt: false, // true: CacheService wirft (z. B. Dienst gestört)
+    // Aufgaben: per insertSheet() angelegte Tabs, fett gesetzte Bereiche, fixierte Zeilen je Tab
+    neueTabs: [],
+    fett: {},
+    fixiert: {},
+    // Reihenfolge von Sperre ('sperre'), Schreiben ('schreiben Tab!Bereich'), flush ('flush') und Freigabe ('frei')
+    ereignisse: [],
     schreibFehler: null, // (tab, bereich) → true: dieser Schreibversuch wirft (nach dem Eintrag in sheetSchreiben)
     flushes: 0,
   };
@@ -78,12 +92,21 @@ function neueWelt() {
     return nz === 1 && ns === 1 ? von : von + ':' + b(sp + ns - 1) + (z + nz);
   }
 
+  /** Frisch per insertSheet() angelegter Tab, in dem noch nichts steht (nur dann darf die Kopfzeile geschrieben werden). */
+  const neuUndLeer = (name) => welt.neueTabs.indexOf(name) >= 0 && (welt.tabs[name] || []).length === 0;
+
   /**
    * Erlaubte Schreibbereiche: Lager!B2:F<Summe> (bis 20 Zeilen), eine ganze Zeile A–J im Lager-Log, A–D in Abfüllungen (mit der
-   * Kosten-Spalte A–E), eine Zelle in Verkäufe Spalte L. Alles andere wirft (so fällt jeder Schreibversuch in A–K der Verkäufe sofort auf).
+   * Kosten-Spalte A–E), eine Zelle in Verkäufe Spalte L, im Tab Aufgaben Zellen einer Zeile innerhalb von A–L ab Zeile 2
+   * (die Kopfzeile A1:L1 nur in einem frisch angelegten, leeren Tab). Alles andere wirft (so fällt jeder Schreibversuch
+   * in A–K der Verkäufe sofort auf).
    */
   function erlaubt(name, z, sp, nz, ns) {
     if (welt.schreibenKaputt[name]) return false;
+    if (name === 'Aufgaben') {
+      if (z === 0) return neuUndLeer(name) && sp === 0 && nz === 1 && ns === 12;
+      return nz === 1 && sp >= 0 && ns >= 1 && sp + ns <= 12;
+    }
     if (name === 'Lager') {
       // nur B2:F bis genau zur Zeile „Summe“ (darunter steht der Hinweistext)
       const summe = (welt.tabs.Lager || []).findIndex((r) => r && String(r[0] || '').trim() === 'Summe');
@@ -109,6 +132,7 @@ function neueWelt() {
   /** Tab aus `welt.tabs[name]` (2D-Array). Schreiben nur in den erlaubten Bereichen. */
   function gitterTab(name) {
     const daten = welt.tabs[name];
+    const neuerTab = welt.neueTabs.indexOf(name) >= 0;
     const range = (z, sp, nz, ns, text) => {
       const schreiben = (w) => {
         welt.sheetSchreiben.push(name + '!' + text);
@@ -120,6 +144,7 @@ function neueWelt() {
           x.forEach((v, c) => { daten[z + r][sp + c] = zelleSpeichern(name, z + r, sp + c, v); });
         });
         welt.schreibLog.push({ tab: name, bereich: text, werte: w.map((x) => x.slice()) });
+        welt.ereignisse.push('schreiben ' + name + '!' + text);
       };
       return {
         getValues: () => {
@@ -150,11 +175,17 @@ function neueWelt() {
         },
         setNumberFormat: (f) => {
           if (welt.formatKaputt[name]) throw new Error('Format kaputt');
-          const zeileOk = name === 'Abfüllungen' ? (sp <= 3 ? erlaubt(name, z, 0, 1, 4) : erlaubt(name, z, 0, 1, 5)) : erlaubt(name, z, 0, 1, 10);
-          if (!zeileOk && !(name === 'Lager' && text === 'B2:F5')) {
+          const zeileOk = name === 'Abfüllungen' ? (sp <= 3 ? erlaubt(name, z, 0, 1, 4) : erlaubt(name, z, 0, 1, 5))
+            : name === 'Aufgaben' ? z >= 1 && erlaubt(name, z, 0, 1, 12) : erlaubt(name, z, 0, 1, 10);
+          // in einem frisch angelegten Tab auch ganze Spalten (Uhrzeit als Text)
+          if (!zeileOk && !neuerTab && !(name === 'Lager' && text === 'B2:F5')) {
             throw new Error('Format in ' + name + '!' + text + ' nicht erlaubt');
           }
           welt.formate[name + '!' + text] = f;
+        },
+        setFontWeight: (g) => {
+          if (!neuerTab) throw new Error('Schrift in ' + name + '!' + text + ' nicht erlaubt');
+          welt.fett[name + '!' + text] = g;
         },
       };
     };
@@ -170,6 +201,10 @@ function neueWelt() {
       insertRowsAfter: (nach, n) => {
         welt.eingefuegt.push(name + ':' + nach + '+' + n);
         welt.maxZeilen[name] = (welt.maxZeilen[name] || 1000) + n;
+      },
+      setFrozenRows: (n) => {
+        if (!neuerTab) throw new Error('Fixieren in ' + name + ' nicht erlaubt');
+        welt.fixiert[name] = n;
       },
     };
   }
@@ -215,7 +250,7 @@ function neueWelt() {
       }),
     },
     SpreadsheetApp: {
-      flush: () => { welt.flushes++; },
+      flush: () => { welt.flushes++; welt.ereignisse.push('flush'); },
       openById: (id) => {
         welt.sheetIds.push(id);
         return {
@@ -223,6 +258,16 @@ function neueWelt() {
           getSheetByName: (n) => {
             if (n === 'Übersicht') return welt.tabFehlt ? null : tab;
             return welt.tabs[n] ? gitterTab(n) : null;
+          },
+          // Übersicht plus die Tabs im Speicher
+          getNumSheets: () => Object.keys(welt.tabs).length + (welt.tabFehlt ? 0 : 1),
+          // Neuer leerer Tab (nur aufgabenTabAnlegen); `index` = Platz in der Tab-Leiste, hier nur gemerkt
+          insertSheet: (n, index) => {
+            if (n === 'Übersicht' || welt.tabs[n]) throw new Error('Tab ' + n + ' gibt es schon');
+            welt.sheetSchreiben.push('insertSheet ' + n + ' @' + index);
+            welt.tabs[n] = [];
+            welt.neueTabs.push(n);
+            return gitterTab(n);
           },
         };
       },
@@ -238,9 +283,13 @@ function neueWelt() {
     },
     LockService: {
       getScriptLock: () => ({
-        waitLock: () => { welt.sperren.push('wait'); },
-        tryLock: (ms) => { welt.sperren.push(ms); return !welt.sperreBelegt; },
-        releaseLock: () => { welt.freigaben++; },
+        waitLock: () => { welt.sperren.push('wait'); welt.ereignisse.push('sperre'); },
+        tryLock: (ms) => {
+          welt.sperren.push(ms);
+          if (!welt.sperreBelegt) welt.ereignisse.push('sperre');
+          return !welt.sperreBelegt;
+        },
+        releaseLock: () => { welt.freigaben++; welt.ereignisse.push('frei'); },
       }),
     },
     CacheService: {

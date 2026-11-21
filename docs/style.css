@@ -1,4 +1,6 @@
-/* SATE-App: schwarzer Grund, dunkelgraue Karten, iOS-Systemschrift. Marke: Logo, „Trink SATE!“ mit Herz, Überschriften
+/* SATE-App: schwarzer Grund, iOS-Systemschrift. Seit v43 flach (Mark: weg von den Kacheln, „Domino-Bausteine“): Inhalte
+   stehen direkt auf dem Grund, große Zahlen, Diagramme über die volle Breite, Listen mit feinen Linien; die Klasse
+   `.karte` ist seitdem ein Abschnitt ohne Kasten. Flächen haben nur noch Bedienelemente (Felder, Chips, Leiste, Blätter). Marke: Logo, „Trink SATE!“ mit Herz, Überschriften
    in Courier New wie auf den Event-Slides („**Hallo** Mark“).
    Farben (seit v28): eine Akzentfarbe, ein helles Blau, nur für Antippbares, Auswahl und die Linie im Diagramm. Zustände
    haben eigene Farben: Grün = gut, Orange = bald/jetzt bestellen, Rot = Fehler und Storno. Primärknöpfe bleiben weiß.
@@ -11,6 +13,7 @@
    macht iOS 26 das Fenster einer Home-Bildschirm-App zu kurz, unten bleibt ein schwarzer Streifen. */
 :root {
   --grund: #000000;
+  --unter: #000000;        /* worauf ein Diagramm steht: der Grund, im Blatt die Blattfarbe (für den Rand um Punkte) */
   --karte: #1C1C1E;
   --karte-druck: #262628;  /* Karte, solange ein Finger darauf liegt */
   --feld: #2C2C2E;
@@ -210,7 +213,7 @@ h2 {
   font-size: 22px;
   font-weight: 400;
   line-height: 1.2;
-  margin: 32px 0 12px;
+  margin: 44px 0 12px;
 }
 /* Kleine Gruppen-Überschrift (Kanäle, Top 10) */
 #verkaeufe-inhalt > h3 {
@@ -226,34 +229,18 @@ h2 {
 .hinweis { color: var(--leise); font-size: 15px; margin: 0 0 12px; }
 
 /* Karten und Kacheln ------------------------------------------------------------------------------------------ */
-.karte {
-  background: var(--karte);
-  border-radius: var(--radius);
-  padding: 16px;
-  margin: 0 0 12px;
-}
-.liste-karte { padding: 0 16px; overflow: hidden; }
+/* Seit v43 kein Kasten mehr: ein Abschnitt direkt auf dem Grund, getrennt durch Luft */
+.karte { margin: 0 0 28px; }
+.liste-karte { margin-bottom: 20px; }
 
-.kacheln { display: grid; grid-template-columns: 1fr 1fr; grid-auto-rows: 1fr; gap: 12px; margin: 0 0 12px; }
-.kachel { background: var(--karte); border-radius: var(--radius); padding: 16px; min-width: 0; }
 .kachel-label { display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 500; color: var(--leise); }
 .label-zeile { justify-content: space-between; gap: 12px; }
 .label-rechts { font-variant-numeric: tabular-nums; white-space: nowrap; }
-.kachel-wert {
-  margin: 6px 0 2px;
-  font-size: 34px;
-  font-weight: 700;
-  line-height: 1.1;
-  letter-spacing: -0.02em;
-  font-variant-numeric: tabular-nums;
-  overflow-wrap: anywhere;
-}
 .einheit { font-size: 15px; font-weight: 500; color: var(--leise); letter-spacing: 0; }
 .kachel-zusatz { font-size: 13px; color: var(--leise); line-height: 1.35; }
 
 /* Bestellstatus: Pille, großes Datum, Reichweiten-Balken */
-.bestellung { padding: 16px; }
-.bestellung.stufe-jetzt { box-shadow: inset 0 0 0 1.5px var(--warn); }
+.bestellung { margin-top: 28px; }
 .bestellung-kopf { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin: 0 0 2px; }
 .bestellung-kopf .kachel-label { margin: 0; }
 .bestellung-frist { margin: 0 0 10px; font-size: 15px; font-weight: 500; color: var(--leise); font-variant-numeric: tabular-nums; }
@@ -261,7 +248,7 @@ h2 {
 
 .bestellung-datum {
   margin: 4px 0 4px;
-  font-size: 40px;
+  font-size: min(52px, 13.5vw);
   font-weight: 700;
   line-height: 1.05;
   letter-spacing: -0.025em;
@@ -283,73 +270,82 @@ h2 {
 .bestell-rechenweg .rw-summe { margin-top: 2px; padding-top: 7px; }
 .bestell-rechenweg dd.rw-notiz { flex-basis: 100%; white-space: normal; font-size: 12px; font-weight: 400; line-height: 1.35; color: var(--leise); }
 /* Überschrift mit Link rechts (z. B. „Standorte“ → „Zum Lager ›“) */
-.h2-zeile { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin: 32px 0 12px; }
+.h2-zeile { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin: 44px 0 12px; }
 .h2-zeile h2 { margin: 0; }
 .text-link.h2-link { min-height: 44px; padding: 0 2px; color: var(--akzent); font-weight: 500; }
 
 /* Begrüßung: Datum klein unter „Hallo Mark“ */
 .titel-gruss { margin-bottom: 4px; }
 .datum-zeile { margin: 0 0 16px; font-size: 15px; color: var(--leise); min-height: 1.4em; }
-/* Kachel als Knopf (z. B. „Dieses Jahr“ öffnet Verkäufe) */
-.kachel-knopf { display: flex; flex-direction: column; width: 100%; border: 0; color: var(--text); font: inherit; text-align: left; cursor: pointer;
-  -webkit-appearance: none; appearance: none; }
-.kachel-knopf > span { display: block; }
-.kachel-knopf > .kachel-label { display: flex; }
 .kachel-pfeil { margin-left: auto; }
-.kachel-fuss { margin-top: auto; padding-top: 10px; font-size: 13px; line-height: 1.35; color: var(--leise); font-variant-numeric: tabular-nums; }
-.kachel-fuss .verteilung-balken.mini { margin: 0 0 7px; height: 5px; }
-.kachel-knopf.gedrueckt { transform: scale(0.97); background: var(--karte-druck); }
-.kachel-knopf:focus-visible { outline: 2px solid var(--akzent); outline-offset: 2px; }
 
-/* Start (v37): das Jahr in Euro. Kopf (Knopf: Umsatz groß, Veränderung, Monate als kleine Balken), darunter drei
-   Kacheln als Knöpfe (Rohertrag, Marge, Flaschen). Balken: vergangene Monate hell, der laufende in der Akzentfarbe,
-   kommende und leere als Strich. */
-.jahr-start { padding: 0; overflow: hidden; }
-.jahr-start-kopf { display: block; width: 100%; padding: 16px 16px 10px; border: 0; background: transparent; color: var(--text); font: inherit; text-align: left;
-  cursor: pointer; -webkit-appearance: none; appearance: none; -webkit-tap-highlight-color: transparent; }
-.jahr-start-kopf > span { display: block; }
-.jahr-start-kopf > .kachel-label { display: flex; }
-.jahr-start-kopf.gedrueckt { background: var(--karte-druck); }
-.jahr-start-kopf:focus-visible { outline: 2px solid var(--akzent); outline-offset: -3px; border-radius: var(--radius); }
-.jahr-start-kopf .kachel-wert { font-size: 40px; }
-.jahr-start-kopf .einheit { font-size: 20px; font-weight: 600; }
-.jahr-start-kopf > .jahr-start-trend { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 2px 12px; min-height: 18px; }
-.jahr-start-monat { font-size: 13px; color: var(--leise); font-variant-numeric: tabular-nums; white-space: nowrap; }
-.diagramm.jahr-balken { margin: 12px 0 0; }
-.jahr-balken .jb-monat { fill: #D1D1D6; }
-.jahr-balken .jb-laufend { fill: var(--akzent); }
-.jahr-balken .jb-leer { fill: var(--feld-aktiv); }
-.jahr-balken .jb-minus { fill: var(--rot); }
-.jahr-balken .jb-jetzt { fill: var(--akzent); font-weight: 700; }
-.jahr-start-kacheln.dash-kacheln { margin: 0; padding: 0 12px 12px; }
-.jahr-start-kacheln.zwei, .jahr-start-kacheln.vier { grid-template-columns: repeat(2, minmax(0, 1fr)); } /* vier (v38): mit Gewinn zwei mal zwei */
-.jahr-start-kacheln.jahr-start-gewinn { grid-template-columns: minmax(0, 1fr); padding-top: 12px; } /* v42: Gewinn laut Lexware vor dem Umsatz */
-.kachel-tipp { display: block; width: 100%; border: 0; color: var(--text); font: inherit; text-align: left; cursor: pointer; -webkit-appearance: none; appearance: none;
-  -webkit-tap-highlight-color: transparent; }
-.kachel-tipp > span { display: block; white-space: nowrap; font-variant-numeric: tabular-nums; }
-/* Schriftgrößen der Kacheln kommen von .dash-kachel (weiter unten); hier nur, was ein Knopf mit span statt p braucht */
-.kachel-tipp.gedrueckt { background: var(--feld-aktiv); transform: scale(0.97); }
-.kachel-tipp:focus-visible { outline: 2px solid var(--akzent); outline-offset: 2px; }
+/* Start als Zusammenfassung (seit v43). „Dieses Jahr“ als Zeilen: links klein der Name, groß die Zahl, darunter eine
+   Zeile; rechts der Verlauf über das Jahr als kleine Balken (vergangene Monate hell, der laufende in der Akzentfarbe,
+   was noch kommt oder leer ist als Strich, ein Monat im Minus rot) bzw. beim Gewinn als Linie. */
+.liste > li.jz { padding: 0; }
+.jz .zeilen-knopf { padding-top: 14px; padding-bottom: 14px; }
+.jz-text { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.jz-titel { font-size: 13px; font-weight: 500; color: var(--leise); }
+.jz-wert { margin: 2px 0 1px; font-size: min(30px, 7.8vw); font-weight: 700; line-height: 1.12; letter-spacing: -0.02em; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.jz-wert .einheit { font-size: 16px; font-weight: 600; }
+.jz-wert.minus { color: var(--rot); }
+.jz-unter { min-height: 18px; font-size: 13px; line-height: 1.35; color: var(--leise); font-variant-numeric: tabular-nums; }
+.jz-unter .trend-wozu { white-space: nowrap; }
+.jz-bild { flex: none; width: 112px; display: block; }
+.jz-bild .diagramm { display: block; width: 100%; height: 40px; }
+.funken .jb-monat { fill: #D1D1D6; }
+.funken .jb-laufend { fill: var(--akzent); }
+.funken .jb-leer { fill: var(--feld-aktiv); }
+.funken .jb-minus { fill: var(--rot); }
 .kachel-icon { flex: none; width: 16px; height: 16px; color: var(--akzent); }
+.h2-neben { font-size: 13px; color: var(--leise); white-space: nowrap; font-variant-numeric: tabular-nums; }
+/* „Im Blick“: Liste mit Symbol, Name, Zeile darunter und der Zahl rechts */
+.liste > li.blick { --trenner-ab: 36px; }
+.blick-wert { flex: none; font-size: 16px; font-weight: 600; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.blick .rang-unter.offen-ueber { color: var(--rot); }
 @media (max-width: 350px) {
-  .jahr-start-kacheln .dash-kachel { padding-left: 8px; padding-right: 8px; }
-  .jahr-start-kacheln .dash-label, .jahr-start-kacheln .dash-klein, .jahr-start-kacheln .dash-klein .trend { font-size: 11px; }
-  .jahr-start-kopf .kachel-wert { font-size: 34px; }
+  .jz-bild { width: 88px; }
 }
-.kacheln > :only-child { grid-column: 1 / -1; }
+
+/* Zahlen, Wahl „Gewinn“ (seit v43): Einnahmen gegen Kosten als zwei Balken im selben Maßstab, die Kosten in ihren
+   Teilen; die Bilder aus dem Thema „Gewinn und Kosten“; Break-even als ein Satz mit Bild; Rohertrag je Flasche als
+   kleine Rechnung. */
+.geld { margin: 18px 0 0; }
+.geld-zeile { display: grid; grid-template-columns: 74px minmax(0, 1fr) 76px; align-items: center; gap: 8px; min-height: 26px; font-size: 13px; }
+.geld-name { color: var(--leise); white-space: nowrap; }
+.geld-spur { display: flex; gap: 2px; height: 10px; border-radius: 5px; overflow: hidden; background: var(--karte); }
+.geld-teil { display: block; height: 100%; min-width: 3px; }
+.geld-ein { background: var(--akzent); border-radius: 5px; }
+.geld-wert { text-align: right; font-weight: 600; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.geld-legende { list-style: none; margin: 8px 0 0; padding: 0; font-size: 13px; }
+.geld-legende li { display: flex; align-items: center; gap: 8px; min-height: 24px; }
+.geld-was { flex: 1; min-width: 0; color: var(--leise); }
+.geld-euro { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.be-karte { margin-top: 44px; }
+.be-karte p { margin: 0; }
+.be-zeit { font-weight: 400; white-space: nowrap; }
+.be-karte .be-zahl { margin: 6px 0 16px; font-size: 15px; line-height: 1.3; color: var(--leise); font-variant-numeric: tabular-nums; }
+.be-zahl strong { font-size: 30px; font-weight: 700; letter-spacing: -0.02em; color: var(--text); }
+.be-karte .be { margin: 0 0 8px; }
+.be-karte .be-spur { background: var(--karte); }
+.gleichung { display: flex; align-items: flex-end; gap: 10px; margin: 8px 0 0; }
+.gl-teil { min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.gl-wert { font-size: min(22px, 5.6vw); font-weight: 700; white-space: nowrap; letter-spacing: -0.01em; font-variant-numeric: tabular-nums; }
+.gl-was { font-size: 12px; color: var(--leise); white-space: nowrap; }
+.gl-ergebnis .gl-wert { color: var(--akzent); }
+.gl-zeichen { flex: none; padding-bottom: 17px; font-size: 18px; font-weight: 500; color: var(--leise); }
 
 /* Start (v23): Prognose in der Bestell-Karte, Kennzahlen mit Fortschritt, Zeilen-Karten, „Zuletzt passiert“ */
 .diagramm.prognose { margin: 6px 0 0; }
 .diagramm .marke-bestellen { stroke: var(--akzent); stroke-width: 1.25; stroke-dasharray: 3 3; }
 .diagramm .marke-text { fill: var(--akzent); font-size: 11px; font-weight: 700; }
-.diagramm .punkt-heute { fill: var(--text); stroke: var(--karte); stroke-width: 2; }
+.diagramm .punkt-heute { fill: var(--text); stroke: var(--unter); stroke-width: 2; }
 .diagramm .band-abfuellung { fill: var(--akzent); opacity: 0.13; }
 .diagramm .band-text { fill: var(--akzent); font-size: 11px; font-weight: 600; }
 .diagramm .leer-text { fill: var(--leise); font-size: 11px; font-weight: 600; }
-.verteilung-balken.mini { display: flex; height: 6px; margin: 9px 0 3px; }
-.karte-symbol { flex: none; width: 32px; height: 32px; display: grid; place-items: center; border-radius: 10px; background: var(--feld); }
-.karte-symbol .icon { width: 20px; height: 20px; }
-.liste > li.aktiv-zeile { display: grid; grid-template-columns: 32px 1fr auto; align-items: center; gap: 12px; padding: 12px 0; }
+.karte-symbol { flex: none; width: 24px; height: 24px; display: grid; place-items: center; color: var(--leise); }
+.karte-symbol .icon { width: 22px; height: 22px; }
+.liste > li.aktiv-zeile { display: grid; grid-template-columns: 24px 1fr auto; align-items: center; gap: 12px; padding: 12px 0; }
 .aktiv-text { min-width: 0; display: flex; flex-direction: column; }
 .aktiv-titel { font-size: 16px; font-weight: 600; overflow-wrap: anywhere; }
 .aktiv-titel .badge { margin-left: 8px; }
@@ -379,7 +375,7 @@ h2 {
 .filter-chips .chip { flex: none; background: var(--karte); }
 .filter-chips .chip[aria-pressed="true"] { background: var(--hell); color: #000000; }
 #kunden-inhalt > h2:first-child, #kunden-inhalt > .h2-zeile:first-child { margin-top: 0; }
-h3.gruppe { font-size: 13px; font-weight: 600; color: var(--leise); margin: 22px 16px 8px; }
+h3.gruppe { font-size: 13px; font-weight: 600; color: var(--leise); margin: 22px 0 8px; }
 .rang-zahlen .trend { margin-top: 1px; }
 
 /* Lager (v23): Liste mit „zählen“, Lager-Blatt mit zwei Zahlen und Knöpfen */
@@ -389,9 +385,9 @@ h3.gruppe { font-size: 13px; font-weight: 600; color: var(--leise); margin: 22px
 
 /* Offene Rechnungen aus Lexware (seit v41): ruhige Zeile „Offen“ auf dem Start, Überfälliges in Rot (Zustand, nicht
    antippbar), im Blatt und im Kunden-Blatt Zeilen wie die Kundenliste; in der Kundenliste ein kleines rotes „überfällig“ */
-.offen-karte { width: 100%; display: flex; align-items: center; gap: 12px; padding: 14px 16px; border: 0; color: var(--text); font: inherit;
-  text-align: left; cursor: pointer; -webkit-appearance: none; appearance: none; }
-.offen-karte.gedrueckt { transform: scale(0.98); background: var(--karte-druck); }
+.offen-karte { width: 100%; display: flex; align-items: center; gap: 12px; margin-top: 44px; padding: 16px 0; border: 0; border-top: 0.5px solid var(--linie);
+  border-bottom: 0.5px solid var(--linie); background: none; color: var(--text); font: inherit; text-align: left; cursor: pointer; -webkit-appearance: none; appearance: none; }
+.offen-karte.gedrueckt { opacity: 0.6; }
 .offen-karte:focus-visible { outline: 2px solid var(--akzent); outline-offset: 2px; }
 .offen-text { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .offen-wert { margin-top: 4px; font-size: 22px; font-weight: 700; line-height: 1.15; font-variant-numeric: tabular-nums; }
@@ -406,12 +402,12 @@ h3.gruppe { font-size: 13px; font-weight: 600; color: var(--leise); margin: 22px
 .liste > li.beleg-summe .zeile-wert { color: var(--text); }
 
 /* Hinweis-Karte (z. B. Jahresinventur): Rahmen in der Akzentfarbe, Symbol, Text, Pfeil */
-.hinweis-karte { width: 100%; display: flex; align-items: center; gap: 12px; border: 0; color: var(--text); font: inherit; text-align: left;
-  cursor: pointer; -webkit-appearance: none; appearance: none; box-shadow: inset 0 0 0 1.5px var(--akzent-weich); }
-.hinweis-karte.gedrueckt { transform: scale(0.98); background: var(--karte-druck); }
+.hinweis-karte { width: 100%; display: flex; align-items: center; gap: 12px; padding: 14px 0; border: 0; border-top: 0.5px solid var(--linie);
+  border-bottom: 0.5px solid var(--linie); background: none; color: var(--text); font: inherit; text-align: left; cursor: pointer; -webkit-appearance: none; appearance: none; }
+.hinweis-karte.gedrueckt { opacity: 0.6; }
 .hinweis-karte:focus-visible { outline: 2px solid var(--akzent); outline-offset: 2px; }
-.hinweis-symbol { flex: none; width: 32px; height: 32px; display: grid; place-items: center; border-radius: 10px; background: var(--akzent-weich); color: var(--akzent); }
-.hinweis-symbol .icon { width: 20px; height: 20px; }
+.hinweis-symbol { flex: none; width: 24px; height: 24px; display: grid; place-items: center; color: var(--akzent); }
+.hinweis-symbol .icon { width: 22px; height: 22px; }
 .hinweis-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; font-size: 13px; color: var(--leise); }
 .hinweis-text strong { color: var(--text); font-size: 16px; font-weight: 600; }
 
@@ -441,7 +437,7 @@ h3.gruppe { font-size: 13px; font-weight: 600; color: var(--leise); margin: 22px
 /* Trenner als Haarlinie unter jeder Zeile außer der letzten; nach einem Symbol oder Platz beginnt er erst am Text */
 .liste > li:not(:last-child)::after { content: ''; position: absolute; left: var(--trenner-ab, 0px); right: 0; bottom: 0; height: 0.5px;
   background: var(--linie); pointer-events: none; }
-.liste > li.aktiv-zeile, .liste > li.verlauf-zeile { --trenner-ab: 44px; }
+.liste > li.aktiv-zeile, .liste > li.verlauf-zeile { --trenner-ab: 36px; }
 .liste > li:has(.rang-nr) { --trenner-ab: 36px; }
 .zeile { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
 .zeile > :first-child { min-width: 0; overflow-wrap: anywhere; }
@@ -471,7 +467,7 @@ h3.gruppe { font-size: 13px; font-weight: 600; color: var(--leise); margin: 22px
 .badge-storno { margin-left: 8px; background: var(--rot-weich); color: var(--rot); }
 
 /* Hinweise: der freundliche Satz zum Bestand direkt unter den Kacheln, die übrigen aus dem Sheet klein und dezent */
-.notiz { display: flex; align-items: flex-start; gap: 8px; margin: -2px 16px 16px; font-size: 13px; line-height: 1.4; color: var(--leise); }
+.notiz { display: flex; align-items: flex-start; gap: 8px; margin: -2px 0 16px; font-size: 13px; line-height: 1.4; color: var(--leise); }
 .notiz-icon { width: 16px; height: 16px; margin-top: 1px; }
 .info-karte { display: grid; grid-template-columns: 16px 1fr; gap: 10px; margin-top: 24px; padding: 12px 14px; background: transparent;
   box-shadow: inset 0 0 0 1px var(--linie); }
@@ -569,8 +565,8 @@ h3.gruppe { font-size: 13px; font-weight: 600; color: var(--leise); margin: 22px
 .segment button:focus-visible { outline: 2px solid var(--akzent); outline-offset: 1px; }
 
 /* Verkäufe: Diagramm-Karte (SVG aus ansichten.js), oben rechts Pfeile zum Blättern */
-.diagramm-karte { position: relative; padding: 16px 8px 14px; }
-.monat-schritte { position: absolute; top: 14px; right: 16px; display: flex; gap: 8px; }
+.diagramm-karte { position: relative; }
+.monat-schritte { position: absolute; top: 0; right: 0; display: flex; gap: 8px; }
 .monat-schritte .rund { background: var(--feld); }
 .monat-schritte .rund:disabled { opacity: 0.35; }
 .monat-schritte .rund:disabled .icon { animation: none; }
@@ -578,7 +574,7 @@ h3.gruppe { font-size: 13px; font-weight: 600; color: var(--leise); margin: 22px
 .monat-schritte .chevron { margin: 0; border-color: var(--text); }
 .monat-schritte .pfeil-links { transform: translateX(2px) rotate(-135deg); }
 .monat-schritte .pfeil-rechts { transform: translateX(-2px) rotate(45deg); }
-.balken-info { padding: 0 8px 6px; min-height: 118px; }
+.balken-info { padding: 0 0 6px; min-height: 118px; }
 .info-wert { margin: 4px 0 2px; font-size: 34px; font-weight: 700; line-height: 1.1; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
 .diagramm { display: block; width: 100%; height: auto; overflow: visible; touch-action: manipulation; }
 .diagramm text { fill: var(--leise); font-family: var(--schrift); font-size: 11px; font-variant-numeric: tabular-nums; }
@@ -601,23 +597,42 @@ h3.gruppe { font-size: 13px; font-weight: 600; color: var(--leise); margin: 22px
 .rein-anim .balken-dieses.negativ, .rein-anim .balken-vorjahr.negativ { transform-origin: 50% 0%; }
 .rein-anim .paar:nth-child(n+6) .balken-dieses, .rein-anim .paar:nth-child(n+6) .balken-vorjahr { animation-delay: 0.04s; }
 .rein-anim .paar:nth-child(n+10) .balken-dieses, .rein-anim .paar:nth-child(n+10) .balken-vorjahr { animation-delay: 0.08s; }
-.rein-anim .linie-dieses, .rein-anim .linie-vorjahr, .rein-anim .flaeche-dieses, .rein-anim .punkt-dieses, .rein-anim .punkt-vorjahr { animation: blenden 0.6s ease-out both; }
+.rein-anim .linie-vorjahr { animation: blenden 0.6s ease-out both; }
+/* Seit v43: Die Linie des Jahres zeichnet sich von links nach rechts (pathLength 1 am Pfad), Fläche, Punkte und
+   Beschriftung kommen danach; die kleinen Balken auf dem Start und die Balken der Gewinn-Monate wachsen von unten */
+.rein-anim .zieh { stroke-dasharray: 1; animation: ziehen 1.1s var(--sanft) both; animation-delay: var(--seit, 0s); }
+.rein-anim .flaeche-dieses, .rein-anim .punkt-dieses, .rein-anim .punkt-vorjahr, .rein-anim .wert-label, .rein-anim .gm-punkt, .rein-anim .spark-punkt,
+.rein-anim .marke-bestellen, .rein-anim .marke-text, .rein-anim .band-abfuellung, .rein-anim .band-text, .rein-anim .leer-text { animation: kommen 0.5s ease-out both;
+  animation-delay: calc(0.75s + var(--seit, 0s)); }
+.rein-anim .gm-umsatz, .rein-anim .gm-kosten, .rein-anim.funken rect { transform-box: fill-box; transform-origin: 50% 100%; animation: wachsen 0.6s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  animation-delay: var(--seit, 0s); }
+.rein-anim .gm-umsatz.negativ, .rein-anim .gm-kosten.negativ { transform-origin: 50% 0%; }
+.rein-anim.funken rect:nth-child(n+4) { animation-delay: calc(0.05s + var(--seit, 0s)); }
+.rein-anim.funken rect:nth-child(n+7) { animation-delay: calc(0.1s + var(--seit, 0s)); }
+.rein-anim.funken rect:nth-child(n+10) { animation-delay: calc(0.15s + var(--seit, 0s)); }
+.rein-anim .ring-teil { animation: blenden 0.8s ease-out both; animation-delay: var(--seit, 0s); }
+/* `--seit` (negativ, von kern.js): Der Abschnitt wurde neu gezeichnet, während er noch einblendete; die Bewegung läuft
+   dann dort weiter, wo sie war */
 @keyframes wachsen { from { transform: scaleY(0); } to { transform: none; } }
 @keyframes blenden { from { opacity: 0; } to { opacity: 1; } }
+/* Ohne Ziel: endet bei der eigenen Deckkraft des Elements (das Band der Abfüllung ist nur leicht getönt) */
+@keyframes kommen { from { opacity: 0; } }
+@keyframes ziehen { from { stroke-dashoffset: 1; } to { stroke-dashoffset: 0; } }
+@keyframes breiter { from { transform: scaleX(0); } to { transform: none; } }
 
 /* Dieses Jahr kumuliert: Linie in der Akzentfarbe mit Fläche, Vorjahr grau gestrichelt */
 .diagramm .linie-dieses { fill: none; stroke: var(--akzent); stroke-width: 2.25; stroke-linejoin: round; stroke-linecap: round; }
 .diagramm .flaeche-dieses { fill: url(#kumul-flaeche); stroke: none; }
 .kumul-stopp { stop-color: var(--akzent); }
 .diagramm .linie-vorjahr { fill: none; stroke: #8E8E93; stroke-width: 1.75; stroke-dasharray: 4 3; stroke-linejoin: round; stroke-linecap: round; }
-.diagramm .punkt-dieses { fill: var(--akzent); stroke: var(--karte); stroke-width: 2; }
-.diagramm .punkt-vorjahr { fill: #8E8E93; stroke: var(--karte); stroke-width: 1.5; }
+.diagramm .punkt-dieses { fill: var(--akzent); stroke: var(--unter); stroke-width: 2; }
+.diagramm .punkt-vorjahr { fill: #8E8E93; stroke: var(--unter); stroke-width: 1.5; }
 .diagramm.mini .mini-wert { font-size: 10px; fill: var(--leise); }
 .diagramm .wert-label { fill: var(--akzent); font-size: 11px; font-weight: 700; }
 .diagramm .wert-label.start-wert { fill: var(--text); } /* Bestand heute: weiß wie der Punkt */
 .diagramm .treffer { fill: transparent; cursor: pointer; outline: none; -webkit-tap-highlight-color: transparent; }
 .diagramm .treffer:focus-visible { stroke: var(--text); stroke-width: 1; stroke-dasharray: 2 2; }
-.legende { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; font-size: 12px; color: var(--leise); margin: 8px 8px 0; }
+.legende { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; font-size: 12px; color: var(--leise); margin: 8px 0 0; }
 .zeichen { display: inline-block; width: 10px; height: 10px; margin-right: 6px; border-radius: 3px; vertical-align: -1px; }
 .zeichen-dieses { background: #D1D1D6; }
 .zeichen-vorjahr { background: #6C6C70; }
@@ -625,24 +640,28 @@ h3.gruppe { font-size: 13px; font-weight: 600; color: var(--leise); margin: 22px
 .zeichen-linie-vorjahr { border-top: 2px dashed #8E8E93; }
 .legende-tipp { margin-left: auto; }
 
-.zeitraum-text { font-size: 13px; color: var(--leise); margin: 0 16px 8px; font-variant-numeric: tabular-nums; }
-.vergleich-text { margin: -2px 16px 12px; font-size: 13px; }
+.zeitraum-text { font-size: 13px; color: var(--leise); margin: 0 0 8px; font-variant-numeric: tabular-nums; }
+.vergleich-text { margin: -2px 0 12px; font-size: 13px; }
 .info-leer { color: var(--leise); }
 /* Vergleich eines Monats: zwei Zellen nebeneinander (Vorjahresmonat, Vormonat), Prozent farbig, Basiswert leise */
-.vergleich-raster { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px; margin: 12px 0 2px; }
-.vg-zelle { display: flex; flex-direction: column; gap: 1px; padding: 9px 12px; border-radius: var(--radius-klein); background: var(--feld); min-width: 0; }
+.vergleich-raster { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); margin: 14px 0 6px; }
+.vg-zelle { display: flex; flex-direction: column; gap: 1px; padding: 2px 14px; border-left: 0.5px solid var(--linie); min-width: 0; }
+.vg-zelle:first-child { padding-left: 0; border-left: 0; }
 .vg-label { font-size: 12px; color: var(--leise); }
 .vg-wert { font-size: 19px; font-weight: 700; line-height: 1.25; font-variant-numeric: tabular-nums; color: var(--text); }
 .vg-wert.trend-hoch { color: var(--gruen); }
 .vg-wert.trend-runter { color: var(--rot); }
 .vg-basis { font-size: 12px; color: var(--leise); font-variant-numeric: tabular-nums; }
 /* Summen eines Zeitraums (Kanäle und Kunden): kompakt nebeneinander */
-.karte.summen { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 8px; padding: 14px 16px; }
+.karte.summen { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 8px; }
 .summe-zelle { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; min-width: 0; }
 .summe-wert { font-size: 20px; font-weight: 700; line-height: 1.2; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
 .summe-zelle .trend { margin-top: 2px; }
-.jahr-karte { padding: 16px 16px 14px; }
-.jahr-karte .diagramm { margin: 14px -4px 0; width: calc(100% + 8px); }
+/* Die Zahl, die zählt: groß und direkt auf dem Grund (Zahlen, Lager) */
+.jahr-karte { margin-top: 20px; }
+.jahr-karte .info-wert, .gesamt-karte .info-wert { margin: 6px 0 4px; font-size: min(56px, 14.5vw); letter-spacing: -0.03em; line-height: 1.05; }
+.jahr-karte .info-wert .einheit, .gesamt-karte .info-wert .einheit { font-size: 20px; font-weight: 600; letter-spacing: 0; }
+.jahr-karte .diagramm { margin: 18px 0 0; width: 100%; }
 .jahr-karte .legende { margin: 8px 0 0; }
 .jahr-karte .trend-zeile { align-items: center; }
 .jahr-karte .trend-hinweis { font-size: 12px; }
@@ -650,7 +669,7 @@ h3.gruppe { font-size: 13px; font-weight: 600; color: var(--leise); margin: 22px
 /* Kunden: ganze Zeile tippbar (öffnet die Details), Kanal klein darunter */
 .liste > li.kunde-zeile { padding: 0; }
 .zeilen-knopf {
-  /* reicht bis an den Kartenrand (Karte: 16 px Innenabstand), damit das Highlight beim Drücken die ganze Zeile füllt */
+  /* reicht 16 px über den Inhalt hinaus (am Handy bis an den Bildschirmrand), damit das Highlight beim Drücken die ganze Zeile füllt */
   width: calc(100% + 32px);
   margin: 0 -16px;
   display: flex;
@@ -667,7 +686,7 @@ h3.gruppe { font-size: 13px; font-weight: 600; color: var(--leise); margin: 22px
   appearance: none;
 }
 .zeilen-knopf.gedrueckt { background: rgba(255, 255, 255, 0.07); }
-.zeilen-knopf:focus-visible { outline: 2px solid var(--akzent); outline-offset: -3px; border-radius: 12px; } /* innen: die Karte schneidet außen ab */
+.zeilen-knopf:focus-visible { outline: 2px solid var(--akzent); outline-offset: -3px; border-radius: 12px; }
 .rang-unter { display: block; font-size: 13px; color: var(--leise); margin-top: 1px; overflow-wrap: anywhere; }
 .rang-unter .badge { margin-left: 6px; padding: 1px 7px; font-size: 11px; vertical-align: 1px; }
 /* Lange Kundennamen: höchstens zwei Zeilen, deutsche Silbentrennung, der volle Name steht im Kunden-Blatt */
@@ -728,7 +747,6 @@ h3.gruppe { font-size: 13px; font-weight: 600; color: var(--leise); margin: 22px
 .vt-wert { color: var(--text); font-weight: 600; font-variant-numeric: tabular-nums; }
 
 /* Jahresinventur (Dezember/Januar): Liste mit Haken oder Knopf */
-.jahresinventur { box-shadow: inset 0 0 0 1.5px var(--akzent-weich); }
 .jahresinventur .karte-kopf { margin-bottom: 6px; }
 .jahresinventur > .kachel-zusatz { margin: 0 0 6px; }
 .jahresinventur .liste > li:last-child { padding-bottom: 2px; }
@@ -748,18 +766,17 @@ h3.gruppe { font-size: 13px; font-weight: 600; color: var(--leise); margin: 22px
 .offen-zeile .zeile-name { min-width: 0; overflow-wrap: anywhere; }
 
 /* Verlauf: Symbol | Art, Menge und Ort, „Datum von …“, Kommentar | Storno */
-.liste > li.verlauf-zeile { display: grid; grid-template-columns: 32px 1fr auto; align-items: center; gap: 12px; padding: 12px 0; }
+.liste > li.verlauf-zeile { display: grid; grid-template-columns: 24px 1fr auto; align-items: center; gap: 12px; padding: 12px 0; }
 .verlauf-icon {
-  width: 32px;
-  height: 32px;
+  width: 24px;
+  height: 24px;
   display: grid;
   place-items: center;
   align-self: start;
-  border-radius: 10px;
-  background: var(--feld);
-  color: var(--text);
+  margin-top: 2px;
+  color: var(--leise);
 }
-.verlauf-icon .icon { width: 18px; height: 18px; }
+.verlauf-icon .icon { width: 22px; height: 22px; }
 .verlauf-mitte { min-width: 0; }
 .verlauf-kopf { display: flex; align-items: center; gap: 8px; font-size: 16px; line-height: 1.3; }
 .verlauf-art { font-weight: 600; }
@@ -768,7 +785,7 @@ h3.gruppe { font-size: 13px; font-weight: 600; color: var(--leise); margin: 22px
 .storniert .verlauf-icon { opacity: 0.5; }
 .storniert .verlauf-art { color: var(--leise); }
 .storniert .eintrag-text { text-decoration: line-through; color: var(--leise); }
-.liste-fuss { margin: -4px 16px 0; font-size: 13px; }
+.liste-fuss { margin: -4px 0 0; font-size: 13px; }
 
 /* Einklappbarer Abschnitt („Verkäufe zuordnen“): Karte als Knopf, Pfeil dreht sich beim Aufklappen */
 .klapp-h2 { margin: 32px 0 12px; font: inherit; }
@@ -786,7 +803,8 @@ h3.gruppe { font-size: 13px; font-weight: 600; color: var(--leise); margin: 22px
   -webkit-appearance: none;
   appearance: none;
 }
-button.klapp-kopf.gedrueckt { transform: scale(0.98); background: var(--karte-druck); }
+.klapp-kopf { padding: 16px 0; border-top: 0.5px solid var(--linie); border-bottom: 0.5px solid var(--linie); background: none; }
+button.klapp-kopf.gedrueckt { opacity: 0.6; }
 .klapp-kopf:focus-visible { outline: 2px solid var(--akzent); outline-offset: 2px; }
 .klapp-text { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .klapp-titel { font-size: 16px; font-weight: 600; }
@@ -854,7 +872,7 @@ select {
 select:disabled, input:disabled, textarea:disabled { opacity: 0.5; }
 
 .formular { animation: rein 0.22s ease-out; }
-.formular-karte { padding: 16px; margin: 0 0 16px; }
+.formular-karte { margin: 0 0 16px; }
 /* Mengen: Beschriftung links, Stepper rechts (−/+ je 44 px) */
 .menge { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .menge + .menge { margin-top: 10px; }
@@ -913,7 +931,7 @@ select:disabled, input:disabled, textarea:disabled { opacity: 0.5; }
 #zuletzt-inhalt h2 { margin-top: 28px; }
 
 /* Art als Kacheln: Symbol links, Name und Kurztext rechts (zwei Spalten) */
-.arten { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
+.arten { display: grid; grid-template-columns: repeat(2, 1fr); gap: 4px 8px; margin: 0 -8px; }
 .art { position: relative; margin: 0; min-width: 0; }
 .art input { position: absolute; opacity: 0; width: 1px; height: 1px; min-height: 0; pointer-events: none; }
 .art-kachel {
@@ -922,30 +940,28 @@ select:disabled, input:disabled, textarea:disabled { opacity: 0.5; }
   align-items: center;
   justify-content: flex-start;
   gap: 10px;
-  min-height: 62px;
-  padding: 10px;
-  border-radius: var(--radius);
-  background: var(--karte);
-  box-shadow: inset 0 0 0 1.5px transparent;
+  min-height: 58px;
+  padding: 8px;
+  border-radius: 14px;
   color: var(--text);
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
 }
-.art.gedrueckt .art-kachel { transform: scale(0.96); background-color: var(--feld); }
-.art-symbol { flex: none; width: 32px; height: 32px; display: grid; place-items: center; border-radius: 10px; background: var(--feld);
+.art.gedrueckt .art-kachel { transform: scale(0.96); background-color: var(--karte); }
+.art-symbol { flex: none; width: 36px; height: 36px; display: grid; place-items: center; border-radius: 50%; background: var(--karte);
   transition: background-color 0.15s ease; }
 .art-kachel .icon { width: 20px; height: 20px; color: var(--text); transition: color 0.15s ease; }
 .art-texte { min-width: 0; display: flex; flex-direction: column; gap: 1px; }
-.art-name { font-size: 14px; font-weight: 600; line-height: 1.2; letter-spacing: -0.01em; overflow-wrap: anywhere; }
+.art-name { font-size: min(14px, 3.6vw); font-weight: 600; line-height: 1.2; letter-spacing: -0.02em; overflow-wrap: anywhere; }
 .art-kurz { font-size: 12px; line-height: 1.25; color: var(--leise); overflow-wrap: anywhere; }
 .art input:checked + .art-kachel .art-symbol { background: var(--akzent); }
 .art input:checked + .art-kachel .art-symbol .icon { color: #000000; }
-/* Gewählt: Akzent als Schleier über der Kartenfarbe (nicht über Schwarz, sonst wirkt die Kachel dunkler als die anderen) */
-.art input:checked + .art-kachel { background: linear-gradient(var(--akzent-weich), var(--akzent-weich)) var(--karte); box-shadow: inset 0 0 0 1.5px var(--akzent); }
+/* Gewählt: nur diese Art ist hinterlegt (seit v43 ohne Kästen um die anderen) */
+.art input:checked + .art-kachel { background: var(--akzent-weich); }
 
 .art input:focus-visible + .art-kachel { outline: 2px solid var(--text); outline-offset: 2px; }
 .art input:disabled + .art-kachel { opacity: 0.5; }
-.art-text { margin: 12px 16px 16px; }
+.art-text { margin: 12px 0 16px; }
 
 /* Knöpfe: Kapseln wie in iOS 26, Primär weiß gefüllt, sonst grau */
 .knopf {
@@ -1017,7 +1033,7 @@ form .fehler { margin: 16px 0; }
 .logo-gross { display: block; height: 60px; width: auto; margin: 0 auto 28px; }
 .anmelden .titel { margin-bottom: 8px; }
 .untertitel { font-size: 16px; color: var(--leise); text-wrap: balance; }
-.anmelden-karte { padding: 20px; }
+.anmelden-karte { padding: 20px; background: var(--karte); border-radius: var(--radius); }
 .anmelden-karte .hinweis { margin: 10px 0 18px; }
 #code {
   font-family: ui-monospace, "SF Mono", Menlo, monospace;
@@ -1210,6 +1226,7 @@ body.mit-leiste::after {
   font: inherit;
   box-shadow: 0 -10px 40px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.09);
   overflow: hidden;
+  --unter: var(--karte);
 }
 .blatt[open] { display: flex; flex-direction: column; }
 .blatt::backdrop { background: rgba(0, 0, 0, 0.6); opacity: var(--dunkel, 1); animation: blenden 0.3s ease-out; }
@@ -1238,8 +1255,9 @@ body.mit-leiste::after {
 }
 .blatt-inhalt::-webkit-scrollbar { display: none; }
 .blatt-unter { font-size: 15px; color: var(--leise); margin: 0 0 16px; }
-.blatt-zahlen { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 0 0 20px; }
-.blatt-zahl { background: var(--feld); border-radius: var(--radius-klein); padding: 10px 12px; min-width: 0; }
+.blatt-zahlen { display: grid; grid-template-columns: repeat(3, 1fr); margin: 4px 0 24px; }
+.blatt-zahl { padding: 2px 12px; border-left: 0.5px solid var(--linie); min-width: 0; }
+.blatt-zahl:first-child { padding-left: 0; border-left: 0; }
 .blatt-wert { margin: 4px 0 0; font-size: 22px; font-weight: 700; line-height: 1.15; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
 .blatt-euro { margin-top: 2px; color: var(--text); font-weight: 500; white-space: nowrap; }
 .blatt-titel-klein { font-size: 13px; font-weight: 600; color: var(--leise); margin: 22px 0 8px; }
@@ -1314,8 +1332,10 @@ body.mit-leiste::after {
    die Monate als dichte Tabelle (der Balken dahinter zeigt die Flaschen im Verhältnis zum stärksten Monat, der laufende
    Monat schraffiert), letzte Bestellungen, Kanäle. Seit v31 gibt es viel mehr: Gruppen mit vielen dichten Tabellen
    und Zahlenlisten, seit v36 jede Gruppe als eigenes Blatt aus ihrem Reiter (siehe unten). Zeilen 27 px, Zahlen mit gleich breiten Ziffern. */
-.dash-kacheln { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin: 4px 0 16px; }
-.dash-kachel { background: var(--feld); border-radius: var(--radius-klein); padding: 9px 10px 10px; min-width: 0; }
+.dash-kacheln { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); margin: 4px 0 16px; }
+/* Seit v43 ein Band ohne Kästen: die Werte nebeneinander, getrennt durch feine Linien */
+.dash-kachel { padding: 2px 12px; border-left: 0.5px solid var(--linie); min-width: 0; }
+.dash-kachel:first-child { padding-left: 0; border-left: 0; }
 .dash-kachel p { margin: 0; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .dash-label { font-size: 12px; font-weight: 500; line-height: 16px; color: var(--leise); }
 .dash-kachel .dash-wert { margin-top: 4px; font-size: 18px; font-weight: 700; line-height: 22px; letter-spacing: -0.01em; }
@@ -1401,8 +1421,8 @@ body.mit-leiste::after {
 .dash-fuss.dash-fehlt { margin: 0 0 16px; font-size: 13px; }
 /* Schmale Geräte: die jeweils letzten Vergleichsspalten und das „zu 2025“ fallen weg, damit nichts umbricht */
 @media (max-width: 350px) {
-  .dash-kacheln { gap: 6px; }
-  .dash-kachel { padding-left: 8px; padding-right: 8px; }
+  .dash-kachel:not(:first-child) { padding-left: 8px; }
+  .dash-kachel { padding-right: 8px; }
   .dash-kachel .dash-wert { font-size: 16px; }
   .dash-kachel .dash-zweit { font-size: 14px; }
   .dash-kachel .trend-wozu { display: none; }
@@ -1444,25 +1464,26 @@ body.mit-leiste::after {
    sind die des früheren Dashboards (.dash-kachel), hier in einer Karte. */
 .aw-marge { font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; }
 .info-wert.minus, .teil-zeile .rang-flaschen.minus { color: var(--rot); }
-.aw-kacheln.dash-kacheln { margin: 14px 0 0; }
+.aw-kacheln.dash-kacheln { margin: 22px 0 0; }
 .aw-kacheln.zwei { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .aw-kacheln .dash-kachel .dash-wert { font-size: min(18px, 4.6vw); }
 .aw-neben { margin-left: 8px; font-size: 13px; font-weight: 400; color: var(--leise); white-space: nowrap; font-variant-numeric: tabular-nums; }
 /* Balken in einer Zeile, die als Ganzes ein Knopf ist (dort nur span erlaubt) */
 span.anteil, span.anteil-fuell { display: block; }
 .jahre-liste { margin: 10px 0 0; }
-.jahre-liste > li.kunde-zeile .zeilen-knopf { width: calc(100% + 32px); }
 #verkaeufe-inhalt > .filter-chips { margin-bottom: 4px; }
-#verkaeufe-inhalt > .filter-chips + .filter-chips { margin-bottom: 12px; }
-/* Die Kacheln stehen in einer Karte und sind damit schmaler als im Blatt: weniger Rand, auf schmalen iPhones kleinere
-   Nebenzeilen, auf ganz schmalen zwei nebeneinander und die dritte darunter */
-.aw-kacheln .dash-kachel { padding-left: 8px; padding-right: 8px; }
+#verkaeufe-inhalt > .filter-chips:last-of-type { margin-bottom: 12px; }
+/* Auf schmalen iPhones kleinere Nebenzeilen, auf ganz schmalen zwei nebeneinander und der dritte Wert darunter */
 @media (max-width: 380px) {
   .aw-kacheln .dash-label, .aw-kacheln .dash-klein { font-size: 11px; }
+  .aw-kacheln .dash-kachel:not(:first-child) { padding-left: 9px; }
+  .aw-kacheln .dash-kachel { padding-right: 9px; }
 }
 @media (max-width: 350px) {
-  .aw-kacheln.dash-kacheln { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .aw-kacheln .dash-kachel:nth-child(3) { grid-column: 1 / -1; }
+  .aw-kacheln.dash-kacheln { grid-template-columns: repeat(2, minmax(0, 1fr)); row-gap: 14px; }
+  .aw-kacheln .dash-kachel:nth-child(3) { grid-column: 1 / -1; padding-left: 0; border-left: 0; }
+  /* Vier Wahlen im Umschalter (Flaschen, Umsatz, Rohertrag, Gewinn) passen nur etwas kleiner */
+  #verkaeufe-inhalt > .segment button { font-size: 13px; padding-left: 2px; padding-right: 2px; }
 }
 
 /* Breiter Bildschirm (Laptop im Browser): Ein Blatt mit vielen Zahlen nutzt die Breite, die Blöcke stehen in zwei Spalten */
@@ -1571,9 +1592,9 @@ span.anteil, span.anteil-fuell { display: block; }
 .diagramm .gm-kosten.gm-laufend { fill: rgba(255, 255, 255, 0.04); stroke: #8E8E93; stroke-width: 1; stroke-dasharray: 3 2; }
 .diagramm .gm-umsatz.negativ { fill: var(--rot); stroke: none; }
 .diagramm .gm-linie { fill: none; stroke: var(--akzent); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
-.diagramm .gm-punkt { fill: var(--akzent); stroke: var(--karte); stroke-width: 1.5; }
+.diagramm .gm-punkt { fill: var(--akzent); stroke: var(--unter); stroke-width: 1.5; }
 .diagramm .gm-punkt.negativ { fill: var(--rot); }
-.diagramm .gm-punkt.gm-laufend { fill: var(--karte); stroke: var(--akzent); stroke-width: 1.5; }
+.diagramm .gm-punkt.gm-laufend { fill: var(--unter); stroke: var(--akzent); stroke-width: 1.5; }
 .diagramm .gm-jetzt { fill: var(--akzent); font-weight: 700; }
 .ring-zeile { display: flex; align-items: center; gap: 16px; margin: 2px 0 14px; padding: 0 8px; }
 .diagramm.ring { flex: none; width: 112px; }
@@ -1621,3 +1642,79 @@ span.anteil, span.anteil-fuell { display: block; }
     transition-duration: 0.001ms !important;
   }
 }
+
+/* Bewegung beim Scrollen (seit v43, kern.js S.bewegung): Abschnitte blenden ein, wenn sie zum ersten Mal ins Bild
+   kommen (Mark: „wie auf so einer coolen Website“). Nur wenn der Browser es kann (`.bewegt` am html) und nicht bei
+   „Bewegung reduzieren“. Was schon einmal zu sehen war, steht sofort da (`.gleich`). */
+@media screen and (prefers-reduced-motion: no-preference) {
+  .bewegt .auf { opacity: 0; transform: translate3d(0, 22px, 0); }
+  .bewegt .auf.da { opacity: 1; transform: none; transition: opacity 0.6s ease-out, transform 0.75s var(--sanft); }
+  .bewegt .auf.da.gleich { transition: none; }
+  /* Liegende Balken (Einnahmen gegen Kosten, Anteile, Break-even, Verteilung im Lager) fahren beim ersten Mal von links aus */
+  .bewegt .auf.da:not(.gleich) .geld-teil, .bewegt .auf.da:not(.gleich) .anteil-fuell, .bewegt .auf.da:not(.gleich) .be-fuellung,
+  .bewegt .auf.da:not(.gleich) .vt-teil, .bewegt .auf.da.weiter .geld-teil, .bewegt .auf.da.weiter .anteil-fuell, .bewegt .auf.da.weiter .be-fuellung,
+  .bewegt .auf.da.weiter .vt-teil { transform-origin: 0 50%; animation: breiter 0.9s var(--sanft) both; animation-delay: calc(0.2s + var(--seit, 0s)); }
+}
+
+/* Aufgaben fürs Team (seit v43, aufgaben.js): Zeile mit rundem Haken links, Text und darunter Frist und Person;
+   darunter das Team als Reihe von Kreisen mit der Zahl der offenen Aufgaben */
+.aufgaben-kopf { margin-top: 28px; }
+.text-link.h2-link .link-icon { width: 18px; height: 18px; margin-right: 2px; vertical-align: -3px; stroke-width: 2.2; }
+.liste > li.aufgabe { display: flex; align-items: flex-start; gap: 4px; padding: 0; transition: opacity 0.3s ease 0.1s; }
+.liste > li.aufgabe { --trenner-ab: 44px; }
+.af-haken { flex: none; position: relative; width: 44px; height: 52px; margin-left: -10px; padding: 0; border: 0; background: none; cursor: pointer;
+  -webkit-appearance: none; appearance: none; }
+.af-haken::before { content: ''; position: absolute; left: 10px; top: 13px; width: 26px; height: 26px; border-radius: 50%;
+  box-shadow: inset 0 0 0 1.75px var(--leise); transition: background-color 0.18s ease, box-shadow 0.18s ease, transform 0.35s var(--feder); }
+.af-haken .icon { position: absolute; left: 14px; top: 17px; width: 18px; height: 18px; color: #000000; stroke-width: 2.6; opacity: 0;
+  transform: scale(0.5); transition: opacity 0.15s ease, transform 0.35s var(--feder); }
+.af-haken.gedrueckt::before { transform: scale(0.88); }
+.af-haken:focus-visible { outline: 0; }
+.af-haken:focus-visible::before { outline: 2px solid var(--akzent); outline-offset: 2px; }
+.aufgabe.fertig .af-haken::before, .aufgabe.abgehakt .af-haken::before { background: var(--akzent); box-shadow: none; }
+.aufgabe.fertig .af-haken .icon, .aufgabe.abgehakt .af-haken .icon { opacity: 1; transform: none; }
+.aufgabe.geht:not(.abgehakt) .af-haken::before { background: none; box-shadow: inset 0 0 0 1.75px var(--leise); }
+.aufgabe.geht:not(.abgehakt) .af-haken .icon { opacity: 0; }
+.aufgabe.geht { opacity: 0.35; }
+.aufgabe-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; min-height: 52px; justify-content: center; padding: 8px 0; border: 0; background: none;
+  color: var(--text); font: inherit; text-align: left; cursor: pointer; -webkit-appearance: none; appearance: none; }
+.aufgabe-text.gedrueckt { opacity: 0.6; }
+.aufgabe-text:focus-visible { outline: 2px solid var(--akzent); outline-offset: -2px; border-radius: 8px; }
+.aufgabe-titel { font-size: 16px; font-weight: 500; line-height: 1.3; overflow-wrap: anywhere; }
+.aufgabe.fertig .aufgabe-titel, .aufgabe.abgehakt .aufgabe-titel { color: var(--leise); text-decoration: line-through; text-decoration-thickness: 1px; }
+.aufgabe-neben { font-size: 13px; color: var(--leise); line-height: 1.35; font-variant-numeric: tabular-nums; }
+.frist-ueber { color: var(--rot); font-weight: 600; }
+.frist-heute { color: var(--akzent); font-weight: 600; }
+.frist-bald { color: var(--text); }
+.hinweis.aufgaben-leer { margin: 4px 0 20px; }
+.kachel-label.team-label { margin: 6px 0 2px; }
+.team-reihe { display: flex; gap: 6px; overflow-x: auto; margin: 0 calc(-1 * var(--rand-r)) 0 calc(-1 * var(--rand-l)); padding: 6px var(--rand-r) 4px var(--rand-l);
+  scrollbar-width: none; -webkit-overflow-scrolling: touch; }
+.team-reihe::-webkit-scrollbar { display: none; }
+.person { flex: none; width: 64px; display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 4px 0; border: 0; background: none; color: var(--leise);
+  font: inherit; font-size: 12px; cursor: pointer; -webkit-appearance: none; appearance: none; }
+.person.gedrueckt .person-kreis { transform: scale(0.92); }
+.person:focus-visible { outline: 2px solid var(--akzent); outline-offset: 2px; border-radius: 12px; }
+.person-kreis { position: relative; width: 48px; height: 48px; display: grid; place-items: center; border-radius: 50%; background: var(--karte); color: var(--text);
+  font-size: 18px; font-weight: 600; transition: transform 0.35s var(--feder); }
+.person.offen .person-kreis { box-shadow: 0 0 0 2px var(--grund), 0 0 0 3.5px var(--akzent); }
+.person.ueber .person-kreis { box-shadow: 0 0 0 2px var(--grund), 0 0 0 3.5px var(--rot); }
+.person-zahl { position: absolute; right: -6px; top: -4px; min-width: 20px; height: 20px; padding: 0 5px; display: grid; place-items: center; border-radius: 10px;
+  background: var(--akzent); color: #000000; font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums; box-shadow: 0 0 0 2px var(--grund); }
+.person.ueber .person-zahl { background: var(--rot); }
+.person-name { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.person.offen .person-name, .person.ueber .person-name { color: var(--text); }
+/* Blatt „Aufgaben“ und Formular */
+.aufgaben-blatt .filter-chips { margin-left: -20px; margin-right: -20px; padding-left: 20px; padding-right: 20px; }
+.aufgaben-blatt .filter-chips .chip { background: var(--feld); }
+.aufgaben-blatt .filter-chips .chip[aria-pressed="true"] { background: var(--hell); }
+.chip-zahl { margin-left: 6px; font-size: 13px; font-weight: 600; opacity: 0.6; font-variant-numeric: tabular-nums; }
+.knopf.aufgabe-neu { margin: 16px 0 4px; }
+.chips-wahl { display: flex; flex-wrap: wrap; gap: 8px; }
+.chips-wahl + input { margin-top: 10px; }
+.aufgabe-form textarea { min-height: 0; }
+.aufgabe-form #af-titel { font-size: 17px; }
+.aufgabe-form .fehler { margin: 0 0 12px; }
+.aufgabe-aktionen { display: flex; justify-content: space-between; gap: 12px; margin: 14px 0 0; }
+.text-link.gefahr-link { color: var(--rot); }
+#eintragen-aufgabe:not(:empty) { margin: 0 0 12px; }

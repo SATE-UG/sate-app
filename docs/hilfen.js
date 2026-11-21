@@ -2912,6 +2912,129 @@
       werte: werte, summe: summe, vergleich: vergleich, gruppen: gruppen };
   }
 
+  // Aufgaben fürs Team (seit v43) ---------------------------------------------------------------------------------
+  // Mark, 2026-11-21: Leuten Aufgaben zuteilen, mit Datum und auf Wunsch Uhrzeit; jede Person sieht ihre eigenen und
+  // was die anderen noch offen haben („wir machen das als Hobby, da geht manches unter“). Die Schnittstelle liefert
+  // `aufgaben` = { team, liste } (null ohne den Tab „Aufgaben“). Hier steht die reine Logik: lesen, ordnen, die Frist
+  // in Worten, die Eingabe prüfen (dieselben Regeln wie in der Schnittstelle).
+
+  const MAX_AUFGABE_ZEICHEN = 140;
+  const MAX_AUFGABE_NOTIZ = 500;
+  const UHRZEIT_MUSTER = /^([01]\d|2[0-3]):[0-5]\d$/;
+
+  /** Antwortfeld `aufgaben` prüfen und säubern: { team: [Namen], liste: [Aufgaben] }; fehlt es oder passt es nicht: null. */
+  function aufgabenDaten(roh) {
+    if (!roh || typeof roh !== 'object' || !Array.isArray(roh.team) || !Array.isArray(roh.liste)) return null;
+    const text = (w) => (typeof w === 'string' ? w : '');
+    const team = roh.team.filter((n) => typeof n === 'string' && n.trim() !== '');
+    const liste = roh.liste.filter((x) => x && typeof x === 'object' && typeof x.id === 'string' && x.id && typeof x.titel === 'string' && x.titel.trim() !== '')
+      .map((x) => {
+        const faellig = datumGueltig(x.faellig) ? x.faellig : '';
+        return { id: x.id, titel: x.titel.trim(), fuer: text(x.fuer), von: text(x.von), faellig: faellig,
+          uhrzeit: faellig && UHRZEIT_MUSTER.test(text(x.uhrzeit)) ? x.uhrzeit : '', notiz: text(x.notiz), status: x.status === 'erledigt' ? 'erledigt' : 'offen',
+          erstellt: datumGueltig(x.erstellt) ? x.erstellt : '', erledigtAm: datumGueltig(x.erledigtAm) ? x.erledigtAm : '', erledigtVon: text(x.erledigtVon) };
+      });
+    return { team: team, liste: liste };
+  }
+
+  /**
+   * Frist einer Aufgabe in Worten: { text, stufe } mit stufe 'ueber' (überfällig), 'heute', 'bald' (morgen) oder ''.
+   * Ohne Datum { text: '', stufe: '' }. Gerechnet wird in Tagen (die Uhrzeit steht nur dabei).
+   */
+  function aufgabeFrist(aufgabe, heute) {
+    if (!aufgabe || !datumGueltig(aufgabe.faellig) || !datumGueltig(heute)) return { text: '', stufe: '' };
+    const tage = tageZwischen(heute, aufgabe.faellig);
+    const uhr = aufgabe.uhrzeit ? ', ' + aufgabe.uhrzeit + ' Uhr' : '';
+    if (tage < 0) {
+      return { text: tage === -1 ? 'Überfällig seit gestern' : tage >= -60 ? 'Überfällig seit ' + (-tage) + ' Tagen' : 'Überfällig seit ' + datumText(aufgabe.faellig), stufe: 'ueber' };
+    }
+    if (tage === 0) return { text: 'Heute' + uhr, stufe: 'heute' };
+    if (tage === 1) return { text: 'Morgen' + uhr, stufe: 'bald' };
+    const d = new Date(Date.UTC(Number(aufgabe.faellig.slice(0, 4)), Number(aufgabe.faellig.slice(5, 7)) - 1, Number(aufgabe.faellig.slice(8, 10))));
+    if (tage < 7) return { text: WOCHENTAGE[d.getUTCDay()] + uhr, stufe: '' };
+    return { text: (aufgabe.faellig.slice(0, 4) === heute.slice(0, 4) ? datumKurz(aufgabe.faellig) : datumText(aufgabe.faellig)) + uhr, stufe: '' };
+  }
+
+  /**
+   * Offene Aufgaben in der Reihenfolge, in der sie dran sind: erst die mit Datum (früheste zuerst, ohne Uhrzeit ans
+   * Ende ihres Tages), dann die ohne Datum in der Reihenfolge, in der sie angelegt wurden.
+   */
+  function aufgabenOrdnen(liste) {
+    const rang = (x) => (x.faellig ? x.faellig + ' ' + (x.uhrzeit || '99:99') : '9999');
+    return liste.map((x, i) => ({ x: x, i: i })).sort((a, b) => (rang(a.x) < rang(b.x) ? -1 : rang(a.x) > rang(b.x) ? 1 : a.i - b.i)).map((y) => y.x);
+  }
+
+  /**
+   * Sicht auf die Aufgaben für `name`: { meine (offen, geordnet), offen (alle offenen, geordnet), erledigt (jüngste
+   * zuerst), personen: [{ name, ich, offen, ueber, naechste }] }. Personen: zuerst `name`, dann das Team in seiner
+   * Reihenfolge, am Ende wer nicht (mehr) im Team ist, aber noch Offenes hat. `d` aus aufgabenDaten.
+   */
+  function aufgabenSicht(d, name, heute) {
+    const offen = aufgabenOrdnen(d.liste.filter((x) => x.status === 'offen'));
+    const erledigt = d.liste.filter((x) => x.status === 'erledigt').map((x, i) => ({ x: x, i: i }))
+      .sort((a, b) => (a.x.erledigtAm > b.x.erledigtAm ? -1 : a.x.erledigtAm < b.x.erledigtAm ? 1 : b.i - a.i)).map((y) => y.x);
+    const namen = [];
+    const dazu = (n) => { if (n && namen.indexOf(n) < 0) namen.push(n); };
+    if (name && (d.team.indexOf(name) >= 0 || offen.some((x) => x.fuer === name))) dazu(name);
+    d.team.forEach(dazu);
+    offen.forEach((x) => dazu(x.fuer));
+    const personen = namen.map((n) => {
+      const ihre = offen.filter((x) => x.fuer === n);
+      return { name: n, ich: n === name, offen: ihre.length, ueber: ihre.filter((x) => aufgabeFrist(x, heute).stufe === 'ueber').length, naechste: ihre[0] || null };
+    });
+    return { meine: offen.filter((x) => x.fuer === name), offen: offen, erledigt: erledigt, personen: personen };
+  }
+
+  /**
+   * Eingabe für eine Aufgabe prüfen (Anlegen und Ändern): `e` = { titel, fuer, faellig, uhrzeit, notiz }. Rückgabe
+   * { ok: true, daten } mit bereinigten Texten oder { ok: false, feld, meldung }.
+   */
+  function aufgabePruefen(e, team, heute) {
+    const text = (w) => (typeof w === 'string' ? w : '');
+    const titel = text(e && e.titel).replace(/\s+/g, ' ').trim();
+    if (!titel) return { ok: false, feld: 'titel', meldung: 'Was ist zu tun? Bitte kurz eintragen.' };
+    if (titel.length > MAX_AUFGABE_ZEICHEN) return { ok: false, feld: 'titel', meldung: 'Bitte kürzer, höchstens ' + MAX_AUFGABE_ZEICHEN + ' Zeichen. Mehr passt in die Notiz.' };
+    const fuer = text(e.fuer);
+    if (!fuer || (team || []).indexOf(fuer) < 0) return { ok: false, feld: 'fuer', meldung: 'Bitte wählen, wer die Aufgabe bekommt.' };
+    const faellig = text(e.faellig);
+    if (faellig) {
+      const jahr = Number(faellig.slice(0, 4));
+      const jetzt = datumGueltig(heute) ? Number(heute.slice(0, 4)) : jahr;
+      if (!datumGueltig(faellig) || jahr < jetzt - 1 || jahr > jetzt + 5) return { ok: false, feld: 'faellig', meldung: 'Das Datum passt nicht.' };
+    }
+    const uhrzeit = text(e.uhrzeit);
+    if (uhrzeit && !UHRZEIT_MUSTER.test(uhrzeit)) return { ok: false, feld: 'uhrzeit', meldung: 'Die Uhrzeit passt nicht.' };
+    if (uhrzeit && !faellig) return { ok: false, feld: 'uhrzeit', meldung: 'Für eine Uhrzeit braucht es ein Datum.' };
+    const notiz = text(e.notiz).trim();
+    if (notiz.length > MAX_AUFGABE_NOTIZ) return { ok: false, feld: 'notiz', meldung: 'Die Notiz ist zu lang, höchstens ' + MAX_AUFGABE_NOTIZ + ' Zeichen.' };
+    return { ok: true, daten: { titel: titel, fuer: fuer, faellig: faellig, uhrzeit: uhrzeit, notiz: notiz } };
+  }
+
+  /**
+   * Was sich beim Bearbeiten wirklich geändert hat: nur die Felder aus `neu` (geprüfte Eingabe), die von der Aufgabe
+   * `alt` abweichen (so, wie sie beim Öffnen des Formulars war). Hat inzwischen jemand anderes ein anderes Feld
+   * geändert, bleibt dessen Änderung stehen (Codex v43). Nichts geändert: {}.
+   */
+  function aufgabeAenderung(alt, neu) {
+    const aus = {};
+    ['titel', 'fuer', 'faellig', 'uhrzeit', 'notiz'].forEach((f) => {
+      if (neu[f] !== undefined && neu[f] !== (typeof alt[f] === 'string' ? alt[f] : '')) aus[f] = neu[f];
+    });
+    return aus;
+  }
+
+  /** Abkürzungen für die Frist beim Anlegen: [[Datum, Text], …] ab heute. */
+  function aufgabeTage(heute) {
+    if (!datumGueltig(heute)) return [];
+    return [[heute, 'Heute'], [tagePlus(heute, 1), 'Morgen'], [tagePlus(heute, 7), 'In einer Woche']];
+  }
+
+  /** Anfangsbuchstabe für den Kreis einer Person („Jonas“ → „J“). */
+  function initiale(name) {
+    const s = typeof name === 'string' ? name.trim() : '';
+    return s ? Array.from(s)[0].toUpperCase() : '?';
+  }
+
   const hilfen = {
     CODE_LAENGE, ARTEN, MAX_KOMMENTAR, codeBereinigen, codePruefen, apiUrlGueltig, zahlFormat, euroFormat, kistenFormat,
     zeitFormat, datumGueltig, datumFormat, datumText, monatFormat, zeitraumFormat, heuteBerlin, tagePlus, tageZwischen, bestellStufe,
@@ -2925,6 +3048,7 @@
     datumMonatePlus, ersterVerkaufsmonat, bekannteRechnungen, bestellPrognose, dashboardDaten, dashboardMehr, bestellListe, fifoSchichten, fifoKosten, kostenAusEingabe, MAX_KOSTEN_PRO_FLASCHE,
     auswerten, AUSWERTEN_KENNZAHLEN, AUSWERTEN_NACH, spaltenTeilen, gewinnRechnen, centVerteilen, kostenRechnen, TOP_LIEFERANTEN, bestandBewerten, lagerAbgleich,
     forderungenDaten, offeneBelege, faelligText, centFormat, summeFormat,
+    aufgabenDaten, aufgabeFrist, aufgabenOrdnen, aufgabenSicht, aufgabePruefen, aufgabeAenderung, aufgabeTage, initiale, MAX_AUFGABE_ZEICHEN, MAX_AUFGABE_NOTIZ,
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = hilfen;
   else wurzel.SATE_HILFEN = hilfen;

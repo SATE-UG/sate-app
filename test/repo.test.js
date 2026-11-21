@@ -188,7 +188,7 @@ test('PWA: Service Worker cacht alle Hüllen-Dateien, Version im Cache-Namen', (
 });
 
 test('PWA: keine fremden Skripte, Code nie in URLs', () => {
-  const skripte = ['docs/app.js', 'docs/kern.js', 'docs/ansichten.js', 'docs/eintragen.js', 'docs/hilfen.js', 'docs/sw.js', 'docs/config.js',
+  const skripte = ['docs/app.js', 'docs/kern.js', 'docs/ansichten.js', 'docs/eintragen.js', 'docs/aufgaben.js', 'docs/hilfen.js', 'docs/sw.js', 'docs/config.js',
     'docs/gesten.js', 'docs/update.js'];
   for (const d of ['docs/index.html'].concat(skripte)) {
     const t = lies(d);
@@ -300,7 +300,7 @@ test('PWA: Mehr Zahlen (früher Dashboard, v30 bis v35) – dichte Tabellen und 
   assert.match(html, /<p id="datum-zeile" class="datum-zeile"><\/p>\s*<div id="uebersicht-inhalt"><\/div>/);
   assert.doesNotMatch(html + css + lies('docs/app.js'), /kapsel-knopf|gruss-zeile/);
   assert.doesNotMatch(ansichten + css + html + lies('docs/app.js'), /dashboard-knopf|dashboardEinstieg|dash-einstieg|dashboardZeigen|dashboardAuffrischen|S\.blattZeigen\('Dashboard'/);
-  assert.match(ansichten, /S\.fuellen\(ziel,\s*bestellKarte\(u, a\),\s*inventurHinweis\(u, a\.heute\),\s*jahrStart\(a\),\s*kennzahlen\(u, a\),/);
+  assert.match(ansichten, /S\.fuellen\(ziel,\s*typeof S\.aufgabenStart === 'function' \? S\.aufgabenStart\(\) : null,\s*bestellKarte\(u, a\),\s*inventurHinweis\(u, a\.heute\),\s*jahrStart\(a\),\s*imBlick\(u, a\),/);
   // Gerechnet wird in hilfen.js, einmal pro Antwort (zahlenDaten)
   assert.match(ansichten, /const d = H\.dashboardDaten\(a\.zeilen, a\.werte, a\.jv, a\.heute\);/);
   // Neuer Stand bei offenem Zahlen-Blatt: Inhalt wird an Ort und Stelle neu gebaut (Codex v30)
@@ -352,45 +352,48 @@ test('PWA: Mehr Zahlen (früher Dashboard, v30 bis v35) – dichte Tabellen und 
   assert.doesNotMatch(dash, /var\(--akzent\)/, 'in den Zahlen-Blättern ist nichts antippbar, also keine Akzentfarbe');
 });
 
-test('PWA: Start mit dem Jahr in Euro (v37) – Umsatz groß, Monate als kleine Balken, Rohertrag, Marge und Flaschen als Kacheln', () => {
+test('PWA: Start als Zusammenfassung (v37, seit v43 als Zeilen ohne Kacheln) – Aufgaben, Bestelltermin, „Dieses Jahr“ in Euro mit Verlauf, „Im Blick“', () => {
   const css = lies('docs/style.css');
   const ansichten = lies('docs/ansichten.js');
-  // Reihenfolge: Bestell-Karte zuerst (Mark: gut so), dann im Dezember/Januar die Jahresinventur, das Jahr, Bestand und
-  // Kunden, seit v41 die Zeile „Offen“ (offene Rechnungen aus Lexware)
-  assert.match(ansichten, /S\.fuellen\(ziel,\s*bestellKarte\(u, a\),\s*inventurHinweis\(u, a\.heute\),\s*jahrStart\(a\),\s*kennzahlen\(u, a\),\s*offenStart\(\),\s*h\('div', \{ id: 'aktivitaet-inhalt' \}\),/);
-  // Das Jahr: Kopf als Knopf (Umsatz groß, zum Vorjahr über die vollen Monate, laufender Monat), öffnet die Verkäufe mit Umsatz
-  assert.match(ansichten, /class: 'jahr-start-kopf', onclick: \(\) => oeffnen\('umsatz'\),/);
-  assert.match(ansichten, /const oeffnen = \(kennzahlWahl\) => zuVerkaeufen\(null, kennzahlWahl, jv\.jahr\);/);
-  // Anfang Januar ohne Verkäufe im neuen Jahr: die Karte zeigt das Jahr davor (dasselbe Jahr wie die Verkäufe), keine Nullen
+  // Reihenfolge: die eigenen Aufgaben (aufgaben.js, nur mit dem Tab im Sheet), Bestell-Karte (Mark: gut so), im
+  // Dezember/Januar die Jahresinventur, „Dieses Jahr“ als Zeilen, „Im Blick“ als Liste (Bestand, Kunden, seit v41 die
+  // offenen Rechnungen aus Lexware), „Zuletzt passiert“
+  assert.match(ansichten, /S\.fuellen\(ziel,\s*typeof S\.aufgabenStart === 'function' \? S\.aufgabenStart\(\) : null,\s*bestellKarte\(u, a\),\s*inventurHinweis\(u, a\.heute\),\s*jahrStart\(a\),\s*imBlick\(u, a\),\s*h\('div', \{ id: 'aktivitaet-inhalt' \}\),/);
+  // Zeile „Dieses Jahr“: links klein der Name, groß die Zahl (zählt beim ersten Erscheinen hoch), darunter eine Zeile,
+  // rechts der Verlauf; die ganze Zeile ist ein Knopf in die Zahlen mit ihrer Kennzahl
+  assert.match(ansichten, /return h\('li', \{ class: 'kunde-zeile jz' \}, h\('button', \{ type: 'button', class: 'zeilen-knopf', 'data-start': o\.schluessel, onclick: o\.beiTipp, 'aria-label': o\.vorlesen \},/);
+  assert.match(ansichten, /zahlDa\(o\.zahl\) \? zaehl\(o\.zahl, o\.stellen \|\| 0\) : '–'/);
+  assert.match(ansichten, /const zuV = \(kennzahlWahl\) => \(\) => zuVerkaeufen\(null, kennzahlWahl, jv\.jahr\);/);
+  assert.match(ansichten, /jahrZeile\(\{ schluessel: 'umsatz', titel: 'Umsatz', zahl: umsatz, einheit: '€', unter: trend\(pUmsatz, vjHinweis \|\| wann\),\s*bild: funkenBalken\(reihe\('umsatz'\), li\), beiTipp: zuV\('umsatz'\),/);
+  assert.match(ansichten, /jahrZeile\(\{ schluessel: 'flaschen', titel: 'Flaschen', zahl: jv\.bisher\.flaschen, unter: trend\(pFlaschen, wann\),\s*bild: funkenBalken\(reihe\('flaschen'\), li\), beiTipp: zuV\('flaschen'\),/);
+  assert.match(ansichten, /h\('div', \{ class: 'karte liste-karte' \}, h\('ul', \{ class: 'liste jahr-liste', role: 'list' \}, zeilen\)\),/);
+  // Anfang Januar ohne Verkäufe im neuen Jahr: die Zeilen zeigen das Jahr davor (dasselbe Jahr wie die Zahlen), keine Nullen
   assert.match(ansichten, /const jv = !hat\(a\.jv\) && hat\(a\.jvVorjahr\) \? a\.jvVorjahr : a\.jv;/);
-  assert.match(ansichten, /const j = x && x\.jahr === jv\.jahr \? x\.summe : laeuft && mg \? mg\.jahr : null;/);
+  assert.match(ansichten, /const passt = !!x && x\.jahr === jv\.jahr;\s*const j = passt \? x\.summe : laeuft && mg \? mg\.jahr : null;/);
   assert.match(ansichten, /const pUmsatz = vg \? H\.veraenderung\(vg\.dieses\.umsatz, vg\.vorjahr\.umsatz\) : null;/);
-  assert.match(ansichten, /class: roh\[i\] < 0 \? 'jb-minus' : m\.zukunft \|\| !\(werte\[i\] > 0\) \? 'jb-leer' : m\.laufend \? 'jb-laufend' : 'jb-monat' \}\)\);/);
-  // Kacheln als Knöpfe: Rohertrag und Marge öffnen die Verkäufe mit Rohertrag, Flaschen mit Flaschen; der Rohertrag
-  // vergleicht über dieselben vollen Monate wie die Verkäufe (H.auswerten)
-  assert.match(ansichten, /kachel\('Rohertrag', H\.euroFormat\(j\.rohertrag\), [^\n]*'rohertrag', /);
-  // Codex v37: Fehlen die Herstellkosten nur zum Teil, bleiben die Kacheln (Strich und Hinweis); der Vorjahreshinweis
-  // im Januar steht auch im Namen des Knopfs; ein Monat im Minus bekommt einen roten Balken
-  assert.match(ansichten, /const kacheln = mg && j \? \[/);
-  assert.match(ansichten, /kachel\('Rohertrag', '–', 'Kosten fehlen', 'rohertrag', /);
-  assert.match(ansichten, /\+ mitTrend\(pUmsatz\) \+ \(vjHinweis \? ', ' \+ vjHinweis : ''\)/);
-  assert.match(css, /\.jahr-balken \.jb-minus \{ fill: var\(--rot\); \}/);
-  assert.doesNotMatch(css, /\.kachel-tipp \.dash-wert/, 'keine wirkungslose Doppel-Regel: die Größen kommen von .dash-kachel');
-  assert.match(ansichten, /kachel\('Marge', [^\n]*'vom Umsatz', 'rohertrag', /);
-  assert.match(ansichten, /kachel\('Flaschen', H\.zahlFormat\(jv\.bisher\.flaschen, 0\), [^\n]*'flaschen', /);
+  // Verlauf als kleine Balken: laufender Monat in der Akzentfarbe, Leeres als Strich, ein Monat im Minus rot (Codex v37)
+  assert.match(ansichten, /class: minus \? 'jb-minus' : !\(plus\[i\] > 0\) \? 'jb-leer' : i === laufend \? 'jb-laufend' : 'jb-monat' \}\)\);/);
+  assert.match(css, /\.funken \.jb-minus \{ fill: var\(--rot\); \}/);
+  assert.match(css, /\.funken \.jb-laufend \{ fill: var\(--akzent\); \}/);
+  // Rohertrag mit der Marge in der Zeile darunter; der Vergleich läuft über dieselben vollen Monate wie in den Zahlen
+  // (H.auswerten). Fehlen die Herstellkosten nur zum Teil, bleibt die Zeile mit Strich und Hinweis (Codex v37)
   assert.match(ansichten, /H\.auswerten\(a\.zeilen, mg\.kostenJeZeile, a\.heute, \{ kennzahl: 'rohertrag', jahr: jv\.jahr, nach: 'kanal' \}\)/);
-  assert.match(ansichten, /class: 'dash-kachel kachel-tipp', onclick: \(\) => oeffnen\(kennzahlWahl\),/);
+  assert.match(ansichten, /mg && j \? jahrZeile\(\{ schluessel: 'rohertrag', titel: 'Rohertrag', zahl: zahlDa\(j\.rohertrag\) \? j\.rohertrag : null, einheit: '€',/);
+  assert.match(ansichten, /unter: zahlDa\(j\.rohertrag\) \? \(zahlDa\(j\.marge\) \? 'Marge ' \+ H\.zahlFormat\(j\.marge, 1\) \+ ' %' : wann\) : 'Kosten fehlen',/);
+  assert.match(ansichten, /beiTipp: zuV\('rohertrag'\),/);
   // Ohne Herstellkosten: Flaschen und Umsatz pro Flasche
-  assert.match(ansichten, /kachel\('Pro Flasche', /);
-  // Darunter nur noch zwei Kacheln: Bestand (Lager) und Kunden (Kunden); keine Monats-Kacheln, keine eigenen Zeilen mehr
-  assert.match(ansichten, /kennzahl\('Bestand', [\s\S]{0,700}'flasche'\),\s*kunden\);/);
-  assert.match(ansichten, /kunden = kennzahl\('Kunden', H\.zahlFormat\(n, 0\), 'dieses Jahr',/);
-  assert.doesNotMatch(ansichten, /rohertragHinweis|kundenHinweis|mitUmsatz|umsatzDazu|' bisher', H\.zahlFormat\(bisher, 0\)/);
-  // Jeder Knopf hat einen Namen für Vorleseprogramme; Fokusrahmen nur für die Tastatur
-  assert.match(ansichten, /'aria-label': 'Umsatz ' \+ wann \+ ' ' \+ H\.euroFormat\(umsatz\) \+ mitTrend\(pUmsatz\)/);
-  assert.match(css, /\.jahr-start-kopf:focus-visible \{ outline: 2px solid var\(--akzent\);/);
-  assert.match(css, /\.kachel-tipp:focus-visible \{ outline: 2px solid var\(--akzent\);/);
-  assert.match(css, /\.jahr-balken \.jb-laufend \{ fill: var\(--akzent\); \}/);
+  assert.match(ansichten, /!\(mg && j\) \? jahrZeile\(\{ schluessel: 'proflasche', titel: 'Pro Flasche',/);
+  // Der Vorjahreshinweis im Januar steht sichtbar da und im Namen des Knopfs (Codex v37)
+  assert.match(ansichten, /\+ mitTrend\(pUmsatz\) \+ \(pUmsatz === null && vjHinweis \? ', ' \+ vjHinweis : ''\)/);
+  assert.match(ansichten, /vorlesen: 'Umsatz ' \+ wann \+ ' ' \+ H\.euroFormat\(umsatz\) \+ mitTrend\(pUmsatz\)/);
+  // „Im Blick“: Bestand (öffnet das Lager) und Kunden (öffnet die Kunden) als Zeilen einer Liste
+  assert.match(ansichten, /blickZeile\(\{ schluessel: 'bestand', symbol: 'flasche', titel: 'Bestand', unter: lagerText, wert: H\.zahlFormat\(k\.gesamtbestand, 0\) \+ ' Fl\.',\s*beiTipp: \(\) => \{ S\.ansichtZeigen\('lager'\); S\.nachOben\('lager'\); \},/);
+  assert.match(ansichten, /blickZeile\(\{ schluessel: 'kunden', symbol: 'kunden', titel: 'Kunden', unter: teile\.join\(', '\) \|\| 'dieses Jahr', wert: H\.zahlFormat\(n, 0\),\s*beiTipp: \(\) => \{ S\.ansichtZeigen\('kunden'\); S\.nachOben\('kunden'\); \},/);
+  assert.match(ansichten, /return \[h\('h2', \{\}, h\('strong', \{ text: 'Im' \}\), ' Blick'\), h\('div', \{ class: 'karte liste-karte' \}, h\('ul', \{ class: 'liste', role: 'list' \}, zeilen\)\)\];/);
+  // Der alte Aufbau ist weg: keine Jahr-Karte mit Kopf und Kacheln, keine Kennzahl-Karten, keine Kacheln für Bestand und Kunden
+  assert.doesNotMatch(ansichten + css, /jahr-start|jahr-balken|kachel-tipp|kpi-raster|kpiKarte|\.kpi\b/);
+  assert.doesNotMatch(ansichten, /function kennzahlen\(|function kennzahl\(|function verteilungMini\(|offenStart\(|rohertragHinweis|kundenHinweis|mitUmsatz|umsatzDazu/);
+  assert.match(css, /\.jz-wert \{[^}]*font-variant-numeric: tabular-nums;/);
 });
 
 test('PWA: App im Ganzen geordnet (v36) – Wahl oben in den Verkäufen, je Thema eine Zeile im passenden Reiter, kein eigenes Dashboard', () => {
@@ -399,19 +402,19 @@ test('PWA: App im Ganzen geordnet (v36) – Wahl oben in den Verkäufen, je Them
   const kern = lies('docs/kern.js');
   const app = lies('docs/app.js');
   const dash = css.slice(css.indexOf('/* Dashboard (Blatt, seit v30)'), css.indexOf('/* Trends (Verkäufe, Kunden, Start)'));
-  // Verkäufe: oben die Wahl (Kennzahl, Zeitraum, Kanal) …
-  assert.match(ansichten, /umschalter\('Kennzahl', \[\['flaschen', 'Flaschen'\], \['umsatz', 'Umsatz'\]\]\.concat\(x\.mitKosten \? \[\['rohertrag', 'Rohertrag'\]\] : \[\]\), v\.g, \(w\) => waehlen\(\{ diagramm: w \}\)\)/);
-  assert.match(ansichten, /wahlChips\('Zeitraum', 'jahr', x\.jahre\.map\(\(j\) => \[j, String\(j\)\]\)\.concat\(\[\[null, 'Alle Jahre'\]\]\), x\.jahr, \(w\) => waehlen\(\{ verkaufJahr: w \}\)\)/);
-  assert.match(ansichten, /wahlChips\('Kanal', 'kanal', \[\['', 'Alle Kanäle'\]\]\.concat\(x\.kanaele\.map\(\(n\) => \[n, n\]\)\), x\.kanal, \(w\) => waehlen\(\{ verkaufKanal: w \}\)\)/);
+  // Zahlen (bis v42 „Verkäufe“): oben die Wahl (Kennzahl, seit v43 mit Gewinn als vierter; Zeitraum; Kanal) …
+  assert.match(ansichten, /umschalter\('Kennzahl', \[\['flaschen', 'Flaschen'\], \['umsatz', 'Umsatz'\]\]\.concat\(x\.mitKosten \? \[\['rohertrag', 'Rohertrag'\], \['gewinn', 'Gewinn'\]\] : \[\]\), v\.g, \(w\) => waehlen\(\{ diagramm: w \}\)\)/);
+  assert.match(ansichten, /wahlChips\('Zeitraum', 'jahr', x\.jahre\.map\(\(j\) => \[j, String\(j\)\]\)\.concat\(gewinn \? \[\] : \[\[null, 'Alle Jahre'\]\]\), x\.jahr, \(w\) => waehlen\(\{ verkaufJahr: w \}\)\)/);
+  assert.match(ansichten, /gewinn \? null : wahlChips\('Kanal', 'kanal', \[\['', 'Alle Kanäle'\]\]\.concat\(x\.kanaele\.map\(\(n\) => \[n, n\]\)\), x\.kanal, \(w\) => waehlen\(\{ verkaufKanal: w \}\)\)/);
   // … und sie gilt für alles darunter: Karte mit Zahl und Jahreslinie, Monate, Aufteilung; am Ende die Themen als Zeilen
-  assert.match(ansichten, /summeKarte\(v, waehlen\),\s*v\.jv \? \[h\('h2', \{ id: 'monate-anker' \}, h\('strong', \{ text: 'Pro' \}\), ' Monat'\), monateKarte\(v, waehlen\)\] : null,\s*aufteilung\(v, waehlen\),\s*zahlenAbschnitt\(\['ueberblick', 'vergleich', 'rohertrag', 'gewinn', 'bestellungen', 'rekorde'\]\)\);/);
-  assert.match(ansichten, /H\.auswerten\(a\.zeilen, kosten, a\.heute, \{ kennzahl: Z\.diagramm, jahr: jahr, kanal: Z\.verkaufKanal,/);
+  assert.match(ansichten, /summeKarte\(v, waehlen\),\s*v\.g === 'rohertrag' \? gleichung\(x\.summe\) : null,\s*v\.jv \? \[h\('h2', \{ id: 'monate-anker' \}, h\('strong', \{ text: 'Pro' \}\), ' Monat'\), monateKarte\(v, waehlen\)\] : null,\s*aufteilung\(v, waehlen\),\s*\/\/ [^\n]*\n\s*zahlenAbschnitt\(\['ueberblick', 'vergleich', 'rohertrag', 'bestellungen', 'rekorde'\]\),/, 'der Gewinn hat seit v43 seine eigene Wahl');
+  assert.match(ansichten, /H\.auswerten\(a\.zeilen, kosten, a\.heute, \{ kennzahl: gewinn \? 'rohertrag' : Z\.diagramm, jahr: jahr, kanal: kanal\(\),/);
   assert.match(ansichten, /const kosten = zd && zd\.mehr && zd\.mehr\.marge \? zd\.mehr\.marge\.kostenJeZeile : null;/);
   assert.match(ansichten, /const jv = x\.jahr === null \? null : H\.jahresVergleich\(x\.werte, a\.heute, x\.jahr\);/, 'die Diagramme rechnen mit den Monatswerten der Wahl');
   assert.match(ansichten, /if \(jv && !davor\) jv\.monate\.forEach\(\(m\) => \{ m\.vorjahr = null; \}\);/, 'erstes Jahr: keine Linie und keine Balken für ein Jahr davor');
   assert.match(lies('docs/hilfen.js'), /verluste: verluste, mehr: fifo\.mehr, flaschen: flaschen, kostenJeZeile: fifo\.kosten,/);
   // Umsatz und Rohertrag sind Euro; fehlen Herstellkosten, steht ein Strich statt einer Zahl
-  assert.match(ansichten, /const IST_EURO = \{ umsatz: true, rohertrag: true \};/);
+  assert.match(ansichten, /const IST_EURO = \{ umsatz: true, rohertrag: true, gewinn: true \};/);
   assert.match(ansichten, /function mitEinheit\(z, g\) \{\s*if \(!zahlDa\(z\)\) return '–';/);
   // Ein Tipp auf einen Kanal wählt ihn (und springt nach oben), ein Tipp auf einen Kunden öffnet sein Blatt, ein Jahr in der Liste wählt das Jahr
   assert.match(ansichten, /\(\) => \{ waehlen\(\{ verkaufKanal: gr\.schluessel \}\); S\.nachOben\('verkaeufe'\); \}, 'Nur diesen Kanal zeigen'\)/);
@@ -425,7 +428,7 @@ test('PWA: App im Ganzen geordnet (v36) – Wahl oben in den Verkäufen, je Them
   // Codex v36: unbekannter Rohertrag (Herstellkosten fehlen) bekommt im Monatsdiagramm keinen Balken und einen Strich
   // statt „0“; gibt es den gewählten Kanal nicht mehr, wird erst die Wahl berichtigt; entfällt ein Thema, geht sein Blatt zu;
   assert.match(ansichten, /text: da \? H\.achsenText\(Math\.round\(m\.dieses\[g\]\)\) : m\.dieses \? '–' : '',/);
-  assert.match(ansichten, /if \(x\.kanal !== Z\.verkaufKanal\) \{ Z\.verkaufKanal = x\.kanal; x = rechnen\(jahr0\); \}/);
+  assert.match(ansichten, /if \(!gewinn && x\.kanal !== Z\.verkaufKanal\) \{ Z\.verkaufKanal = x\.kanal; x = rechnen\(jahr0\); \}/);
   assert.match(ansichten, /if \(!neu\) return S\.blattSchliessen\(true\);/);
   // Ohne die einzelnen Verkaufszeilen (alter gespeicherter Stand) sagt der Reiter das, statt halb zu rechnen
   assert.match(ansichten, /leerKarte\('Verkäufe noch nicht geladen',/);
@@ -433,7 +436,7 @@ test('PWA: App im Ganzen geordnet (v36) – Wahl oben in den Verkäufen, je Them
   // Themen als Zeilen im passenden Reiter: Kunden in Kunden, Bestand und Abgänge im Lager; je Thema ein Blatt
   assert.match(ansichten, /nachfassenKarte\(a\),\s*zahlenListe\(\['kunden'\]\),/);
   assert.match(ansichten, /lagerListe\(Z\.daten\), zahlenListe\(\['bestand', 'abgaenge'\]\)\);/);
-  assert.match(ansichten, /h\('button', \{ type: 'button', class: 'zeilen-knopf', 'data-zahlen': id, onclick: \(\) => S\.zahlenZeigen\(id\) \},/);
+  assert.match(ansichten, /h\('button', \{ type: 'button', class: 'zeilen-knopf', 'data-zahlen': id, onclick: \(\) => S\.zahlenZeigen\(id, jahr\) \},/);
   assert.match(ansichten, /S\.zahlenZeigen = function \(id, jahr, zurueck\) \{\s*Z\.zahlenJahr = typeof jahr === 'number' \? jahr : undefined;\s*const inhalt = zahlenInhalt\(id\);\s*if \(inhalt\) S\.blattZeigen\(ZAHLEN_TITEL\[id\], inhalt, typeof zurueck === 'function' \? zurueck : \(\) => document\.querySelector\('#app \[data-zahlen="' \+ id \+ '"\]'\), true\);/);
   assert.doesNotMatch(ansichten + css, /dash-nav|dash-oben|dash-weiter|dashboardSeite\(|auswertenInhalt|dash-chips/, 'keine Seiten-Reihe mehr');
   // Vom Start aus beginnt die Wahl neu (ohne Kanal, laufendes Jahr bzw. Jahr des Monats), mit der angetippten Kennzahl
@@ -456,22 +459,160 @@ test('PWA: App im Ganzen geordnet (v36) – Wahl oben in den Verkäufen, je Them
   assert.doesNotMatch(dash, /:has\(|touch-action/);
 });
 
-test('PWA: Gewinn vorläufig (v38) – Kachel auf dem Start, Thema „Gewinn und Kosten“ in den Verkäufen, Lexware-Kosten nur gelesen', () => {
+test('PWA: Neuaufbau v43 – Plus bleibt in der Mitte, Gewinn und Kosten als vierte Wahl in „Zahlen“, flach ohne Kacheln, Bewegung beim Scrollen', () => {
+  const html = lies('docs/index.html');
+  const css = lies('docs/style.css');
+  const ansichten = lies('docs/ansichten.js');
+  const app = lies('docs/app.js');
+  const kern = lies('docs/kern.js');
+  // Mark, 2026-11-21: unten höchstens fünf, links zwei, Plus in der Mitte, rechts zwei. Der Reiter „Verkäufe“ heißt
+  // sichtbar „Zahlen“ (intern weiter `verkaeufe`), einen eigenen Reiter für die Finanzen gibt es nicht
+  assert.match(app, /const ANSICHTEN = \['uebersicht', 'verkaeufe', 'eintragen', 'kunden', 'lager'\];/);
+  const leiste = html.slice(html.indexOf('<nav id="leiste"'), html.indexOf('</nav>'));
+  assert.deepStrictEqual(Array.from(leiste.matchAll(/data-ansicht="([a-z]+)"/g), (m) => m[1]), ['uebersicht', 'verkaeufe', 'eintragen', 'kunden', 'lager']);
+  assert.deepStrictEqual(Array.from(leiste.matchAll(/<span>([^<]+)<\/span>/g), (m) => m[1]), ['Start', 'Zahlen', 'Eintragen', 'Kunden', 'Lager']);
+  assert.match(html, /<section id="ansicht-verkaeufe"[^>]*>\s*<h1 class="titel"><strong>Zahlen<\/strong><\/h1>/);
+  assert.doesNotMatch(html + app + ansichten + kern + css, /finanzen|finanzJahr|leiste-kapsel/i);
+  // Gewinn als Wahl: gerechnet wird mit den Zahlen des Rohertrags ohne Kanal, immer mit einem Jahr; die gemerkte
+  // Kanal-Wahl bleibt für die anderen Kennzahlen stehen; ohne Herstellkosten fällt die Wahl auf Flaschen zurück
+  assert.match(ansichten, /const gewinn = Z\.diagramm === 'gewinn';\s*const kanal = \(\) => \(gewinn \? '' : Z\.verkaufKanal\);/);
+  assert.match(ansichten, /const ohneJahr = Z\.verkaufJahr === undefined \|\| \(gewinn && Z\.verkaufJahr === null\);/);
+  assert.match(ansichten, /const g = gewinn && x\.mitKosten && x\.jahr !== null \? 'gewinn' : x\.kennzahl;\s*\/\/ [^\n]*\n\s*Object\.assign\(Z, \{ diagramm: g \}, g === 'gewinn' \? \(Z\.verkaufJahr === null \? null : \{ verkaufJahr: x\.jahr \}\) : \{ verkaufJahr: x\.jahr, verkaufKanal: x\.kanal \}\);/,
+    '„Alle Jahre“ bleibt gemerkt, wenn man kurz den Gewinn ansieht (Codex v43)');
+  assert.match(ansichten, /gewinn \? gewinnTeile\(x\) : \[/);
+  // Aufbau der Wahl Gewinn: die Zahl mit „Einnahmen gegen Kosten“, Monate, sonstige Kosten, Break-even, offene
+  // Rechnungen, das Blatt mit allen Tabellen (fürs gewählte Jahr)
+  const gt = ansichten.slice(ansichten.indexOf('function gewinnTeile(x) {'), ansichten.indexOf('// Verkäufe ---'));
+  assert.ok(gt.length > 3000);
+  assert.match(gt, /return \[\s*gewinnKarte,\s*gb && gwDa \? \[h\('h2', \{\}, h\('strong', \{ text: 'Pro' \}\), ' Monat'\), bildKarte\([^\n]*, gb\.monate\(\)\)\] : null,\s*gb && gw\.kategorien\.some\(\(y\) => y\.netto > 0\) \? \[h\('h2', \{\}, h\('strong', \{ text: 'Wohin' \}\), ' das Geld geht'\),\s*bildKarte\([^\n]*, gb\.ring\(\)\)\] : null,\s*breakEvenKarte\(\),\s*offenKarte\(\),\s*zahlenAbschnitt\(\['gewinn'\], jahr\),\s*\];/);
+  // Dieselbe Rechnung und dieselben Bilder wie im Blatt „Gewinn und Kosten“ (gewinnBilder), nichts wird doppelt gerechnet
+  assert.match(gt, /const gw = gewinnFuer\(jahr\);/);
+  assert.match(gt, /const kostenDa = !!gw && !gw\.hinweis && gw\.jahr === jahr;\s*const gwDa = kostenDa && !\(gw\.ohneEinnahmen && !gw\.guv\);\s*const gb = kostenDa \? gewinnBilder\(gw\) : null;/,
+    'fehlen nur die Einnahmen, bleiben Kostenring und Break-even (Codex v43)');
+  assert.match(gt, /kostenDa \? 'Einnahmen netto aus Lexware fehlen noch \(Tab „Lexware-Rechnungen“, Spalte „netto \(€\)“\)\. Deshalb gibt es noch keinen Gewinn\.'/);
+  // Kosten zusammen = Einnahmen − Gewinn (dieselbe Rechnung wie die große Zahl, auch bei einer Lagerzunahme); ein
+  // fehlendes GuV-Feld ist unbekannt, nicht 0 (Codex v43)
+  assert.match(gt, /const kosten = zahlDa\(einnahmen\) && zahlDa\(sg\.gewinn\) \? einnahmen - sg\.gewinn : null;/);
+  assert.match(gt, /geldBalken\(einnahmen, kosten, teile\)\);/);
+  assert.match(ansichten, /\(t\[1\] \/ plus\) \* \(lang \/ hoch\) \* 100\)\) : null\),/);
+  assert.match(ansichten, /function gewinnBilder\(gw\) \{[\s\S]{0,200}const kd = H\.kostenRechnen\(gw, a\.zeilen, u\.kosten, a\.heute\);/);
+  assert.match(ansichten, /const gb = gewinnBilder\(gw\);\s*const kd = gb\.kd;/, 'das Blatt nutzt denselben Baustein');
+  assert.doesNotMatch(gt, /H\.gewinnRechnen|H\.kostenRechnen|dashboardSeiten|Z\.zahlenJahr/);
+  // Der Prozentwert steht nur bei einem Gewinn da (bei einem Verlust wäre „−140 % der Einnahmen“ Unsinn)
+  assert.match(gt, /zahlDa\(sg\.anteil\) && sg\.gewinn > 0 \? h\('span', \{ class: 'aw-marge', text: marge\(sg\.anteil\) \+ ' der Einnahmen' \}\) : null,/);
+  // Ohne Kosten aus Lexware für das Jahr: Hinweis statt Gewinn
+  assert.match(gt, /Für ' \+ jahr \+ ' gibt es keine Kosten aus Lexware, deshalb keinen Gewinn\./);
+  // Break-even als ein Satz mit Bild; die Herleitung steht im Blatt
+  assert.match(gt, /h\('p', \{ class: 'be-zahl', 'aria-hidden': 'true' \}, h\('strong', \{\}, zaehl\(be\.verkauftProMonat, 0\)\), ' von ' \+ fl\(be\.flaschen\) \+ ' Flaschen im Monat'\),\s*breakEvenBalken\(be\),/);
+  // Wahl Rohertrag: was an einer Flasche bleibt, als Gleichung
+  assert.match(ansichten, /glied\(cent\(sum\.proFlasche\), 'Umsatz'\), zeichen\('−'\), glied\(cent\(kostenProFlasche\), 'Herstellung'\), zeichen\(genau \? '=' : '≈'\),\s*glied\(cent\(sum\.rohProFlasche\), 'Rohertrag', 'gl-ergebnis'\)/);
+  assert.match(ansichten, /c\(sum\.proFlasche\) - c\(kostenProFlasche\) === c\(sum\.rohProFlasche\);/, 'geht die gerundete Rechnung nicht auf, steht „≈“ (Codex v43)');
+  // Die Themen-Zeilen geben das Jahr an ihr Blatt weiter und zeigen die Kernzahl dieses Jahrs
+  assert.match(ansichten, /function zahlenListe\(ids, jahr\) \{/);
+  assert.match(ansichten, /function zahlenKern\(id, zd, a, wahlJahr\) \{/);
+  assert.match(ansichten, /text: zahlenKern\(id, zd, a, jahr\) \}\)\),/);
+  assert.match(ansichten, /if \(typeof wahlJahr === 'number' && g && !g\.hinweis && g\.jahr !== wahlJahr\) return 'Für ' \+ wahlJahr \+ ' keine Kosten aus Lexware';/);
+  // Blatt zu: Gibt es die auslösende Zeile nicht mehr oder liegt sie in einer stillgelegten Ansicht, geht der Fokus auf den Reiter (Codex v43)
+  assert.match(kern, /v\.closest\('\[inert\]'\)\)\) v = S\.el\('reiter-' \+ S\.zustand\.ansicht\);/);
+  // Flach (Mark: weg von den Kacheln): `.karte` ist ein Abschnitt ohne Kasten, die Kacheln sind ein Band mit feinen Linien
+  assert.match(css, /\n\.karte \{ margin: 0 0 28px; \}/);
+  assert.doesNotMatch(css, /\n\.karte \{[^}]*background/);
+  assert.match(css, /\.dash-kachel \{ padding: 2px 12px; border-left: 0\.5px solid var\(--linie\); min-width: 0; \}/);
+  assert.match(css, /\.jahr-karte \.info-wert, \.gesamt-karte \.info-wert \{[^}]*font-size: min\(56px, 14\.5vw\);/);
+  // Bewegung beim Scrollen: Abschnitte blenden einmal ein, Zahlen zählen hoch, Diagramme wachsen; abschaltbar
+  assert.match(kern, /S\.bewegung = function \(wurzel\) \{/);
+  assert.match(kern, /const bewegt = typeof window\.IntersectionObserver === 'function';/);
+  assert.match(kern, /if \(!isFinite\(bis\) \|\| ruhig\(\)\) return;/, 'bei „Bewegung reduzieren“ zählt nichts hoch');
+  assert.match(kern, /pruefUhr = setTimeout\(nachsehen, 700\);/, 'Sicherheitsnetz, falls der Beobachter sich nicht meldet');
+  assert.match(kern, /document\.addEventListener\('scroll', \(\) => \{[\s\S]{0,200}if \(document\.querySelector\('\.auf:not\(\.da\)'\)\) nachsehen\(\);[\s\S]{0,40}\{ capture: true, passive: true \}\);/,
+    'auch beim Scrollen: kein Abschnitt bleibt unsichtbar, selbst wenn der Beobachter sich nie meldet');
+  assert.match(css, /@media screen and \(prefers-reduced-motion: no-preference\) \{\s*\.bewegt \.auf \{ opacity: 0; transform: translate3d\(0, 22px, 0\); \}/, 'nur am Bildschirm, im Druck ist alles da (Codex v43)');
+  ['uebersicht', 'verkaeufe', 'kunden', 'lager'].forEach((n) => {
+    const f = ansichten.slice(ansichten.indexOf('S.ansichten.' + n + ' = function'));
+    assert.match(f.slice(0, f.indexOf('\n  };')), /S\.bewegung\(ziel\);/, n);
+  });
+  assert.match(app, /S\.bewegungNeu\(\);/, 'beim Abmelden zurückgesetzt');
+  assert.match(ansichten, /function zaehl\(wert, stellen, schluessel\) \{\s*return h\('span', \{ 'data-zaehl': String\(wert\),/);
+  assert.match(ansichten, /class: 'linie-dieses zieh', pathLength: 1 \}/);
+  assert.match(css, /\.rein-anim \.zieh \{ stroke-dasharray: 1; animation: ziehen 1\.1s var\(--sanft\) both; animation-delay: var\(--seit, 0s\); \}/);
+  // Wird ein Abschnitt neu gezeichnet, während er noch einblendet (frischer Stand kurz nach dem Start), läuft die Bewegung weiter
+  assert.match(kern, /const laeuft = !neu && bewegt && !ruhig\(\) && jetzt - start < Math\.max\(EIN_MS, ZAEHL_MS\);/);
+  assert.match(kern, /el\.style\.setProperty\('--seit', Math\.round\(start - jetzt\) \+ 'ms'\);/);
+  // Keine Trennpunkte zwischen Wörtern (Mark)
+  const startNeu = ansichten.slice(ansichten.indexOf('// Start als Zusammenfassung (seit v43)'), ansichten.indexOf('/**\n   * Dezember und Januar, solange nicht alle Lager'));
+  assert.ok(startNeu.length > 3000);
+  assert.doesNotMatch(gt + startNeu + leiste, /[·•]/);
+});
+
+test('PWA: Aufgaben fürs Team (v43) – eigene Aufgaben auf dem Start, Team als Reihe, Blatt je Person, Anlegen über das Plus', () => {
+  const html = lies('docs/index.html');
+  const css = lies('docs/style.css');
+  const auf = lies('docs/aufgaben.js');
+  const kern = lies('docs/kern.js');
+  const app = lies('docs/app.js');
+  // Eingebunden nach eintragen.js, im Cache der App-Hülle
+  assert.match(html, /<script src="eintragen\.js"><\/script>\s*<script src="aufgaben\.js"><\/script>\s*<script src="app\.js"><\/script>/);
+  assert.match(lies('docs/sw.js'), /'eintragen\.js',\s*'aufgaben\.js',/);
+  // Ohne den Tab „Aufgaben“ (Feld fehlt oder null) zeigt die App nichts davon
+  assert.match(auf, /S\.aufgabenStart = function \(\) \{\s*const d = daten\(\);\s*if \(!d\) return null;/);
+  assert.match(auf, /if \(!daten\(\)\) return ziel\.replaceChildren\(\);/);
+  // Start: die nächsten drei eigenen, rechts „Neu“, darunter das Team; ein Tipp auf eine Person öffnet das Blatt bei ihr
+  assert.match(auf, /const START_ANZAHL = 3;/);
+  assert.match(auf, /h\('h2', \{\}, h\('strong', \{ text: 'Deine' \}\), ' Aufgaben'\)/);
+  assert.match(auf, /'data-person': p\.name, onclick: \(\) => S\.aufgabenZeigen\(p\.name\),/);
+  // Gerechnet und geprüft wird in hilfen.js
+  assert.match(auf, /H\.aufgabenSicht\(d, Z\.name, heute\(\)\)/);
+  assert.match(auf, /H\.aufgabePruefen\(\{ titel: titel\.value, fuer: wahl\.fuer, faellig: wahl\.faellig, uhrzeit: zeit\.value, notiz: notiz\.value \}, team, heute\(\)\)/);
+  // Abhaken wirkt sofort und springt nicht zurück; gesendet wird nacheinander und nie während eine Buchung läuft
+  assert.match(auf, /senden\('aufgabeAendern', \{ id: x\.id, status: fertig \? 'erledigt' : 'offen' \}, x\.id,/);
+  // Codex v43 (hoch): Die Sitzung gilt ab dem Tipp; nach einem Abmelden in der kurzen Pause wird der Haken verworfen
+  assert.match(auf, /const sitzung = Z\.sitzung;\s*const los = \(\) => \{\s*if \(sitzung !== Z\.sitzung\) return;\s*senden\('aufgabeAendern',/);
+  // Codex v43: eine Anfrage-ID je Entwurf (kein Doppel nach einer Zeitüberschreitung); beim Ändern nur geänderte Felder
+  assert.match(auf, /const entwurfId = S\.neueAnfrageId\(\);/);
+  assert.match(auf, /neu \? Object\.assign\(\{ anfrageId: entwurfId \}, p\.daten\) : Object\.assign\(\{ id: x\.id \}, aenderung\)\);/);
+  assert.match(auf, /const aenderung = neu \? null : H\.aufgabeAenderung\(x, p\.daten\);\s*if \(!neu && !Object\.keys\(aenderung\)\.length\) return zurueck\(\);/);
+  // Codex v43: Fokus bleibt bei Tastaturbedienung auf derselben Aufgabe bzw. demselben Chip
+  assert.match(auf, /'data-fokus': 'haken:' \+ x\.id,/);
+  assert.match(auf, /const druecken = \(reihe, wert\) => Array\.from\(reihe\.children\)\.forEach\(\(c\) => c\.setAttribute\('aria-pressed', c\.dataset\.wert === wert \? 'true' : 'false'\)\);/);
+  // Codex v43: bleibt die App über Mitternacht offen, zählt der Tag der Uhr
+  assert.match(auf, /const uhr = H\.heuteBerlin\(\);\s*return uhr > stand \? uhr : stand;/);
+  assert.match(auf, /for \(let i = 0; i < 100 && Z\.schreibt && sitzung === Z\.sitzung; i\+\+\) await new Promise/);
+  assert.match(auf, /if \(e\.art === 'fehler'\) S\.melden\(e\.meldung \|\| 'Das hat nicht geklappt\.', true\);/);
+  // Nichts wird gelöscht: „Löschen“ setzt den Status, nach einer Rückfrage
+  assert.match(auf, /await S\.frage\('„' \+ x\.titel \+ '“ löschen\? Die Aufgabe verschwindet für alle\.', 'Löschen', 'Abbrechen', true\)/);
+  assert.match(auf, /senden\('aufgabeAendern', \{ id: x\.id, status: 'entfernt' \}, x\.id, \{ status: 'entfernt' \}\);/);
+  // Die Antwort einer Aufgaben-Aktion bringt nur die Aufgaben mit: Start und offenes Blatt werden gezeichnet
+  assert.match(kern, /if \(e\.art === 'ok' && e\.daten\.uebersicht === undefined && e\.daten\.aufgaben !== undefined\) \{[\s\S]{0,400}\n\s*S\.aufgabenSetzen\(e\.daten\.aufgaben\);/);
+  assert.doesNotMatch(kern, /frisch = S\.aufgabenSetzen/, 'keine frische Übersicht: ein verworfenes Neuladen wird nachgeholt (Codex v43)');
+  assert.match(app, /S\.aufgabenSetzen = function \(aufgaben\) \{\s*if \(!Z\.daten\) return false;\s*Z\.daten\.aufgaben = aufgaben;/);
+  assert.match(app, /if \(typeof S\.aufgabenAuffrischen === 'function'\) S\.aufgabenAuffrischen\(\);/);
+  assert.match(app, /if \(typeof S\.aufgabenVergessen === 'function'\) S\.aufgabenVergessen\(\);/);
+  // Plus: oben die Zeile „Aufgabe fürs Team“
+  assert.match(html, /<div id="eintragen-aufgabe"><\/div>\s*<form id="buchen-form" novalidate>/);
+  // Nur DOM-Knoten, kein HTML-Text; keine Trennpunkte zwischen Wörtern (Mark); Fokusrahmen für die Tastatur
+  assert.doesNotMatch(auf, /innerHTML|insertAdjacentHTML/);
+  assert.doesNotMatch(auf, /[·•]/);
+  assert.match(css, /\.af-haken:focus-visible::before \{ outline: 2px solid var\(--akzent\); outline-offset: 2px; \}/);
+  assert.match(css, /\.aufgabe\.fertig \.af-haken::before, \.aufgabe\.abgehakt \.af-haken::before \{ background: var\(--akzent\); box-shadow: none; \}/);
+});
+
+test('PWA: Gewinn vorläufig (v38) – Zeile auf dem Start, Thema „Gewinn und Kosten“ (seit v43 unter der Wahl Gewinn in den Zahlen), Lexware-Kosten nur gelesen', () => {
   const css = lies('docs/style.css');
   const ansichten = lies('docs/ansichten.js');
   const hilfen = lies('docs/hilfen.js');
   // Gerechnet in hilfen.js aus dem, was die App schon hat (Rohertrag-Kosten je Zeile, Abgänge je Monat) und uebersicht.kosten
   assert.match(ansichten, /return H\.gewinnRechnen\(a\.zeilen, zd\.mehr\.marge, u\.kosten, u\.abfuellungen, a\.heute, jahr, extra\);/);
   assert.match(hilfen, /wegJeMonat: !bekannt \? null : /);
-  // Start: Kachel „Gewinn“ mit „vorläufig“ nur mit Kosten für das gezeigte Jahr, sie öffnet das Blatt für dieses Jahr
+  // Start: Zeile „Gewinn“ nur mit Kosten für das gezeigte Jahr, sie öffnet seit v43 die Zahlen mit der Wahl Gewinn und diesem Jahr
   assert.match(ansichten, /const gs = gw && !gw\.hinweis && gw\.jahr === jv\.jahr && !\(gw\.ohneEinnahmen && !gw\.guv\) \? gw\.summe : null;/);
-  assert.match(ansichten, /onclick: \(\) => S\.zahlenZeigen\('gewinn', jv\.jahr, \(\) => document\.querySelector\('#app \[data-start="gewinn"\]'\)\),/);
+  assert.match(ansichten, /gs \? jahrZeile\(\{ schluessel: 'gewinn', titel: 'Gewinn', zahl: zahlDa\(gs\.gewinn\) \? gs\.gewinn : null, einheit: '€', minus: gs\.gewinn < 0,/);
+  assert.match(ansichten, /bild: zahlDa\(gs\.gewinn\) \? gewinnSpark\(gw\) : null, beiTipp: zuV\('gewinn'\),/);
   // seit v39: „unvollständig“ bei unlesbaren Zeilen im Tab, „bis …“, wenn Lexware das Jahr nur zum Teil abdeckt;
-  // seit v42 laut Lexware mit bzw. ohne Lager, die Kachel steht vor dem Umsatz
+  // seit v42 laut Lexware mit bzw. ohne Lager, die Zeile steht vor dem Umsatz
   assert.match(ansichten, /const gKlein = !gs \? '' : !zahlDa\(gs\.gewinn\) \? 'Herstellkosten fehlen' : gw\.fehler \|\| gw\.fehlerEinnahmen \? 'unvollständig' : gBis \|\| \(gw\.lager \? 'steuerlich, vorläufig' : 'laut Lexware, ohne Lager'\);/);
-  assert.match(ansichten, /gewinnKachel \? h\('div', \{ class: 'dash-kacheln jahr-start-kacheln jahr-start-gewinn' \}, gewinnKachel\) : null,\s*h\('button', \{ type: 'button', class: 'jahr-start-kopf',/);
-  assert.doesNotMatch(ansichten, /gewinnKachel,\s*kachel\('Flaschen',/);
-  assert.match(css, /\.jahr-start-kacheln\.zwei, \.jahr-start-kacheln\.vier \{ grid-template-columns: repeat\(2, minmax\(0, 1fr\)\); \}/);
+  assert.match(ansichten, /const zeilen = \[\s*\/\/ [^\n]*\n\s*gs \? jahrZeile\(\{ schluessel: 'gewinn',[\s\S]{0,1400}\}\) : null,\s*jahrZeile\(\{ schluessel: 'umsatz',/);
+  assert.doesNotMatch(ansichten, /gewinnKachel/);
+  assert.match(css, /\.jz-wert\.minus \{ color: var\(--rot\); \}/, 'ein Verlust steht rot da');
   // Blatt: Treppe, Kategorien, Vergleich, Monate; die Hinweise zu Grenzen und Stand stehen sichtbar da
   assert.match(ansichten, /gewinn: 'Gewinn und Kosten'/);
   assert.match(ansichten, /'Wie GuV in Lexware plus Lagerveränderung\. Buchungen ohne Beleg fehlen\.'/);
@@ -497,15 +638,19 @@ test('PWA: Gewinn vorläufig (v38) – Kachel auf dem Start, Thema „Gewinn und
   assert.match(lies('api/src/Konfig.js'), /const LEXWARE_KOSTEN_TAB = 'Lexware-Kosten';/);
 });
 
-test('PWA: offene Rechnungen aus Lexware (v41) – Zeile auf dem Start, Blatt, Kunden-Blatt, Hinweis in der Kundenliste', () => {
+test('PWA: offene Rechnungen aus Lexware (v41) – Zeile auf dem Start, Zeile unter der Wahl Gewinn (v43), Blatt, Kunden-Blatt, Hinweis in der Kundenliste', () => {
   const css = lies('docs/style.css');
   const ansichten = lies('docs/ansichten.js');
   const hilfen = lies('docs/hilfen.js');
-  // Start: nur wenn etwas offen ist; antippen öffnet das Blatt, danach zurück auf die Zeile
+  // Start (seit v43 als Zeile in „Im Blick“) und Zahlen (Wahl Gewinn): nur wenn etwas offen ist; antippen öffnet das
+  // Blatt, danach zurück auf die Stelle, von der es kam
+  assert.match(ansichten, /if \(fd && \(fd\.offen > 0 \|\| fd\.ueberfaellig > 0\)\) \{/);
+  assert.match(ansichten, /blickZeile\(\{ schluessel: 'offen', symbol: 'rechnung', titel: 'Offene Rechnungen',/);
+  assert.match(ansichten, /wert: H\.summeFormat\(fd\.offen\), beiTipp: \(\) => S\.offeneZeigen\(\),/);
   assert.match(ansichten, /if \(!fd \|\| !\(fd\.offen > 0 \|\| fd\.ueberfaellig > 0\)\) return null;/);
-  assert.match(ansichten, /'data-start': 'offen', onclick: \(\) => S\.offeneZeigen\(\)/);
+  assert.match(ansichten, /class: 'karte offen-karte', 'data-offen': 'zahlen', onclick: \(\) => S\.offeneZeigen\(\),/);
   assert.match(ansichten, /S\.blattZeigen\('Offene Rechnungen', \[/);
-  assert.match(ansichten, /\], \(\) => document\.querySelector\('#app \[data-start="offen"\]'\)\);/);
+  assert.match(ansichten, /\], \(\) => document\.querySelector\(Z\.ansicht === 'verkaeufe' \? '#app \[data-offen="zahlen"\]' : '#app \[data-start="offen"\]'\)\);/);
   // Kunden: Abschnitt im Kunden-Blatt vor den letzten Bestellungen, rotes „überfällig“ in der Liste
   assert.match(ansichten, /offenKunde\(schluessel\),\s*h\('p', \{ class: 'blatt-titel-klein', text: 'Letzte Bestellungen' \}\),/);
   assert.match(ansichten, /ueber \? h\('span', \{ class: 'badge badge-ueber', text: 'überfällig' \}\) : null/);
@@ -555,7 +700,8 @@ test('PWA: Gewinn laut Lexware (v42) – Einnahmen und Bestand aus der Schnittst
   // Einnahmen netto, Bestand zum Jahresende, Bestand heute und jüngste Inventur gehen in die Rechnung; Start und Blatt nutzen dieselbe Funktion
   assert.match(ansichten, /const extra = \{ einnahmen: u\.einnahmen \|\| null, guv: u\.guv \|\| null, jahresende: u\.jahresende, flaschen: typeof k\.gesamtbestand === 'number' \? k\.gesamtbestand : null,\s*geschaetzt: k\.gesamtQuelle !== 'inventur', inventurAm: inventurAm \};/);
   assert.match(css, /\.dash-zeile\.dash-lagerdiff \{ background: var\(--akzent-weich\); border-radius: 6px; \}/);
-  assert.match(css, /\.jahr-start-kacheln\.jahr-start-gewinn \{ grid-template-columns: minmax\(0, 1fr\); padding-top: 12px; \}/);
+  assert.match(ansichten, /const gw = mg && j \? gewinnFuer\(jv\.jahr\) : null;/, 'Start');
+  assert.match(ansichten, /const gw = gewinnFuer\(jahr\);/, 'Zahlen, Wahl Gewinn');
   // Lager-Block mit Quelle des Anfangsbestands, Hinweis bei geschätztem Bestand, Aufteilung des Wareneinsatzes
   const block = ansichten.slice(ansichten.indexOf('const lagerBlock = () => {'), ansichten.indexOf("dashTitel('Gewinn ' + gj, gw.fehler"));
   assert.ok(block.length > 1000);

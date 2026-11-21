@@ -242,3 +242,57 @@ const FEHLER_STORNO_MEHRFACH = 'Diese ID steht mehrfach im Lager-Log, bitte Mark
 const FEHLER_RECHNUNG = 'Rechnung nicht gefunden';
 const FEHLER_ZUORDNEN = 'Speichern hat nicht geklappt, nichts geändert. Bitte gleich nochmal versuchen';
 const FEHLER_ZUORDNEN_TEILWEISE = 'Speichern hat nur teilweise geklappt, bitte Mark Bescheid geben';
+
+// Aufgaben fürs Team ----------------------------------------------------------------------------------------
+
+/**
+ * Tab „Aufgaben“ (freiwillig, legt aufgabenTabAnlegen() in Api.js an): eine Zeile je Aufgabe, Änderungen in derselben
+ * Zeile, nichts wird gelöscht („Löschen“ setzt den Status `entfernt`). Fehlt der Tab, liefert die Übersicht
+ * `aufgaben: null` und die App zeigt die Funktion nicht. Spalten A ID, B Erstellt, C Von, D Für, E Aufgabe, F Fällig,
+ * G Uhrzeit, H Notiz, I Status, J Erledigt am, K Erledigt von, L Geändert. Die Kopfzeile muss genau so heißen.
+ */
+const AUFGABEN_TAB = 'Aufgaben';
+const AUFGABEN_KOPF = ['ID', 'Erstellt', 'Von', 'Für', 'Aufgabe', 'Fällig', 'Uhrzeit', 'Notiz', 'Status', 'Erledigt am', 'Erledigt von', 'Geändert'];
+/** Spalten im Tab Aufgaben (0 = A). */
+const AU = {
+  ID: 0, ERSTELLT: 1, VON: 2, FUER: 3, TITEL: 4, FAELLIG: 5, UHRZEIT: 6, NOTIZ: 7, STATUS: 8, ERLEDIGT_AM: 9, ERLEDIGT_VON: 10, GEAENDERT: 11,
+};
+/** Status einer Aufgabe. `entfernt` bleibt als Zeile im Tab, fehlt aber in der App. */
+const AUFGABE_STATUS = ['offen', 'erledigt', 'entfernt'];
+/** Längster Text einer Aufgabe und längste Notiz (Zeichen). */
+const MAX_AUFGABE_TITEL = 140;
+const MAX_AUFGABE_NOTIZ = 500;
+/** Fälligkeitsdatum: Jahr von heute minus so vielen bis heute plus so vielen Jahren. */
+const AUFGABE_JAHRE_ZURUECK = 1;
+const AUFGABE_JAHRE_VOR = 5;
+/** Erledigte Aufgaben fehlen in der App, wenn „Erledigt am“ mehr als so viele Tage zurückliegt (die Zeile bleibt im Tab). */
+const AUFGABE_ERLEDIGT_TAGE = 30;
+/** Uhrzeit aus der App: `HH:MM` von 00:00 bis 23:59. */
+const UHRZEIT_MUSTER = /^([01]\d|2[0-3]):[0-5]\d$/;
+/**
+ * IDs der Aufgaben: zufällig „A“ + Zeitstempel (Basis 36) + 4 Zufallszeichen (idErzeugen). Mit anfrageId fest „AA-“ +
+ * die ersten Hex-Zeichen von SHA-256 über Name und anfrageId (idAusAnfrage): Dieselbe Anfrage ergibt dieselbe ID, so
+ * erkennt der Server eine Wiederholung im Tab selbst wieder. Zufalls-IDs kommen dem Präfix „AA-“ nie in die Quere.
+ */
+const AUFGABE_ID_PRAEFIX = 'A';
+const AUFGABE_ANFRAGE_ID_PRAEFIX = 'AA-';
+/**
+ * Zahlenformate im Tab Aufgaben (Spalte 1 = A): Erstellt und Geändert als Zeitpunkt, Fällig und Erledigt am als Datum,
+ * die Uhrzeit als Text (`@`), damit Sheets sie nicht umdeutet.
+ */
+const AU_FORMATE = { 2: 'dd.MM.yyyy HH:mm:ss', 6: 'dd.MM.yyyy', 7: '@', 10: 'dd.MM.yyyy', 12: 'dd.MM.yyyy HH:mm:ss' };
+
+/** Fehlertexte der Aufgaben (die App zeigt sie so an). */
+const FEHLER_AUFGABEN_TAB = 'Der Tab „Aufgaben“ fehlt im Sheet, bitte Mark Bescheid geben';
+const FEHLER_AUFGABEN_KOPF = 'Die Kopfzeile im Tab „Aufgaben“ passt nicht, bitte Mark Bescheid geben';
+const FEHLER_AUFGABE_FEHLT = 'Diese Aufgabe gibt es nicht mehr.';
+const FEHLER_AUFGABE_TITEL = 'Aufgabe: bitte einen Text mit 1 bis 140 Zeichen';
+const FEHLER_AUFGABE_FUER = 'Für: bitte eine Person aus dem Team wählen';
+const FEHLER_AUFGABE_FAELLIG = 'Fällig: Datum ungültig';
+/** Dahinter kommen die erlaubten Jahre, z. B. „2025 bis 2031“. */
+const FEHLER_AUFGABE_FAELLIG_JAHR = 'Fällig: bitte ein Datum in den Jahren ';
+const FEHLER_AUFGABE_UHRZEIT = 'Uhrzeit: bitte als HH:MM von 00:00 bis 23:59';
+const FEHLER_AUFGABE_UHRZEIT_OHNE_DATUM = 'Eine Uhrzeit geht nur zusammen mit einem Fälligkeitsdatum';
+const FEHLER_AUFGABE_NOTIZ = 'Notiz zu lang (höchstens 500 Zeichen)';
+const FEHLER_AUFGABE_STATUS = 'Status unbekannt';
+const FEHLER_AUFGABE_NICHTS = 'Keine Änderung angegeben';

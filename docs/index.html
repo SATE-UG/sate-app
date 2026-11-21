@@ -94,13 +94,15 @@
         </section>
 
         <section id="ansicht-verkaeufe" class="ansicht" role="tabpanel" aria-labelledby="reiter-verkaeufe">
-          <h1 class="titel"><strong>Verkäufe</strong></h1>
+          <h1 class="titel"><strong>Zahlen</strong></h1>
           <div id="verkaeufe-inhalt"></div>
         </section>
 
 
         <section id="ansicht-eintragen" class="ansicht" role="tabpanel" aria-labelledby="reiter-eintragen">
           <h1 class="titel"><strong>Neu</strong> eintragen</h1>
+          <!-- Seit v43: „Aufgabe fürs Team“ (aufgaben.js, nur mit dem Tab „Aufgaben“ im Sheet) -->
+          <div id="eintragen-aufgabe"></div>
           <form id="buchen-form" novalidate>
             <fieldset class="feld">
               <legend class="feld-label">Was ist passiert?</legend>
@@ -202,7 +204,7 @@
     </button>
     <button id="reiter-verkaeufe" type="button" role="tab" data-ansicht="verkaeufe" aria-controls="ansicht-verkaeufe">
       <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="4" y="12" width="4" height="8" rx="1"/><rect x="10" y="7" width="4" height="13" rx="1"/><rect x="16" y="3.5" width="4" height="16.5" rx="1"/></svg>
-      <span>Verkäufe</span>
+      <span>Zahlen</span>
     </button>
     <!-- Eintragen: die Hauptaktion, als Kreis in der Akzentfarbe in der Mitte (seit v23) -->
     <button id="reiter-eintragen" type="button" role="tab" data-ansicht="eintragen" aria-controls="ansicht-eintragen" class="reiter-plus">
@@ -250,6 +252,7 @@
   <script src="kern.js"></script>
   <script src="ansichten.js"></script>
   <script src="eintragen.js"></script>
+  <script src="aufgaben.js"></script>
   <script src="app.js"></script>
   <script src="gesten.js"></script>
   <script src="update.js"></script>

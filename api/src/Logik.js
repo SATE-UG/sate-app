@@ -125,7 +125,8 @@ function pingAntwort(name, bestandRoh, reichweiteRoh, jetzt) {
  *   salz() → Text oder null, eintraege() → Liste (eintraegeLesen), sha256Hex(text),
  *   kennzahlen() → { bestand, reichweite } (Rohwerte aus dem Sheet), jetzt() → Date,
  *   tabellen() → Rohwerte der Tabs für uebersichtBauen(), datumText(date) → `JJJJ-MM-TT` in Europe/Berlin,
- *   tabWerte(name) → ein Tab als 2D-Array; für die Schreib-Aktionen zusätzlich die Funktionen aus schreibAktion().
+ *   tabWerte(name) → ein Tab als 2D-Array; für die Schreib-Aktionen zusätzlich die Funktionen aus schreibAktion(),
+ *   für die Aufgaben die aus aufgabenAktion() (AufgabenLogik.js).
  * Das Sheet wird erst nach gültigem Code gelesen.
  */
 function bearbeiten(text, umgebung) {
@@ -148,6 +149,10 @@ function bearbeiten(text, umgebung) {
   }
   if (a.aktion === 'buchen' || a.aktion === 'stornieren' || a.aktion === 'verkaufStandort') {
     const r = schreibAktion(a.aktion, a.daten, name, umgebung);
+    return r.ok ? Object.assign({ ok: true, name: name }, r) : r;
+  }
+  if (a.aktion === 'aufgabeAnlegen' || a.aktion === 'aufgabeAendern') {
+    const r = aufgabenAktion(a.aktion, a.daten, name, umgebung);
     return r.ok ? Object.assign({ ok: true, name: name }, r) : r;
   }
   return { ok: false, fehler: FEHLER_AKTION };
