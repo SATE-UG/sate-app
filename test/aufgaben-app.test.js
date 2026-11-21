@@ -108,3 +108,25 @@ test('Aufgaben: Abkürzungen für die Frist und Anfangsbuchstabe', () => {
   assert.strictEqual(H.initiale(''), '?');
   assert.strictEqual(H.initiale(null), '?');
 });
+
+test('Mitteilungen (v44): Schlüssel als Bytes und Stand auf dem Gerät', () => {
+  // base64url → Bytes (der Browser will den öffentlichen Schlüssel beim Anmelden als Bytes)
+  assert.deepStrictEqual(H.base64urlBytes('AQID'), [1, 2, 3]);
+  assert.deepStrictEqual(H.base64urlBytes('_-8'), [255, 239]);
+  assert.deepStrictEqual(H.base64urlBytes('AA'), [0]);
+  const schluessel = Buffer.concat([Buffer.from([4]), Buffer.alloc(64, 7)]);
+  assert.deepStrictEqual(H.base64urlBytes(schluessel.toString('base64url')), Array.from(schluessel));
+  ['', 'A', 'AQID=', 'AQ+D', 'AQ/D', 'AQ ID', null, 5].forEach((x) => assert.strictEqual(H.base64urlBytes(x), null, String(x)));
+  // Stand: erst wenn die Schnittstelle es kann, dann Gerät, Erlaubnis, Anmeldung
+  assert.strictEqual(H.pushStand(null), 'aus');
+  assert.strictEqual(H.pushStand({ server: false, kann: true, erlaubnis: 'granted', abo: true }), 'aus');
+  assert.strictEqual(H.pushStand({ server: true, kann: false, erlaubnis: '', abo: false }), 'geraet');
+  assert.strictEqual(H.pushStand({ server: true, kann: true, erlaubnis: 'denied', abo: false }), 'gesperrt');
+  assert.strictEqual(H.pushStand({ server: true, kann: true, erlaubnis: 'default', abo: false }), 'moeglich');
+  assert.strictEqual(H.pushStand({ server: true, kann: true, erlaubnis: 'granted', abo: false }), 'moeglich');
+  assert.strictEqual(H.pushStand({ server: true, kann: true, erlaubnis: 'granted', abo: true }), 'an');
+  // „An“ nur mit erteilter Erlaubnis; ein Service Worker, der nicht bereit wird, ist ein eigener Stand (Codex v44)
+  assert.strictEqual(H.pushStand({ server: true, kann: true, erlaubnis: 'default', abo: true }), 'moeglich');
+  assert.strictEqual(H.pushStand({ server: true, kann: true, erlaubnis: 'granted', stoerung: true, abo: false }), 'stoerung');
+  assert.strictEqual(H.pushStand({ server: true, kann: true, erlaubnis: 'denied', stoerung: true, abo: false }), 'gesperrt');
+});

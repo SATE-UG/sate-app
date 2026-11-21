@@ -12,7 +12,7 @@
 
   const S = window.SATE = {
     H: H,
-    SCHLUESSEL: { code: 'sate.zugangscode', daten: 'sate.uebersicht', ansicht: 'sate.ansicht', standort: 'sate.standort' },
+    SCHLUESSEL: { code: 'sate.zugangscode', daten: 'sate.uebersicht', ansicht: 'sate.ansicht', standort: 'sate.standort', pushSpaeter: 'sate.push-spaeter' },
     zustand: {
       code: '',          // Zugangscode dieser Sitzung
       name: '',          // Name aus der letzten Antwort
@@ -103,6 +103,7 @@
     euro: [['circle', { cx: 12, cy: 12, r: 8.5 }], ['path', { d: 'M14.8 9.2a3.6 3.6 0 1 0 0 5.6' }], ['path', { d: 'M7.8 11h4.6M7.8 13h3.8' }]],
     prozent: [['path', { d: 'M18 6 6 18' }], ['circle', { cx: 7.5, cy: 7.5, r: 2.5 }], ['circle', { cx: 16.5, cy: 16.5, r: 2.5 }]],
     haken: [['path', { d: 'M5.5 12.5l4.3 4.3L18.5 7.5' }]],
+    glocke: [['path', { d: 'M6 16.5V11a6 6 0 0 1 12 0v5.5l1.5 2h-15z' }], ['path', { d: 'M10 20.5a2.1 2.1 0 0 0 4 0' }]],
     plus: [['path', { d: 'M12 5.5v13M5.5 12h13' }]],
     aufgabe: [['circle', { cx: 12, cy: 12, r: 8.5 }], ['path', { d: 'M8.3 12.3l2.6 2.6 4.9-5.2' }]],
     info: [['circle', { cx: 12, cy: 12, r: 9 }], ['path', { d: 'M12 11v5.5' }], ['path', { d: 'M12 7.6v.1' }]],

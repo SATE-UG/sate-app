@@ -296,3 +296,67 @@ const FEHLER_AUFGABE_UHRZEIT_OHNE_DATUM = 'Eine Uhrzeit geht nur zusammen mit ei
 const FEHLER_AUFGABE_NOTIZ = 'Notiz zu lang (höchstens 500 Zeichen)';
 const FEHLER_AUFGABE_STATUS = 'Status unbekannt';
 const FEHLER_AUFGABE_NICHTS = 'Keine Änderung angegeben';
+
+// Mitteilungen aufs Handy (Web Push) ------------------------------------------------------------------------
+
+/**
+ * Bekommt jemand eine Aufgabe von einer anderen Person, schickt die Schnittstelle eine Mitteilung ohne Inhalt an alle
+ * Geräte dieser Person (Web Push mit VAPID, RFC 8292, siehe PushLogik.js). Der Text der Mitteilung steht fest in der
+ * App. Alles liegt in den Skripteigenschaften, nichts im Sheet: das Schlüsselpaar (legt pushEinrichten() in Api.js
+ * einmal an) und je Gerät ein Eintrag.
+ */
+/** Skripteigenschaften mit dem Schlüsselpaar, beide als base64url: privat 32 Bytes, öffentlich 65 Bytes (0x04, X, Y). */
+const PUSH_PRIVAT_EIGENSCHAFT = 'PUSH_VAPID_PRIVAT';
+const PUSH_OEFFENTLICH_EIGENSCHAFT = 'PUSH_VAPID_OEFFENTLICH';
+/**
+ * Skripteigenschaft je Gerät: `push:<Name>:<Kennung>` → JSON { endpoint, p256dh, auth, seit }. Die Kennung sind die
+ * ersten PUSH_KENNUNG_HEX Hex-Zeichen von SHA-256 des Endpunkts. p256dh und auth werden nur gespeichert (für später,
+ * falls Mitteilungen einmal Inhalt bekommen).
+ */
+const PUSH_PRAEFIX = 'push:';
+const PUSH_KENNUNG_HEX = 16;
+const PUSH_EIGENSCHAFT_MUSTER = new RegExp('^' + PUSH_PRAEFIX + '(.+):([0-9a-f]{' + PUSH_KENNUNG_HEX + '})$');
+/** Höchstens so viele Geräte je Person, beim nächsten fällt das älteste weg. */
+const MAX_PUSH_GERAETE = 5;
+/** Längster Endpunkt und längster Text für p256dh bzw. auth (Zeichen). */
+const MAX_PUSH_ENDPUNKT = 1000;
+const MAX_PUSH_SCHLUESSEL = 200;
+/** p256dh und auth: base64url ohne Füllzeichen. */
+const PUSH_SCHLUESSEL_MUSTER = /^[A-Za-z0-9_-]+$/;
+/**
+ * Endpunkte nur bei den Push-Diensten der Browser (Apple, Google, Mozilla, Microsoft), sonst könnte jemand die
+ * Schnittstelle beliebige Adressen abrufen lassen: Host genau einer aus PUSH_HOSTS oder mit einem Ende aus
+ * PUSH_HOST_ENDEN. Nur https, kleingeschriebener Host (höchstens MAX_HOST_ZEICHEN Zeichen, jeder Teil zwischen den
+ * Punkten höchstens MAX_HOST_TEIL_ZEICHEN, sonst gäbe es ihn im Netz gar nicht), kein Port, keine Zugangsdaten,
+ * dahinter ein Pfad aus üblichen URL-Zeichen (kein Leerraum, kein Rückstrich, kein #, `%` nur mit zwei Hex-Zeichen).
+ */
+const PUSH_HOSTS = ['web.push.apple.com', 'fcm.googleapis.com', 'updates.push.services.mozilla.com'];
+const PUSH_HOST_ENDEN = ['.push.apple.com', '.notify.windows.com'];
+const PUSH_ENDPUNKT_MUSTER = /^https:\/\/([a-z0-9.-]+)\/[A-Za-z0-9\-._~%!$&'()*+,;=:@\/?]*$/;
+const PUSH_HOST_TEIL_MUSTER = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?$/;
+const MAX_HOST_ZEICHEN = 253;
+const MAX_HOST_TEIL_ZEICHEN = 63;
+/** Ein `%`, hinter dem keine zwei Hex-Zeichen stehen: So eine Adresse ließe sich nicht abrufen. */
+const PUSH_PROZENT_KAPUTT_MUSTER = /%(?![0-9A-Fa-f]{2})/;
+/**
+ * `sub` im VAPID-Token: Kontakt für den Push-Dienst. Bewusst eine https-Adresse (die App selbst), keine Mail-Adresse
+ * im öffentlichen Repo.
+ */
+const PUSH_KONTAKT = 'https://sate-ug.github.io/sate-app/';
+/** So lange gilt ein VAPID-Token (Sekunden, erlaubt sind höchstens 24 Stunden). */
+const PUSH_TOKEN_SEKUNDEN = 12 * 60 * 60;
+/** Kopfzeilen beim Senden: so lange hebt der Push-Dienst die Mitteilung für ein ausgeschaltetes Gerät auf (Sekunden). */
+const PUSH_TTL_SEKUNDEN = 86400;
+const PUSH_DRINGLICHKEIT = 'normal';
+/** Antwort des Push-Dienstes: Diese Statuscodes heißen „das Gerät gibt es nicht mehr“, der Eintrag wird gelöscht. */
+const PUSH_STATUS_WEG = [404, 410];
+/**
+ * pushTesten() loggt je Gerät so viele Zeichen der Antwort des Push-Dienstes (für die Fehlersuche). Adressen und
+ * alles, was aus der Anfrage stammt (Teile der Adresse des Geräts ab PUSH_LOG_TEIL_ZEICHEN Zeichen, das Token), nimmt
+ * pushLogText() vorher heraus: Manche Dienste wiederholen in einer Fehlerseite die abgerufene Adresse.
+ */
+const PUSH_LOG_ZEICHEN = 200;
+const PUSH_LOG_TEIL_ZEICHEN = 12;
+
+/** Fehlertext, solange das Schlüsselpaar fehlt (die App zeigt ihn so an). */
+const FEHLER_PUSH_EINRICHTUNG = 'Mitteilungen sind noch nicht eingerichtet, bitte Mark Bescheid geben';

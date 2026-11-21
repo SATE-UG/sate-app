@@ -306,12 +306,17 @@ function aufgabeNeueId_(zeilen, ms, zufall) {
  *   zeileSchreiben(tab, nr, zellen, formate) für die neue Zeile,
  *   zellenSchreiben(tab, nr, spalte, zellen, formate) für Zellen nebeneinander in einer bestehenden Zeile,
  *   schreibenAbschliessen() bringt alles Geschriebene ins Sheet (flush), bevor die Sperre frei wird.
- * `aufgabeAnlegen`: Daten { titel, fuer, faellig?, uhrzeit?, notiz?, anfrageId? }, Antwort { ok: true, id, aufgaben }.
- * Mit anfrageId ist die ID fest daraus abgeleitet: Steht sie schon im Tab, wird nichts geschrieben und die Antwort
- * ist dieselbe (dazu `wiederholt: true`).
- * `aufgabeAendern`: Daten { id, status?, titel?, fuer?, faellig?, uhrzeit?, notiz? }, Antwort { ok: true, aufgaben }.
- * Jede Person mit gültigem Code darf jede Aufgabe ändern. Ist alles schon so, wird nichts geschrieben.
+ * `aufgabeAnlegen`: Daten { titel, fuer, faellig?, uhrzeit?, notiz?, anfrageId? }, Antwort { ok: true, id, aufgaben,
+ * benachrichtigt }. Mit anfrageId ist die ID fest daraus abgeleitet: Steht sie schon im Tab, wird nichts geschrieben
+ * und die Antwort ist dieselbe (dazu `wiederholt: true`).
+ * `aufgabeAendern`: Daten { id, status?, titel?, fuer?, faellig?, uhrzeit?, notiz? }, Antwort { ok: true, aufgaben,
+ * benachrichtigt }. Jede Person mit gültigem Code darf jede Aufgabe ändern. Ist alles schon so, wird nichts geschrieben.
  * `aufgaben` = die frische Liste wie in der Übersicht (aufgabenLesen). Fehler: { ok: false, fehler }.
+ * Mitteilung aufs Handy (PushLogik.js): Bekommt jemand anderes als `name` die Aufgabe (neu angelegt, keine
+ * Wiederholung; oder „Für“ geändert und die Aufgabe ist danach offen), geht nach der Sperre eine Mitteilung ohne
+ * Inhalt an die Geräte dieser Person: `u.pushSenden(name)` → Zahl der Geräte, die angenommen haben. Die Zahl steht
+ * als `benachrichtigt` in der Antwort (0: niemand zu benachrichtigen, keine Geräte oder Senden gescheitert). Die
+ * Aufgabe scheitert nie an der Mitteilung.
  */
 function aufgabenAktion(aktion, daten, name, u) {
   const anlegen = aktion === 'aufgabeAnlegen';
@@ -321,6 +326,7 @@ function aufgabenAktion(aktion, daten, name, u) {
     festeId = idAusAnfrage(u.sha256Hex('aufgabe-id\n' + name + '\n' + daten.anfrageId), AUFGABE_ANFRAGE_ID_PRAEFIX);
   }
   const team = teamNamen(u.eintraege());
+  let mitteilungAn = null; // wer nach der Sperre eine Mitteilung bekommt
   const r = u.mitSperre(() => {
     const jetzt = u.jetzt();
     const heute = u.datumText(jetzt);
@@ -338,14 +344,22 @@ function aufgabenAktion(aktion, daten, name, u) {
       u.schreibenAbschliessen();
     }
     if (!erg.ok) return erg;
+    mitteilungAn = erg.mitteilungAn || null;
+    delete erg.mitteilungAn; // nur für hier, nicht für die App
     // Frische Liste aus den Zeilen im Speicher (die Schreibfunktionen halten sie auf dem Stand des Tabs)
     return Object.assign(erg, { aufgaben: aufgabenLesen(zeilen, team, u.datumText, [], heute) });
   });
   if (r.gesperrt) return { ok: false, fehler: FEHLER_BESCHAEFTIGT };
-  return r.wert;
+  if (!r.wert.ok) return r.wert;
+  // Erst jetzt, nach der Sperre: Das Senden dauert und soll niemanden beim Eintragen aufhalten
+  return Object.assign(r.wert, { benachrichtigt: mitteilungAn ? pushBenachrichtigen(u, mitteilungAn) : 0 });
 }
 
-/** Neue Aufgabe als Zeile A–L unten anhängen (Status `offen`, „Geändert“ leer). Rückgabe { ok, id } oder { ok: false, fehler }. */
+/**
+ * Neue Aufgabe als Zeile A–L unten anhängen (Status `offen`, „Geändert“ leer). Rückgabe { ok, id, mitteilungAn } oder
+ * { ok: false, fehler }. `mitteilungAn` = wer eine Mitteilung bekommt: „Für“, wenn es jemand anderes als `name` ist,
+ * sonst null (auch bei einer Wiederholung derselben Anfrage).
+ */
 function aufgabeAnlegen_(daten, name, zeilen, team, heute, jetzt, u, festeId) {
   // Wiederholung derselben Anfrage: Die Zeile mit der festen ID steht schon da (auch wenn sie inzwischen geändert ist)
   if (festeId && aufgabeZeileZuId(zeilen, festeId) >= 0) return { ok: true, id: festeId, wiederholt: true };
@@ -357,12 +371,14 @@ function aufgabeAnlegen_(daten, name, zeilen, team, heute, jetzt, u, festeId) {
   const nr = naechsteZeile(zeilen);
   u.zeileSchreiben(AUFGABEN_TAB, nr, zellenGenau(zeile), AU_FORMATE);
   zeileSetzen_(zeilen, nr, zeile);
-  return { ok: true, id: id };
+  return { ok: true, id: id, mitteilungAn: a.fuer !== name ? a.fuer : null };
 }
 
 /**
  * Aufgabe `daten.id` in ihrer Zeile ändern: nur die Zellen, die sich ändern, und „Geändert“. Unbekannte ID, unlesbare
- * Zeile oder Status `entfernt` → FEHLER_AUFGABE_FEHLT. Rückgabe { ok } oder { ok: false, fehler }.
+ * Zeile oder Status `entfernt` → FEHLER_AUFGABE_FEHLT. Rückgabe { ok, mitteilungAn } oder { ok: false, fehler }.
+ * `mitteilungAn` = wer eine Mitteilung bekommt: das neue „Für“, wenn es sich geändert hat, jemand anderes als `name`
+ * ist und die Aufgabe danach offen ist, sonst null.
  */
 function aufgabeAendern_(daten, name, zeilen, team, heute, jetzt, u) {
   const id = typeof daten.id === 'string' ? daten.id.trim() : '';
@@ -389,5 +405,6 @@ function aufgabeAendern_(daten, name, zeilen, team, heute, jetzt, u) {
     while (zeile.length <= k) zeile.push('');
     zeile[k] = w;
   });
-  return { ok: true };
+  const offen = (p.neu.status === undefined ? alt.status : p.neu.status) === 'offen';
+  return { ok: true, mitteilungAn: p.neu.fuer !== undefined && p.neu.fuer !== name && offen ? p.neu.fuer : null };
 }

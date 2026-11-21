@@ -17,9 +17,12 @@ const KONSTANTEN = [
   'FEHLER_CODE', 'FEHLER_ANFRAGE', 'FEHLER_AKTION', 'FEHLER_SERVER', 'LAGER_FORMATE', 'TRIGGER_FUNKTION',
   'FEHLER_BESCHAEFTIGT', 'LL_FORMATE', 'AB_FORMATE', 'MAX_KOMMENTAR',
   'AUFGABEN_TAB', 'AUFGABEN_KOPF', 'AU_FORMATE', 'MAX_AUFGABE_TITEL', 'MAX_AUFGABE_NOTIZ',
+  'PUSH_PRIVAT_EIGENSCHAFT', 'PUSH_OEFFENTLICH_EIGENSCHAFT', 'PUSH_PRAEFIX', 'PUSH_KONTAKT', 'MAX_PUSH_GERAETE',
+  'PUSH_TOKEN_SEKUNDEN', 'FEHLER_PUSH_EINRICHTUNG', 'P256_P', 'P256_N', 'P256_B', 'P256_GX', 'P256_GY',
 ];
 
-const REIN = ['Konfig.js', 'Logik.js', 'LagerLogik.js', 'VerkaufLogik.js', 'UebersichtLogik.js', 'SchreibLogik.js', 'AufgabenLogik.js'];
+const REIN = ['Konfig.js', 'Logik.js', 'LagerLogik.js', 'VerkaufLogik.js', 'UebersichtLogik.js', 'SchreibLogik.js', 'AufgabenLogik.js',
+  'PushLogik.js'];
 const ALLE = REIN.concat(['Api.js']);
 
 function lade(globals, dateien, zusatz) {

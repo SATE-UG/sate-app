@@ -1718,3 +1718,13 @@ span.anteil, span.anteil-fuell { display: block; }
 .aufgabe-aktionen { display: flex; justify-content: space-between; gap: 12px; margin: 14px 0 0; }
 .text-link.gefahr-link { color: var(--rot); }
 #eintragen-aufgabe:not(:empty) { margin: 0 0 12px; }
+/* Mitteilungen (seit v44): Hinweis auf dem Start mit Kreuz zum Wegtippen, im Blatt eine leise Zeile mit Schalter */
+.push-hinweis { position: relative; margin: 20px 0 0; }
+.push-hinweis .hinweis-karte { margin: 0; padding-right: 48px; }
+.push-hinweis .hinweis-karte:disabled { opacity: 0.5; }
+.rund.push-spaeter { position: absolute; right: 0; top: 50%; margin-top: -18px; background: none; box-shadow: none; color: var(--leise); }
+.push-spaeter .icon { width: 18px; height: 18px; }
+.hinweis.push-zeile { display: flex; align-items: center; gap: 8px; margin: 22px 0 0; font-size: 13px; line-height: 1.35; }
+.push-zeile > span { flex: 1; min-width: 0; }
+.push-zeile .push-icon { flex: none; width: 16px; height: 16px; }
+.push-zeile .text-link { flex: none; width: auto; min-height: 32px; padding: 0 2px; font-size: 13px; font-weight: 500; color: var(--akzent); }

@@ -3023,6 +3023,43 @@
     return aus;
   }
 
+  /**
+   * base64url-Text (z. B. der öffentliche Schlüssel für Mitteilungen) → Bytes als Zahlenliste; ungültig → null. Der
+   * Browser will den Schlüssel beim Anmelden für Mitteilungen als Bytes.
+   */
+  function base64urlBytes(text) {
+    if (typeof text !== 'string' || !text || !/^[A-Za-z0-9_-]+$/.test(text) || text.length % 4 === 1) return null;
+    const zeichen = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
+    const aus = [];
+    let puffer = 0;
+    let bits = 0;
+    for (let i = 0; i < text.length; i++) {
+      puffer = (puffer << 6) | zeichen.indexOf(text[i]);
+      bits += 6;
+      if (bits >= 8) {
+        bits -= 8;
+        aus.push((puffer >> bits) & 0xff);
+      }
+    }
+    return aus;
+  }
+
+  /**
+   * Stand der Mitteilungen auf diesem Gerät für die Anzeige: 'aus' (die Schnittstelle kann es noch nicht), 'geraet'
+   * (dieser Browser kann es nicht, z. B. Safari ohne Home-Bildschirm), 'gesperrt' (in den Einstellungen des Geräts
+   * verboten), 'stoerung' (der Service Worker der App ist nicht bereit), 'an' oder 'moeglich' (kann eingeschaltet
+   * werden). `o` = { server (Schnittstelle liefert einen Schlüssel), kann (Browser kann Mitteilungen), erlaubnis
+   * (Notification.permission), stoerung, abo (beim Browser angemeldet UND von der Schnittstelle für diese Person
+   * bestätigt) }. „An“ heißt es nur mit erteilter Erlaubnis und bestätigtem Gerät (Codex v44), sonst käme nichts an.
+   */
+  function pushStand(o) {
+    if (!o || !o.server) return 'aus';
+    if (!o.kann) return 'geraet';
+    if (o.erlaubnis === 'denied') return 'gesperrt';
+    if (o.stoerung) return 'stoerung';
+    return o.abo && o.erlaubnis === 'granted' ? 'an' : 'moeglich';
+  }
+
   /** Abkürzungen für die Frist beim Anlegen: [[Datum, Text], …] ab heute. */
   function aufgabeTage(heute) {
     if (!datumGueltig(heute)) return [];
@@ -3049,6 +3086,7 @@
     auswerten, AUSWERTEN_KENNZAHLEN, AUSWERTEN_NACH, spaltenTeilen, gewinnRechnen, centVerteilen, kostenRechnen, TOP_LIEFERANTEN, bestandBewerten, lagerAbgleich,
     forderungenDaten, offeneBelege, faelligText, centFormat, summeFormat,
     aufgabenDaten, aufgabeFrist, aufgabenOrdnen, aufgabenSicht, aufgabePruefen, aufgabeAenderung, aufgabeTage, initiale, MAX_AUFGABE_ZEICHEN, MAX_AUFGABE_NOTIZ,
+    base64urlBytes, pushStand,
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = hilfen;
   else wurzel.SATE_HILFEN = hilfen;

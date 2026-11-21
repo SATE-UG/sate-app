@@ -101,7 +101,265 @@
   S.aufgabenVergessen = function () {
     unterwegs.clear();
     stand++;
+    pushBeenden(''); // Mitteilungen enden mit der Anmeldung (nach S.pushAustragen ist hier nichts mehr zu tun)
   };
+
+  // Mitteilungen aufs Handy (seit v44) ------------------------------------------------------------------------------
+  // Mark, 2026-11-21: Wer eine Aufgabe bekommt, soll eine Mitteilung aufs Handy bekommen. Das geht als Web Push: Jede
+  // Person schaltet es auf ihrem Gerät einmal ein (iOS fragt nur nach einem Tipp und nur in der App auf dem
+  // Home-Bildschirm), der Browser gibt eine Adresse heraus, die die Schnittstelle sich merkt (pushAnmelden) und bei
+  // einer neuen Aufgabe anstößt. Der Text der Mitteilung steht fest im Service Worker (sw.js). Die Schnittstelle sagt
+  // in `push` der Übersicht, ob sie es kann (`schluessel`) und welche Geräte der Person sie kennt (`geraete`).
+  // Regeln (Codex v44): „An“ heißt es erst, wenn die Schnittstelle das Gerät für diese Person kennt. Jeder Vorgang
+  // gehört zu der Anmeldung, in der er begann (Code und Laufnummer von da): Kommt seine Antwort nach einem Abmelden,
+  // ändert sie nichts mehr. Beim Abmelden endet die Anmeldung beim Browser sofort, auch ohne Netz.
+
+  const SW_WARTEN_MS = 8000; // so lange darf der Service Worker brauchen, bis er bereit ist
+  const ABGLEICH_PAUSE_MS = 30000; // frühestens so viel später ein neuer Versuch, das Gerät zu melden
+  const pushKann = () => 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
+  const pushServer = () => (Z.daten && Z.daten.push && typeof Z.daten.push.schluessel === 'string' && Z.daten.push.schluessel ? Z.daten.push : null);
+  // Was die App über dieses Gerät weiß. abo: undefined = noch nicht nachgesehen, null = beim Browser nicht angemeldet,
+  // sonst sein Abo; kennung: Kennung der Adresse wie in der Schnittstelle; stoerung: Service Worker nicht bereit;
+  // laeuft: Ein- oder Ausschalten unterwegs; gleicht: Abgleich unterwegs; versuch: Zeit des letzten Versuchs;
+  // lauf: zählt bei jedem Abmelden hoch (ältere Vorgänge gelten dann nicht mehr)
+  const P = { abo: undefined, kennung: '', stoerung: false, laeuft: false, gleicht: false, versuch: 0, lauf: 0 };
+
+  /** Kennt die Schnittstelle dieses Gerät für die angemeldete Person? */
+  const pushBestaetigt = () => !!P.abo && !!P.kennung && !!pushServer() && Array.isArray(pushServer().geraete) && pushServer().geraete.indexOf(P.kennung) >= 0;
+  const pushErlaubnis = () => (pushKann() ? window.Notification.permission : '');
+  const pushStand = () => H.pushStand({ server: !!pushServer(), kann: pushKann(), erlaubnis: pushErlaubnis(), stoerung: P.stoerung, abo: pushBestaetigt() });
+  S.pushStand = pushStand;
+  const aboDaten = (abo) => {
+    const j = abo.toJSON();
+    return { endpoint: j.endpoint, p256dh: j.keys && j.keys.p256dh, auth: j.keys && j.keys.auth };
+  };
+  /** Kennung eines Geräts wie in der Schnittstelle: die ersten 16 Hex-Zeichen von SHA-256 seiner Adresse. */
+  async function geraetKennung(endpoint) {
+    const bytes = new Uint8Array(await window.crypto.subtle.digest('SHA-256', new TextEncoder().encode(endpoint)));
+    return Array.from(bytes.slice(0, 8), (b) => (b < 16 ? '0' : '') + b.toString(16)).join('');
+  }
+  /** Gehört das Abo zum Schlüssel der Schnittstelle? Nach einem Schlüsselwechsel käme über das alte nichts mehr an. */
+  function schluesselPasst(abo, bytes) {
+    const alt = abo.options && abo.options.applicationServerKey ? Array.from(new Uint8Array(abo.options.applicationServerKey)) : null;
+    return !alt || (alt.length === bytes.length && alt.every((x, i) => x === bytes[i]));
+  }
+  /** Service Worker der App, sobald er bereit ist; wird er es in SW_WARTEN_MS nicht (Installation gescheitert), null. */
+  function swBereit() {
+    return new Promise((fertig) => {
+      const uhr = setTimeout(() => fertig(null), SW_WARTEN_MS);
+      navigator.serviceWorker.ready.then((reg) => { clearTimeout(uhr); fertig(reg); }, () => { clearTimeout(uhr); fertig(null); });
+    });
+  }
+  /** Antwort von pushAnmelden/pushAbmelden übernehmen (die Übersicht bleibt sonst, wie sie ist). */
+  function pushUebernehmen(e) {
+    if (e && e.art === 'ok' && Z.daten && e.daten && e.daten.push !== undefined) Z.daten.push = e.daten.push;
+  }
+  /** Gilt ein Vorgang noch, der mit dieser Laufnummer und diesem Code begann? */
+  const pushGilt = (lauf, code) => lauf === P.lauf && !!code && code === Z.code;
+
+  /**
+   * Bei jedem Zeichnen (S.ansichten.aufgaben): beim ersten Mal nachsehen, ob dieses Gerät beim Browser angemeldet
+   * ist (ein Abo zu einem alten Schlüssel wird beendet), und es der Schnittstelle melden, solange sie es für diese
+   * Person nicht kennt (neuer Zugangscode auf dem Gerät, Eintrag verloren, vorhin kein Netz). Nicht öfter als alle
+   * ABGLEICH_PAUSE_MS, damit eine alte Übersicht keine Schleife auslöst.
+   */
+  async function pushAbgleichen() {
+    if (!pushKann() || !pushServer() || !Z.code || P.laeuft || P.gleicht) return;
+    const sehen = P.abo === undefined;
+    const melden = !!P.abo && !pushBestaetigt() && pushErlaubnis() === 'granted';
+    if ((!sehen && !melden) || Date.now() - P.versuch < (sehen && !P.stoerung ? 0 : ABGLEICH_PAUSE_MS)) return;
+    P.gleicht = true;
+    const lauf = P.lauf;
+    const code = Z.code;
+    try {
+      if (sehen) {
+        const reg = await swBereit();
+        if (!pushGilt(lauf, code)) return;
+        if (!reg) {
+          P.stoerung = true;
+          P.versuch = Date.now();
+          return;
+        }
+        P.stoerung = false;
+        let abo = await reg.pushManager.getSubscription();
+        const bytes = pushServer() ? H.base64urlBytes(pushServer().schluessel) : null;
+        if (abo && bytes && !schluesselPasst(abo, bytes)) {
+          await abo.unsubscribe().catch(() => {});
+          abo = null;
+        }
+        const kennung = abo ? await geraetKennung(abo.endpoint) : '';
+        if (!pushGilt(lauf, code)) return;
+        P.abo = abo || null;
+        P.kennung = kennung;
+      }
+      if (P.abo && !pushBestaetigt() && pushErlaubnis() === 'granted' && pushServer()) {
+        P.versuch = Date.now();
+        const e = await S.anfrage('pushAnmelden', aboDaten(P.abo), code);
+        if (!pushGilt(lauf, code)) return;
+        pushUebernehmen(e);
+      }
+    } catch (err) {
+      P.versuch = Date.now(); // beim nächsten Zeichnen nach der Pause neu
+    } finally {
+      if (lauf === P.lauf) P.gleicht = false;
+      if (pushGilt(lauf, code)) zeichnen();
+    }
+  }
+
+  /** Mitteilungen auf diesem Gerät einschalten. Muss direkt aus einem Tipp heraus laufen (iOS fragt sonst nicht). */
+  S.pushEinschalten = async function () {
+    if (P.laeuft || !pushKann() || !pushServer() || !Z.code) return;
+    const bytes = H.base64urlBytes(pushServer().schluessel);
+    if (!bytes) return;
+    P.laeuft = true;
+    const lauf = P.lauf;
+    const code = Z.code;
+    const gilt = () => pushGilt(lauf, code);
+    try {
+      const erlaubnis = await window.Notification.requestPermission();
+      if (!gilt()) return;
+      if (erlaubnis !== 'granted') {
+        S.melden('Mitteilungen sind für SATE nicht erlaubt.', true, ['Erlauben in den Einstellungen des Geräts unter Mitteilungen, dann hier nochmal einschalten.']);
+        return;
+      }
+      const reg = await swBereit();
+      if (!gilt()) return;
+      if (!reg) {
+        P.stoerung = true;
+        S.melden('Mitteilungen gehen gerade nicht.', true, ['Bitte die App einmal schließen und neu öffnen.']);
+        return;
+      }
+      P.stoerung = false;
+      // Ein Abo zu einem alten Schlüssel der Schnittstelle erst beenden, sonst lehnt der Browser das neue ab
+      const alt = await reg.pushManager.getSubscription();
+      if (alt && !schluesselPasst(alt, bytes)) await alt.unsubscribe().catch(() => {});
+      const abo = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: Uint8Array.from(bytes) });
+      const kennung = await geraetKennung(abo.endpoint);
+      if (!gilt()) {
+        await abo.unsubscribe().catch(() => {}); // inzwischen abgemeldet: nichts hinterlassen
+        return;
+      }
+      const e = await S.anfrage('pushAnmelden', aboDaten(abo), code);
+      if (!gilt()) {
+        // Inzwischen abgemeldet: beim Browser beenden und den eben gemachten Eintrag wieder austragen (mit dem Code von vorhin)
+        await abo.unsubscribe().catch(() => {});
+        if (e.art === 'ok') S.anfrage('pushAbmelden', { endpoint: abo.endpoint }, code).catch(() => {});
+        return;
+      }
+      if (e.art !== 'ok') {
+        // Die Schnittstelle kennt das Gerät nicht: beim Browser wieder abmelden, sonst sähe es an aus und käme nichts
+        await abo.unsubscribe().catch(() => {});
+        P.abo = null;
+        P.kennung = '';
+        S.melden(e.meldung || 'Mitteilungen ließen sich nicht einschalten.', true);
+        return;
+      }
+      P.abo = abo;
+      P.kennung = kennung;
+      pushUebernehmen(e);
+      S.melden('Mitteilungen sind an', false, ['Du bekommst Bescheid, wenn dir jemand eine Aufgabe gibt.']);
+    } catch (err) {
+      if (gilt()) S.melden('Mitteilungen ließen sich nicht einschalten.', true, ['Am iPhone geht das nur in der App auf dem Home-Bildschirm.']);
+    } finally {
+      if (lauf === P.lauf) P.laeuft = false;
+      if (gilt()) zeichnen();
+    }
+  };
+
+  /** Mitteilungen auf diesem Gerät ausschalten: beim Browser abmelden und bei der Schnittstelle austragen. */
+  S.pushAusschalten = async function () {
+    if (P.laeuft || !P.abo || !Z.code) return;
+    P.laeuft = true;
+    const lauf = P.lauf;
+    const code = Z.code;
+    const gilt = () => pushGilt(lauf, code);
+    const abo = P.abo;
+    try {
+      await abo.unsubscribe();
+      if (gilt()) {
+        P.abo = null;
+        P.kennung = '';
+      }
+      // Ausgetragen wird mit dem Code vom Beginn, auch wenn sich inzwischen jemand abgemeldet hat
+      const e = await S.anfrage('pushAbmelden', { endpoint: abo.endpoint }, code);
+      if (!gilt()) return;
+      pushUebernehmen(e);
+      S.melden('Mitteilungen sind aus');
+    } catch (err) {
+      if (gilt()) S.melden('Mitteilungen ließen sich nicht ausschalten.', true);
+    } finally {
+      if (lauf === P.lauf) P.laeuft = false;
+      if (gilt()) zeichnen();
+    }
+  };
+
+  /**
+   * Beim Abmelden (app.js, bevor der Code gelöscht wird) und wenn der Code ungültig wurde (S.aufgabenVergessen):
+   * Laufende Vorgänge gelten nicht mehr, und die Anmeldung beim Browser endet sofort, auch ohne Netz, damit auf
+   * einem geteilten Gerät keine Mitteilungen der vorigen Person mehr ankommen (Codex v44, hoch). Mit `code` wird das
+   * Gerät zusätzlich bei der Schnittstelle ausgetragen. Wer sich danach anmeldet, schaltet die Mitteilungen neu ein.
+   */
+  let pushEnde = Promise.resolve(); // Beenden läuft nacheinander: Abmelden ruft es zweimal (austragen, dann vergessen)
+  function pushBeenden(code) {
+    P.lauf++;
+    const bekannt = P.abo || null;
+    Object.assign(P, { abo: undefined, kennung: '', stoerung: false, laeuft: false, gleicht: false, versuch: 0 });
+    if (!pushKann()) return;
+    const beenden = (abo) => {
+      if (!abo) return null;
+      const endpoint = abo.endpoint;
+      return abo.unsubscribe().catch(() => {}).then(() => (code ? S.anfrage('pushAbmelden', { endpoint: endpoint }, code) : null));
+    };
+    pushEnde = pushEnde.then(() => (bekannt || swBereit().then((reg) => (reg ? reg.pushManager.getSubscription() : null)))).then(beenden).catch(() => {});
+  }
+  S.pushAustragen = function () { pushBeenden(Z.code); };
+
+  /** Hinweis auf dem Start, solange Mitteilungen hier möglich, aber nicht eingeschaltet sind (lässt sich wegtippen). */
+  function pushHinweis() {
+    if (P.abo === undefined || pushStand() !== 'moeglich' || S.speicher.lesen(S.SCHLUESSEL.pushSpaeter)) return null;
+    return h('div', { class: 'push-hinweis' },
+      h('button', { type: 'button', class: 'karte hinweis-karte', 'data-aufgaben': 'push', 'data-fokus': 'push-start', disabled: P.laeuft, onclick: () => S.pushEinschalten() },
+        h('span', { class: 'hinweis-symbol', 'aria-hidden': 'true' }, S.icon('glocke')),
+        h('span', { class: 'hinweis-text' }, h('strong', { text: 'Mitteilungen einschalten' }),
+          h('span', { text: 'Bescheid bekommen, wenn dir jemand eine Aufgabe gibt.' }))),
+      h('button', { type: 'button', class: 'rund push-spaeter', 'aria-label': 'Hinweis ausblenden', onclick: () => { S.speicher.schreiben(S.SCHLUESSEL.pushSpaeter, '1'); zeichnen(); } },
+        S.icon('zu')));
+  }
+
+  /** Zeile im Blatt „Aufgaben“: Stand der Mitteilungen auf diesem Gerät mit Schalter. */
+  function pushZeile() {
+    const stand = P.abo === undefined && !P.stoerung ? 'aus' : pushStand();
+    if (stand === 'aus') return null;
+    const text = stand === 'an' ? 'Mitteilungen bei neuen Aufgaben sind auf diesem Gerät an.'
+      : stand === 'gesperrt' ? 'Mitteilungen sind für SATE in den Einstellungen des Geräts ausgeschaltet.'
+        : stand === 'geraet' ? 'Mitteilungen gehen am iPhone nur in der App auf dem Home-Bildschirm.'
+          : stand === 'stoerung' ? 'Mitteilungen gehen gerade nicht. Bitte die App einmal schließen und neu öffnen.'
+            : 'Mitteilungen bei neuen Aufgaben sind auf diesem Gerät aus.';
+    return h('p', { class: 'hinweis push-zeile' }, S.icon('glocke', 'push-icon'), h('span', { text: text }),
+      stand === 'an' ? h('button', { type: 'button', class: 'text-link', 'data-fokus': 'push', disabled: P.laeuft, text: 'Ausschalten', onclick: () => S.pushAusschalten() })
+        : stand === 'moeglich' ? h('button', { type: 'button', class: 'text-link', 'data-fokus': 'push', disabled: P.laeuft, text: 'Einschalten', onclick: () => S.pushEinschalten() }) : null);
+  }
+
+  // Tipp auf eine Mitteilung bei offener App (sw.js schickt „aufgaben“): frisch laden und den Start zeigen. Steht
+  // gerade ein Formular für eine Aufgabe offen, bleibt es stehen, sonst wäre der Entwurf weg (Codex v44).
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.addEventListener('message', (ev) => {
+      if (ev.data !== 'aufgaben' || !Z.code) return;
+      const blatt = S.el('blatt');
+      const entwurf = !!(blatt && blatt.open && S.el('blatt-inhalt').querySelector('[data-blatt="aufgabe"]'));
+      if (!entwurf) {
+        S.blattSchliessen(true);
+        S.ansichtZeigen('uebersicht');
+        S.nachOben('uebersicht');
+      }
+      S.laden();
+    });
+  }
+  // App über eine Mitteilung geöffnet (sw.js öffnet „#aufgaben“): mit dem Start beginnen statt mit der gemerkten Ansicht
+  if (window.location.hash === '#aufgaben') {
+    S.speicher.schreiben(S.SCHLUESSEL.ansicht, 'uebersicht');
+    try { window.history.replaceState(null, '', window.location.pathname + window.location.search); } catch (err) { /* nur Kosmetik */ }
+  }
 
   // Zeilen ----------------------------------------------------------------------------------------------------------
 
@@ -171,6 +429,7 @@
           'aria-label': p.name + ', ' + (p.offen ? p.offen + ' offen' + (p.ueber ? ', davon ' + p.ueber + ' überfällig' : '') : 'nichts offen') + '. Aufgaben zeigen' },
         h('span', { class: 'person-kreis', 'aria-hidden': 'true' }, H.initiale(p.name), p.offen ? h('span', { class: 'person-zahl', text: String(p.offen) }) : null),
         h('span', { class: 'person-name', text: p.name })))) : null,
+      pushHinweis(),
     ];
   };
 
@@ -179,6 +438,7 @@
     const ziel = S.el('eintragen-aufgabe');
     if (!ziel) return;
     if (!daten()) return ziel.replaceChildren();
+    pushAbgleichen(); // Ist dieses Gerät für Mitteilungen angemeldet, und kennt die Schnittstelle es?
     S.fuellen(ziel, h('div', { class: 'karte liste-karte' }, h('ul', { class: 'liste', role: 'list' }, h('li', { class: 'kunde-zeile blick' },
       h('button', { type: 'button', class: 'zeilen-knopf', 'data-aufgaben': 'plus', onclick: () => S.aufgabeNeu(Z.name), 'aria-label': 'Aufgabe fürs Team anlegen' },
         h('span', { class: 'karte-symbol', 'aria-hidden': 'true' }, S.icon('aufgabe')),
@@ -209,7 +469,8 @@
       h('button', { type: 'button', class: 'knopf haupt aufgabe-neu', 'data-aufgaben': 'blatt-neu', onclick: () => S.aufgabeNeu(fuerWen, true) },
         'Neue Aufgabe' + (fuerWen !== Z.name ? ' für ' + fuerWen : '')),
       erledigt.length ? [h('p', { class: 'blatt-titel-klein', text: 'Erledigt' }), liste(erledigt.slice(0, ERLEDIGT_ANZAHL), wer === null),
-        h('p', { class: 'hinweis offen-fuss', text: 'Erledigte bleiben 30 Tage stehen.' })] : null);
+        h('p', { class: 'hinweis offen-fuss', text: 'Erledigte bleiben 30 Tage stehen.' })] : null,
+      pushZeile());
   }
 
   /** Blatt „Aufgaben“ öffnen, auf Wunsch bei einer Person (`person` undefined: wie zuletzt, null: alle). */
@@ -308,7 +569,8 @@
       sperren(false);
       if (e.art !== 'ok') return;
       zurueck();
-      S.melden(neu ? (p.daten.fuer === Z.name ? 'Aufgabe angelegt' : 'Aufgabe für ' + p.daten.fuer + ' angelegt') : 'Gespeichert');
+      const gemeldet = e.daten && e.daten.benachrichtigt > 0 && p.daten.fuer !== Z.name ? [p.daten.fuer + ' bekommt eine Mitteilung aufs Handy.'] : null;
+      S.melden(neu ? (p.daten.fuer === Z.name ? 'Aufgabe angelegt' : 'Aufgabe für ' + p.daten.fuer + ' angelegt') : 'Gespeichert', false, gemeldet);
     } });
     // Enter im Textfeld speichert (eine Aufgabe ist eine Zeile), Umbrüche gibt es in der Notiz
     titel.addEventListener('keydown', (ev) => { if (ev.key === 'Enter' && !ev.shiftKey) { ev.preventDefault(); formular.requestSubmit(); } });

@@ -344,7 +344,8 @@ test('aufgabeAnlegen: eine Zeile A–L unten, Datum als Datum, Uhrzeit als Text,
   const a = p('aufgabeAnlegen', { titel: '  Getränke\nkalt stellen ', fuer: ' Nina ', faellig: tag(1), uhrzeit: '18:00', notiz: 'Zeile eins\r\nZeile zwei' });
   const ereignisse = w.ereignisse.slice();
   assert.strictEqual(a.ok, true, JSON.stringify(a));
-  assert.deepStrictEqual(Object.keys(a).sort(), ['aufgaben', 'id', 'name', 'ok']);
+  assert.deepStrictEqual(Object.keys(a).sort(), ['aufgaben', 'benachrichtigt', 'id', 'name', 'ok']);
+  assert.strictEqual(a.benachrichtigt, 0, 'Mitteilungen sind nicht eingerichtet (siehe test/push.test.js)');
   assert.strictEqual(a.name, 'Jonas');
   assert.match(a.id, /^A[0-9A-Z]+-[0-9A-Z]{4}$/);
   assert.doesNotMatch(a.id, /^AA-/);
@@ -499,7 +500,8 @@ test('aufgabeAendern: erledigt setzt „Erledigt am“ und „Erledigt von“, o
   const vorher = w.tabs['Aufgaben'][1].slice(0, 8);
   const a = pNina('aufgabeAendern', { id: 'A1', status: 'erledigt' });
   assert.strictEqual(a.ok, true, JSON.stringify(a));
-  assert.deepStrictEqual(Object.keys(a).sort(), ['aufgaben', 'name', 'ok']);
+  assert.deepStrictEqual(Object.keys(a).sort(), ['aufgaben', 'benachrichtigt', 'name', 'ok']);
+  assert.strictEqual(a.benachrichtigt, 0);
   assert.strictEqual(a.name, 'Nina');
   assert.deepStrictEqual(w.sheetSchreiben, ['Aufgaben!I2:L2'], 'ein Schreibvorgang für Status, Erledigt am, Erledigt von, Geändert');
   assert.deepStrictEqual(w.ereignisse.slice(-4), ['sperre', 'schreiben Aufgaben!I2:L2', 'flush', 'frei'], 'flush vor der Freigabe');
@@ -816,14 +818,15 @@ test('aufgabenTabAnlegen: legt den Tab mit Kopfzeile an (fett, fixiert, Uhrzeit 
   assert.match(w.logs[w.logs.length - 1], /^Tab „Aufgaben“ gibt es schon, nichts geändert\. Achtung: Die Kopfzeile passt nicht, .*Erwartet in A1 bis L1: ID, Erstellt, /);
 });
 
-test('keine Trennpunkte in Texten für Menschen, keine neuen Scopes', () => {
+test('keine Trennpunkte in Texten für Menschen, Scopes nur Sheet, Trigger und (für die Mitteilungen) externe Dienste', () => {
   const fs = require('node:fs');
   const path = require('node:path');
   const src = path.join(__dirname, '..', 'api', 'src');
   const konfig = fs.readFileSync(path.join(src, 'Konfig.js'), 'utf8');
-  const neu = konfig.slice(konfig.indexOf('// Aufgaben fürs Team'));
+  const neu = konfig.slice(konfig.indexOf('// Aufgaben fürs Team'), konfig.indexOf('// Mitteilungen aufs Handy'));
   assert.ok(neu.length > 1000);
   assert.doesNotMatch(neu + fs.readFileSync(path.join(src, 'AufgabenLogik.js'), 'utf8'), /[·•]/);
   assert.deepStrictEqual(JSON.parse(fs.readFileSync(path.join(src, 'appsscript.json'), 'utf8')).oauthScopes,
-    ['https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/script.scriptapp']);
+    ['https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/script.scriptapp',
+      'https://www.googleapis.com/auth/script.external_request']);
 });

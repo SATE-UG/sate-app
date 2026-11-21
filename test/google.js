@@ -1,7 +1,7 @@
 'use strict';
 
 // Attrappen für die Google-Dienste (PropertiesService, SpreadsheetApp, Utilities, ContentService, LockService,
-// CacheService, Logger, console, ScriptApp), damit Api.js unter Node läuft. Alles liegt im Speicher (`welt`).
+// CacheService, Logger, console, ScriptApp, UrlFetchApp), damit Api.js unter Node läuft. Alles liegt im Speicher (`welt`).
 // Geschrieben werden darf nur Lager!B2:F5, eine Zeile A–J im Lager-Log, A–D in Abfüllungen, einzelne Zellen in
 // Verkäufe Spalte L und im Tab Aufgaben Zellen einer Zeile in A–L ab Zeile 2 (siehe erlaubt()); jeder andere
 // schreibende Aufruf wirft. Alle Schreibversuche landen in `welt.sheetSchreiben`, die geschriebenen Werte in
@@ -14,6 +14,12 @@
 //     D.aufgabenZeile({ id: 'A1', von: 'Jonas', fuer: 'Nina', titel: 'Kühlschrank auffüllen', faellig: '2026-11-25', uhrzeit: '09:30' }),
 //     D.aufgabenZeile({ id: 'A2', von: 'Nina', fuer: 'Jonas', titel: 'Pfand wegbringen', status: 'erledigt', erledigtAm: '2026-11-20', erledigtVon: 'Jonas' })];
 // Das Team sind die nicht gesperrten Zugangscodes: je Person einmal codeAnlegen('Name') aufrufen.
+//
+// Mitteilungen aufs Handy: UrlFetchApp.fetchAll() ruft nichts im Netz ab. Jede Anfrage landet in `welt.pushAnfragen`,
+// der Statuscode kommt aus `welt.pushStatus` (Funktion (url) → Zahl oder Objekt url → Zahl, sonst 201), der Antworttext
+// aus `welt.pushText` (Text oder Funktion (url) → Text). `welt.pushKaputt = true` oder Funktion (url) → true: Ein Abruf
+// mit so einer Adresse wirft als Ganzes (Push-Dienst nicht erreichbar). Jeder Aufruf steht als 'push' in
+// `welt.ereignisse`. Schreibende Zugriffe auf die Skripteigenschaften stehen in `welt.propsSchreiben`.
 
 const crypto = require('node:crypto');
 
@@ -57,7 +63,22 @@ function neueWelt() {
     ereignisse: [],
     schreibFehler: null, // (tab, bereich) → true: dieser Schreibversuch wirft (nach dem Eintrag in sheetSchreiben)
     flushes: 0,
+    // Mitteilungen aufs Handy: schreibende Zugriffe auf die Skripteigenschaften ('set Name', 'delete Name'), Anfragen an
+    // die Push-Dienste, einstellbare Antworten
+    propsSchreiben: [],
+    pushAnfragen: [],
+    pushStatus: null,
+    pushText: '',
+    pushKaputt: false,
   };
+
+  /** Bytes wie in Apps Script (Java): Liste aus ganzen Zahlen von −128 bis 127, alles andere wirft. */
+  function javaBytes(wert) {
+    if (!Array.isArray(wert) || !wert.every((b) => Number.isInteger(b) && b >= -128 && b <= 127)) {
+      throw new Error('Bytes mit Vorzeichen (−128 bis 127) erwartet');
+    }
+    return Buffer.from(wert.map((b) => b & 0xff));
+  }
 
   function bereich(a1) {
     welt.sheetLesen.push(a1);
@@ -213,9 +234,16 @@ function neueWelt() {
     Utilities: {
       DigestAlgorithm: { SHA_256: 'sha256' },
       Charset: { UTF_8: 'utf8' },
+      // Text mit UTF_8 oder Bytes mit Vorzeichen (ohne Zeichensatz)
       computeDigest: (alg, wert, charset) => {
+        if (typeof wert !== 'string' && charset === undefined) return vorzeichen(crypto.createHash(alg).update(javaBytes(wert)).digest());
         if (typeof wert !== 'string' || charset !== 'utf8') throw new Error('nur Text mit UTF_8 erwartet');
         return vorzeichen(crypto.createHash(alg).update(wert, 'utf8').digest());
+      },
+      // Wie in Apps Script: erst die Daten, dann der Schlüssel, beide als Bytes mit Vorzeichen
+      computeHmacSha256Signature: (wert, schluessel, ...mehr) => {
+        if (mehr.length) throw new Error('nur Bytes erwartet');
+        return vorzeichen(crypto.createHmac('sha256', javaBytes(schluessel)).update(javaBytes(wert)).digest());
       },
       getUuid: () => { welt.uuids++; return crypto.randomUUID(); },
       formatDate: (d, zone, muster) => {
@@ -244,9 +272,14 @@ function neueWelt() {
     PropertiesService: {
       getScriptProperties: () => ({
         getProperty: (k) => (Object.prototype.hasOwnProperty.call(welt.props, k) ? welt.props[k] : null),
-        setProperty: (k, v) => { welt.props[k] = String(v); },
+        setProperty: (k, v) => { welt.propsSchreiben.push('set ' + k); welt.props[k] = String(v); },
+        // mehrere auf einmal, die übrigen bleiben (ohne das zweite Argument deleteAllOthers)
+        setProperties: (o, ...mehr) => {
+          if (mehr.length) throw new Error('setProperties nur ohne deleteAllOthers');
+          Object.keys(o).forEach((k) => { welt.propsSchreiben.push('set ' + k); welt.props[k] = String(o[k]); });
+        },
         getProperties: () => Object.assign({}, welt.props),
-        deleteProperty: (k) => { delete welt.props[k]; },
+        deleteProperty: (k) => { welt.propsSchreiben.push('delete ' + k); delete welt.props[k]; },
       }),
     },
     SpreadsheetApp: {
@@ -304,6 +337,29 @@ function neueWelt() {
           welt.cacheZeiten.push(sek);
         },
       }),
+    },
+    UrlFetchApp: {
+      // Mehrere Anfragen gleichzeitig. Nichts geht ins Netz: aufzeichnen und mit dem eingestellten Status antworten.
+      fetchAll: (anfragen) => {
+        welt.ereignisse.push('push');
+        if (!Array.isArray(anfragen) || !anfragen.length) throw new Error('fetchAll braucht Anfragen');
+        anfragen.forEach((a) => {
+          if (typeof a.url !== 'string' || !/^https:\/\//.test(a.url)) throw new Error('Invalid argument: ' + a.url);
+          Object.keys(a.headers || {}).forEach((h) => {
+            if (typeof a.headers[h] !== 'string') throw new Error('Attribute provided with invalid value: Header:' + h);
+          });
+          welt.pushAnfragen.push(JSON.parse(JSON.stringify(a)));
+        });
+        // wie in Apps Script scheitert der ganze Abruf, und die Adresse steht in der Fehlermeldung (sie darf nie im Log landen)
+        const kaputt = anfragen.find((a) => (typeof welt.pushKaputt === 'function' ? welt.pushKaputt(a.url) : welt.pushKaputt));
+        if (kaputt) throw new Error('DNS error: ' + kaputt.url);
+        return anfragen.map((a) => {
+          const s = typeof welt.pushStatus === 'function' ? welt.pushStatus(a.url) : welt.pushStatus && welt.pushStatus[a.url];
+          if (a.muteHttpExceptions !== true && s >= 400) throw new Error('Request failed for ' + a.url + ' returned code ' + s);
+          return { getResponseCode: () => s || 201, getContentText: () => (typeof welt.pushText === 'function' ? welt.pushText(a.url) : welt.pushText) };
+        });
+      },
+      fetch: () => { throw new Error('UrlFetchApp.fetch ist nicht vorgesehen'); },
     },
     Logger: { log: (...a) => { welt.logs.push(a.map(String).join(' ')); } },
     console: {

@@ -11,13 +11,13 @@ const { execFileSync } = require('node:child_process');
 const WURZEL = path.join(__dirname, '..');
 const lies = (p) => fs.readFileSync(path.join(WURZEL, p), 'utf8');
 
-test('Apps-Script-Manifest: Berlin, V8, Web-App, Sheet und Trigger', () => {
+test('Apps-Script-Manifest: Berlin, V8, Web-App, Sheet, Trigger und (seit v44) Abrufe nach außen für die Mitteilungen', () => {
   const m = JSON.parse(lies('api/src/appsscript.json'));
   assert.strictEqual(m.timeZone, 'Europe/Berlin');
   assert.strictEqual(m.runtimeVersion, 'V8');
   assert.deepStrictEqual(m.webapp, { executeAs: 'USER_DEPLOYING', access: 'ANYONE_ANONYMOUS' });
   assert.deepStrictEqual(m.oauthScopes,
-    ['https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/script.scriptapp']);
+    ['https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/script.scriptapp', 'https://www.googleapis.com/auth/script.external_request']);
 });
 
 test('clasp: rootDir api/src, Lokal.js wird gepusht, aber nie committet', () => {
@@ -594,6 +594,47 @@ test('PWA: Aufgaben fürs Team (v43) – eigene Aufgaben auf dem Start, Team als
   assert.doesNotMatch(auf, /[·•]/);
   assert.match(css, /\.af-haken:focus-visible::before \{ outline: 2px solid var\(--akzent\); outline-offset: 2px; \}/);
   assert.match(css, /\.aufgabe\.fertig \.af-haken::before, \.aufgabe\.abgehakt \.af-haken::before \{ background: var\(--akzent\); box-shadow: none; \}/);
+});
+
+test('PWA: Mitteilungen bei neuen Aufgaben (v44) – einschalten nur per Tipp, Empfang im Service Worker, Gerät folgt dem Zugangscode', () => {
+  const sw = lies('docs/sw.js');
+  const auf = lies('docs/aufgaben.js');
+  const app = lies('docs/app.js');
+  // Empfang: Die Mitteilung kommt ohne Inhalt, der Text steht fest; auf jede Mitteilung folgt eine Anzeige (iOS verlangt das)
+  assert.match(sw, /self\.addEventListener\('push', \(ev\) => \{\s*ev\.waitUntil\(self\.registration\.showNotification\('SATE', \{\s*body: 'Neue Aufgabe für dich',/);
+  // Tipp auf die Mitteilung: offene App nach vorn und Bescheid geben, sonst mit dem Start öffnen
+  assert.match(sw, /self\.addEventListener\('notificationclick', \(ev\) => \{\s*ev\.notification\.close\(\);/);
+  assert.match(sw, /const oeffnen = \(\) => self\.clients\.openWindow\('\.\/#aufgaben'\);/);
+  assert.match(sw, /const offen = fenster\.find\(\(f\) => typeof f\.url === 'string' && f\.url\.indexOf\(bereich\) === 0 && typeof f\.focus === 'function'\);\s*if \(!offen\) return oeffnen\(\);\s*offen\.postMessage\('aufgaben'\);\s*return offen\.focus\(\)\.catch\(oeffnen\);/,
+    'nur Fenster dieser App; scheitert der Fokus, wird die App geöffnet (Codex v44)');
+  assert.match(auf, /if \(ev\.data !== 'aufgaben' \|\| !Z\.code\) return;/);
+  assert.match(auf, /if \(window\.location\.hash === '#aufgaben'\) \{\s*S\.speicher\.schreiben\(S\.SCHLUESSEL\.ansicht, 'uebersicht'\);/);
+  // Einschalten: die Erlaubnis ist das Erste nach dem Tipp (iOS fragt sonst nicht), dann beim Browser anmelden und der
+  // Schnittstelle melden; lehnt sie ab, wird beim Browser wieder abgemeldet
+  const ein = auf.slice(auf.indexOf('S.pushEinschalten = async function'), auf.indexOf('S.pushAusschalten = async function'));
+  assert.ok(ein.indexOf('await ') === ein.indexOf('await window.Notification.requestPermission()'), 'kein anderes await vor der Erlaubnis');
+  assert.match(ein, /reg\.pushManager\.subscribe\(\{ userVisibleOnly: true, applicationServerKey: Uint8Array\.from\(bytes\) \}\);/);
+  assert.match(ein, /const e = await S\.anfrage\('pushAnmelden', aboDaten\(abo\), code\);/, 'mit dem Code vom Beginn des Vorgangs');
+  assert.match(ein, /if \(e\.art !== 'ok'\) \{[\s\S]{0,200}await abo\.unsubscribe\(\)\.catch\(\(\) => \{\}\);/);
+  // Der Stand kommt aus hilfen.js; ohne Schlüssel der Schnittstelle zeigt die App nichts davon
+  assert.match(auf, /const pushStand = \(\) => H\.pushStand\(\{ server: !!pushServer\(\), kann: pushKann\(\), erlaubnis: pushErlaubnis\(\), stoerung: P\.stoerung, abo: pushBestaetigt\(\) \}\);/);
+  assert.match(auf, /if \(P\.abo === undefined \|\| pushStand\(\) !== 'moeglich' \|\| S\.speicher\.lesen\(S\.SCHLUESSEL\.pushSpaeter\)\) return null;/);
+  // Das Gerät folgt dem Zugangscode: Die App meldet es der Schnittstelle, solange die es für diese Person nicht kennt;
+  // jeder Vorgang gilt nur für die Anmeldung, in der er begann; beim Abmelden endet die Anmeldung beim Browser sofort
+  // (die Abläufe selbst prüft test/push-app.test.js)
+  assert.match(auf, /const pushGilt = \(lauf, code\) => lauf === P\.lauf && !!code && code === Z\.code;/);
+  assert.match(auf, /const e = await S\.anfrage\('pushAnmelden', aboDaten\(P\.abo\), code\);\s*if \(!pushGilt\(lauf, code\)\) return;\s*pushUebernehmen\(e\);/);
+  assert.match(app, /if \(typeof S\.pushAustragen === 'function'\) S\.pushAustragen\(\);\s*const geloescht = vergessen\(\);/);
+  assert.match(auf, /S\.pushAustragen = function \(\) \{ pushBeenden\(Z\.code\); \};/);
+  assert.match(auf, /return abo\.unsubscribe\(\)\.catch\(\(\) => \{\}\)\.then\(\(\) => \(code \? S\.anfrage\('pushAbmelden', \{ endpoint: endpoint \}, code\) : null\)\);/,
+    'erst beim Browser beenden (geht ohne Netz), dann austragen');
+  // Ein offenes Formular für eine Aufgabe bleibt stehen, wenn jemand auf eine Mitteilung tippt (Codex v44)
+  assert.match(auf, /const entwurf = !!\(blatt && blatt\.open && S\.el\('blatt-inhalt'\)\.querySelector\('\[data-blatt="aufgabe"\]'\)\);\s*if \(!entwurf\) \{/);
+  // Nach dem Anlegen steht da, dass die Person eine Mitteilung bekommt (nur wenn die Schnittstelle wirklich gesendet hat)
+  assert.match(auf, /e\.daten && e\.daten\.benachrichtigt > 0 && p\.daten\.fuer !== Z\.name \? \[p\.daten\.fuer \+ ' bekommt eine Mitteilung aufs Handy\.'\] : null;/);
+  // Die Adresse des Geräts steht nie im Gerätespeicher (der öffentliche Schlüssel kommt mit der Übersicht, das ist so gewollt); keine Trennpunkte (Mark)
+  assert.doesNotMatch(auf, /speicher\.schreiben\([^)]*endpoint/);
+  assert.doesNotMatch(sw.slice(sw.indexOf("addEventListener('push'")), /[·•]/);
 });
 
 test('PWA: Gewinn vorläufig (v38) – Zeile auf dem Start, Thema „Gewinn und Kosten“ (seit v43 unter der Wahl Gewinn in den Zahlen), Lexware-Kosten nur gelesen', () => {

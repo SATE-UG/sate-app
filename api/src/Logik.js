@@ -126,8 +126,10 @@ function pingAntwort(name, bestandRoh, reichweiteRoh, jetzt) {
  *   kennzahlen() → { bestand, reichweite } (Rohwerte aus dem Sheet), jetzt() → Date,
  *   tabellen() → Rohwerte der Tabs für uebersichtBauen(), datumText(date) → `JJJJ-MM-TT` in Europe/Berlin,
  *   tabWerte(name) → ein Tab als 2D-Array; für die Schreib-Aktionen zusätzlich die Funktionen aus schreibAktion(),
- *   für die Aufgaben die aus aufgabenAktion() (AufgabenLogik.js).
- * Das Sheet wird erst nach gültigem Code gelesen.
+ *   für die Aufgaben die aus aufgabenAktion() (AufgabenLogik.js), für die Mitteilungen aufs Handy die aus pushAktion()
+ *   und eigenschaften() → alle Skripteigenschaften als Objekt (PushLogik.js).
+ * Das Sheet wird erst nach gültigem Code gelesen. Jede Übersicht, die an die App geht (Aktion `uebersicht` und die
+ * frische `uebersicht` nach buchen, stornieren und verkaufStandort), bekommt über uebersichtMitPush() das Feld `push`.
  */
 function bearbeiten(text, umgebung) {
   const a = anfrageLesen(text);
@@ -142,17 +144,22 @@ function bearbeiten(text, umgebung) {
     return pingAntwort(name, k.bestand, k.reichweite, umgebung.jetzt());
   }
   if (a.aktion === 'uebersicht') {
-    return Object.assign({ ok: true, name: name }, uebersichtBauen(umgebung.tabellen(), umgebung.datumText, umgebung.jetzt()));
+    const ueb = uebersichtMitPush(uebersichtBauen(umgebung.tabellen(), umgebung.datumText, umgebung.jetzt()), name, umgebung);
+    return Object.assign({ ok: true, name: name }, ueb);
   }
   if (a.aktion === 'verlauf') {
     return { ok: true, name: name, eintraege: verlaufBauen(umgebung.tabWerte(LAGER_LOG_TAB), umgebung.datumText, VERLAUF_ANZAHL) };
   }
   if (a.aktion === 'buchen' || a.aktion === 'stornieren' || a.aktion === 'verkaufStandort') {
     const r = schreibAktion(a.aktion, a.daten, name, umgebung);
-    return r.ok ? Object.assign({ ok: true, name: name }, r) : r;
+    return r.ok ? Object.assign({ ok: true, name: name }, r, { uebersicht: uebersichtMitPush(r.uebersicht, name, umgebung) }) : r;
   }
   if (a.aktion === 'aufgabeAnlegen' || a.aktion === 'aufgabeAendern') {
     const r = aufgabenAktion(a.aktion, a.daten, name, umgebung);
+    return r.ok ? Object.assign({ ok: true, name: name }, r) : r;
+  }
+  if (a.aktion === 'pushAnmelden' || a.aktion === 'pushAbmelden') {
+    const r = pushAktion(a.aktion, a.daten, name, umgebung);
     return r.ok ? Object.assign({ ok: true, name: name }, r) : r;
   }
   return { ok: false, fehler: FEHLER_AKTION };

@@ -489,6 +489,8 @@
 
   el('abmelden').addEventListener('click', async () => {
     if (!(await S.frage('Abmelden? Danach brauchst du deinen Zugangscode wieder.', 'Abmelden', 'Abbrechen', true))) return;
+    // Mitteilungen (seit v44): dieses Gerät bei der Schnittstelle austragen, solange der Code noch da ist
+    if (typeof S.pushAustragen === 'function') S.pushAustragen();
     const geloescht = vergessen();
     angemeldetZeigen(false);
     anmeldeMeldung(geloescht ? '' : 'Abgemeldet, aber der Code ließ sich auf diesem Gerät nicht löschen. ' +
